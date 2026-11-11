@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"github.com/alswl/apilot/internal/app"
 	"github.com/alswl/apilot/internal/model"
 	"github.com/egoist/mygo"
@@ -13,16 +14,16 @@ func TestCompactTaskNavigation(t *testing.T) {
 	for _, size := range [][2]int{{640, 480}, {480, 360}} {
 		s := &windowState{tasks: []model.Task{{ID: "demo", Name: "长任务名称 demo", Enabled: true, Schedule: &model.Schedule{Type: "cron", Expression: "0 9 * * 1-5", Enabled: true}}}}
 		tt := ui.NewTester(s.view, size[0], size[1])
-		if !tt.HasText("任务") || !tt.HasText("历史") || !tt.HasText("观察") {
+		if !tt.HasText(tr("tasks")) || !tt.HasText(tr("history")) || !tt.HasText(tr("observers")) {
 			t.Fatal(tt.Texts())
 		}
 		if e := tt.Click("长任务名称 demo"); e != nil {
 			t.Fatal(e)
 		}
-		if s.selectedTask != "demo" || !tt.HasText("自动运行") {
+		if s.selectedTask != "demo" || !tt.HasText(tr("automaticRuns")) {
 			t.Fatal(s.selectedTask, tt.Texts())
 		}
-		if e := tt.Click("返回任务"); e != nil {
+		if e := tt.Click(tr("backToTasks")); e != nil {
 			t.Fatal(e)
 		}
 		if s.selectedTask != "" {
@@ -33,15 +34,15 @@ func TestCompactTaskNavigation(t *testing.T) {
 func TestEmptyHistoryAndResultLabels(t *testing.T) {
 	s := &windowState{tab: 1}
 	tt := ui.NewTester(s.view, 640, 480)
-	if !tt.HasText("暂无执行记录") {
+	if !tt.HasText(tr("noRunsYet")) {
 		t.Fatal(tt.Texts())
 	}
 	s.runs = []model.Run{{ID: "run", TaskName: "demo", Status: "failed", CreatedAt: time.Now()}}
 	tt = ui.NewTester(s.view, 640, 480)
-	if e := tt.Click("demo 失败"); e != nil {
+	if e := tt.Click("demo " + tr("failed")); e != nil {
 		t.Fatal(e)
 	}
-	if s.selectedRun != "run" || !tt.HasText("标准输出") {
+	if s.selectedRun != "run" || !tt.HasText(tr("standardOutput")) {
 		t.Fatal(tt.Texts())
 	}
 }
@@ -70,15 +71,15 @@ func TestMenuOffersDailyActionsWithoutMainWindow(t *testing.T) {
 		}
 	}
 	walk(items)
-	for _, label := range []string{"停止「review」", "立即运行", "自动运行", "新建任务…", "全部任务…", "设置…"} {
+	for _, label := range []string{fmt.Sprintf(tr("stopS"), "review"), tr("runNow"), tr("automaticRuns"), tr("newTask2"), tr("allTasks"), tr("settings2")} {
 		if found[label] == nil {
 			t.Fatalf("missing menu action %q", label)
 		}
 	}
-	if !found["立即运行"].Disabled {
+	if !found[tr("runNow")].Disabled {
 		t.Fatal("active task can be triggered again")
 	}
-	if !found["自动运行"].Checked {
+	if !found[tr("automaticRuns")].Checked {
 		t.Fatal("schedule state not reflected")
 	}
 	if s.win != nil {

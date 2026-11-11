@@ -46,10 +46,10 @@ func (s *windowState) notify(ctx context.Context, seen map[string]bool) {
 		}
 		seen[v.ID] = true
 		if v.SourceType == "task" && settings.NotifyFailure {
-			send(v.SourceID+":failed", "任务失败", v.Summary, v.RunID, "")
+			send(v.SourceID+":failed", tr("taskFailed"), v.Summary, v.RunID, "")
 		}
 		if v.SourceType == "observer" && settings.NotifyObserver {
-			send(v.SourceID+":changed", "观察状态变化", v.Summary, "", v.SourceID)
+			send(v.SourceID+":changed", tr("observerStateChanged"), v.Summary, "", v.SourceID)
 		}
 	}
 	for _, r := range s.service.Runs("") {
@@ -58,7 +58,7 @@ func (s *windowState) notify(ctx context.Context, seen map[string]bool) {
 		}
 		seen[r.ID] = true
 		if r.Status == "succeeded" && settings.NotifySuccess {
-			send(r.TaskID+":success", "任务完成", r.TaskName, r.ID, "")
+			send(r.TaskID+":success", tr("taskCompleted"), r.TaskName, r.ID, "")
 		}
 	}
 }

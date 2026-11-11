@@ -47,6 +47,7 @@ type windowState struct {
 }
 
 func Run(probe bool) error {
+	mygo.App.SetLanguages("en", "zh-Hans")
 	service, err := app.Open(app.DataDir())
 	if err != nil {
 		return err
@@ -74,10 +75,10 @@ func Run(probe bool) error {
 			return
 		}
 		e.PreventDefault()
-		if s.busy && s.err == "正在退出…" {
+		if s.busy && s.err == tr("quitting") {
 			return
 		}
-		s.err = "正在退出…"
+		s.err = tr("quitting")
 		s.busy = true
 		cancel()
 		go func() { server.Close(); _ = service.Close(); mygo.RunOnMain(func() { allowQuit = true; appUI.Quit() }) }()
@@ -92,9 +93,11 @@ func Run(probe bool) error {
 	mygo.Power.OnSuspend(func() { service.Suspend() })
 	mygo.Power.OnResume(func() { service.Resume() })
 	appUI.WhenReady(func() {
+		displayLocale.Store(appUI.Locale())
+		appUI.OnLocaleChanged(func(locale string) { displayLocale.Store(locale); s.traySignature = ""; s.refresh() })
 		appUI.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "Apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
-			{Role: mygo.RoleEditMenu}, {Label: "窗口", Submenu: []*mygo.MenuItem{{Label: "打开 Apilot", Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
+			{Label: "Apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: tr("settings2"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
+			{Role: mygo.RoleEditMenu}, {Label: tr("window"), Submenu: []*mygo.MenuItem{{Label: tr("openApilot"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
 		}))
 		s.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "apilot", Icon: menuBarIcon, IconIsTemplate: true, ToolTip: "Apilot"})
 		if err != nil {
@@ -303,26 +306,26 @@ func (s *windowState) updateTray(status map[string]any) {
 func statusText(v string) string {
 	switch v {
 	case "queued":
-		return "准备中"
+		return tr("queued")
 	case "running":
-		return "运行中"
+		return tr("running")
 	case "succeeded":
-		return "成功"
+		return tr("succeeded")
 	case "failed":
-		return "失败"
+		return tr("failed")
 	case "canceled":
-		return "已取消"
+		return tr("cancelled")
 	case "interrupted":
-		return "已中断"
+		return tr("interrupted")
 	case "skipped":
-		return "已跳过"
+		return tr("skipped")
 	}
 	return v
 }
 func (s *windowState) view(c *ui.Context) {
 	brandTheme(c)
 	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
-		if ui.Tabs(c, &s.tab, "任务", "历史", "观察").Changed() {
+		if ui.Tabs(c, &s.tab, tr("tasks"), tr("history"), tr("observers")).Changed() {
 			s.selectedTask = ""
 			s.selectedRun = ""
 			s.selectedObserver = ""
@@ -350,16 +353,16 @@ func (s *windowState) view(c *ui.Context) {
 }
 func (s *windowState) taskList(c *ui.Context) {
 	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		ui.TextInput(c, &s.query).Placeholder("搜索任务").Label("搜索任务").Grow(1)
-		if ui.Button(c, "＋").Label("新建任务").Tooltip("新建任务").Clicked() {
+		ui.TextInput(c, &s.query).Placeholder(tr("searchTasks")).Label(tr("searchTasks")).Grow(1)
+		if ui.Button(c, "＋").Label(tr("newTask")).Tooltip(tr("newTask")).Clicked() {
 			s.editTask(nil)
 		}
 	})
 	if len(s.tasks) == 0 {
 		ui.Column(c).Fill().Center().Gap(12).Children(func() {
 			ui.Image(c, appMark).Size(64, 64)
-			ui.Text(c, "暂无任务")
-			if ui.PrimaryButton(c, "新建任务").Clicked() {
+			ui.Text(c, tr("noTasks"))
+			if ui.PrimaryButton(c, tr("newTask")).Clicked() {
 				s.editTask(nil)
 			}
 		})
@@ -372,8 +375,8 @@ func (s *windowState) taskList(c *ui.Context) {
 		}
 	}
 	if matches == 0 {
-		ui.Text(c, "无匹配任务")
-		if ui.Button(c, "清除搜索").Clicked() {
+		ui.Text(c, tr("noMatchingTasks"))
+		if ui.Button(c, tr("clearSearch")).Clicked() {
 			s.query = ""
 		}
 		return
@@ -404,7 +407,7 @@ func (s *windowState) taskList(c *ui.Context) {
 					if entry.Clicked() {
 						s.selectedTask = t.ID
 					}
-					if ui.Button(c.Key("run"), "▶").Label("运行任务").Tooltip("运行任务").Disabled(s.busy).Clicked() {
+					if ui.Button(c.Key("run"), "▶").Label(tr("runTask")).Tooltip(tr("runTask")).Disabled(s.busy).Clicked() {
 						s.action(func() error { _, e := s.service.RunTask(t.ID, "manual"); return e })
 					}
 				})
@@ -427,14 +430,14 @@ func (s *windowState) taskDetail(c *ui.Context) {
 	}
 	t := *task
 	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		if ui.Button(c, "‹").Label("返回任务").Tooltip("返回任务").Clicked() {
+		if ui.Button(c, "‹").Label(tr("backToTasks")).Tooltip(tr("backToTasks")).Clicked() {
 			s.selectedTask = ""
 		}
 		ui.Text(c, t.Name).Bold().Grow(1)
-		if ui.Button(c, "编辑").Clicked() {
+		if ui.Button(c, tr("edit")).Clicked() {
 			s.editTask(&t)
 		}
-		if ui.PrimaryButton(c, "运行").Disabled(s.busy).Clicked() {
+		if ui.PrimaryButton(c, tr("run")).Disabled(s.busy).Clicked() {
 			s.action(func() error { _, e := s.service.RunTask(t.ID, "manual"); return e })
 		}
 	})
@@ -442,7 +445,7 @@ func (s *windowState) taskDetail(c *ui.Context) {
 		ui.Column(c).FillWidth().Gap(12).Children(func() {
 			ui.Text(c, planLabel(t))
 			on := t.Enabled && (t.Schedule == nil || t.Schedule.Enabled)
-			if t.Schedule != nil && ui.Checkbox(c, &on, "自动运行").Changed() {
+			if t.Schedule != nil && ui.Checkbox(c, &on, tr("automaticRuns")).Changed() {
 				s.action(func() error { return s.setAutomatic(t) })
 			}
 			ui.Text(c, t.Executable).Selectable()
@@ -451,7 +454,7 @@ func (s *windowState) taskDetail(c *ui.Context) {
 			}
 			ui.Text(c, t.Cwd).TextColor(c.Theme().TextMuted).Selectable()
 			if len(t.EnvKeys) > 0 {
-				ui.Text(c, "环境变量："+strings.Join(t.EnvKeys, ", "))
+				ui.Text(c, tr("environmentVariables")+strings.Join(t.EnvKeys, ", "))
 			}
 			for _, r := range s.runs {
 				if r.TaskID == t.ID {
@@ -461,9 +464,9 @@ func (s *windowState) taskDetail(c *ui.Context) {
 					}
 				}
 			}
-			if ui.Button(c, "删除任务…").Disabled(s.busy).Clicked() {
+			if ui.Button(c, tr("deleteTask2")).Disabled(s.busy).Clicked() {
 				go func() {
-					result, e := mygo.Dialog.Message(mygo.MessageOptions{Parent: s.win, Type: mygo.MessageWarning, Message: "删除任务「" + t.Name + "」？", Detail: "保留执行历史和工作目录。", Buttons: []string{"取消", "删除任务"}})
+					result, e := mygo.Dialog.Message(mygo.MessageOptions{Parent: s.win, Type: mygo.MessageWarning, Message: fmt.Sprintf(tr("deleteTaskS"), t.Name), Detail: tr("executionHistoryAndWorkingDirectoriesAreKept"), Buttons: []string{tr("cancel"), tr("deleteTask")}})
 					if e == nil && result.Button == 1 {
 						s.win.Update(func() { s.action(func() error { return s.service.DeleteTask(t.ID) }) })
 					}
@@ -474,7 +477,7 @@ func (s *windowState) taskDetail(c *ui.Context) {
 }
 func (s *windowState) runList(c *ui.Context) {
 	if len(s.runs) == 0 {
-		ui.Text(c, "暂无执行记录")
+		ui.Text(c, tr("noRunsYet"))
 		return
 	}
 	ui.Scroll(c).Grow(1).TrackScroll(&s.runScroll).Children(func() {
@@ -513,19 +516,19 @@ func (s *windowState) runDetail(c *ui.Context) {
 	}
 	r := *run
 	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		if ui.Button(c, "‹").Label("返回").Tooltip("返回").Clicked() {
+		if ui.Button(c, "‹").Label(tr("back")).Tooltip(tr("back")).Clicked() {
 			s.selectedRun = ""
 		}
 		ui.Text(c, r.TaskName+" · "+statusText(r.Status)).TextColor(resultColor(c, r.Status)).Grow(1).Bold()
 		if r.Active() {
-			if ui.Button(c, "■").Label("停止运行").Tooltip("停止运行").Clicked() {
+			if ui.Button(c, "■").Label(tr("stopRun")).Tooltip(tr("stopRun")).Clicked() {
 				s.action(func() error { _, e := s.service.StopRun(r.ID); return e })
 			}
 		}
 	})
 	meta := r.CreatedAt.Local().Format("2006-01-02 15:04:05")
 	if r.ExitCode != nil {
-		meta += fmt.Sprintf(" · 退出码 %d", *r.ExitCode)
+		meta += fmt.Sprintf(tr("exitCodeD"), *r.ExitCode)
 	}
 	if r.DurationMS != nil {
 		if *r.DurationMS < 1000 {
@@ -539,23 +542,23 @@ func (s *windowState) runDetail(c *ui.Context) {
 		ui.Text(c, r.Error).TextColor(c.Theme().Danger)
 	}
 	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		ui.Tabs(c, &s.stream, "标准输出", "错误输出").Grow(1)
-		if ui.Button(c, "复制").Clicked() {
+		ui.Tabs(c, &s.stream, tr("standardOutput"), tr("standardError")).Grow(1)
+		if ui.Button(c, tr("copy")).Clicked() {
 			mygo.Clipboard.WriteText(s.logText)
 		}
-		if ui.Button(c, "打开日志").Clicked() {
+		if ui.Button(c, tr("openLogs")).Clicked() {
 			name := []string{"stdout", "stderr"}[s.stream]
 			s.action(func() error { return mygo.Shell.OpenPath(filepath.Join(r.LogPath, name+".log")) })
 		}
 	})
-	if ui.Checkbox(c, &s.followLogs, "跟随输出").Changed() && s.followLogs {
+	if ui.Checkbox(c, &s.followLogs, tr("followOutput")).Changed() && s.followLogs {
 		s.logScroll.Y = math.MaxFloat32
 	}
 	ui.ScrollBoth(c).Grow(1).TrackScroll(&s.logScroll).Children(func() { ui.Text(c, s.logText).Font("monospace").FontSize(12).Selectable().NoWrap() })
 	for _, e := range s.events {
 		if e.RunID == r.ID && e.AcknowledgedAt == nil {
 			e := e
-			if ui.Button(c, "标为已读").Clicked() {
+			if ui.Button(c, tr("markAsRead")).Clicked() {
 				s.action(func() error { _, err := s.service.AckEvent(e.ID); return err })
 			}
 			break
@@ -568,9 +571,9 @@ func triggerText(v string) string {
 	case "cli":
 		return "CLI"
 	case "manual":
-		return "手动"
+		return tr("manual")
 	case "scheduled":
-		return "计划"
+		return tr("scheduled")
 	}
 	return v
 }

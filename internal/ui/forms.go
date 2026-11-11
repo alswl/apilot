@@ -13,17 +13,17 @@ import (
 func contains(s, q string) bool { return strings.Contains(strings.ToLower(s), strings.ToLower(q)) }
 func planLabel(t model.Task) string {
 	if t.Schedule == nil {
-		return "手动运行"
+		return tr("manualRun")
 	}
 	label := t.Schedule.Expression
 	if t.Schedule.Type == "interval" {
-		label = "每 " + label
+		label = tr("every") + label
 	}
 	if !t.Enabled || !t.Schedule.Enabled {
-		return label + " · 自动运行已关闭"
+		return label + tr("automaticRunsOff")
 	}
 	if t.Schedule.NextRunAt != nil {
-		label += " · 下次 " + t.Schedule.NextRunAt.Local().Format("01-02 15:04:05")
+		label += tr("next") + t.Schedule.NextRunAt.Local().Format("01-02 15:04:05")
 	}
 	return label
 }
@@ -43,9 +43,9 @@ func (s *windowState) editTask(t *model.Task) *taskForm {
 	home, _ := os.UserHomeDir()
 	settings := s.service.Settings()
 	f := &taskForm{input: model.TaskInput{Enabled: true, Cwd: home, TimeoutMS: settings.DefaultTimeoutMS}, zone: "Local", timeout: time.Duration(settings.DefaultTimeoutMS * int64(time.Millisecond)).String()}
-	title := "新建任务"
+	title := tr("newTask")
 	if t != nil {
-		title = "编辑任务"
+		title = tr("editTask")
 		f.id = t.ID
 		f.revision = t.Revision
 		f.input = model.TaskInput{Name: t.Name, Description: t.Description, Executable: t.Executable, Args: t.Args, Cwd: t.Cwd, Enabled: t.Enabled, TimeoutMS: t.TimeoutMS}
@@ -74,14 +74,14 @@ func (s *windowState) editTask(t *model.Task) *taskForm {
 			ui.Text(c, title).Bold().FontSize(17)
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
-					ui.Field(c, "名称", func() { ui.TextInput(c, &f.input.Name).FillWidth() })
-					if ui.Tabs(c, &f.mode, "直接命令", "Shell").Changed() {
+					ui.Field(c, tr("name"), func() { ui.TextInput(c, &f.input.Name).FillWidth() })
+					if ui.Tabs(c, &f.mode, tr("command"), "Shell").Changed() {
 						f.command = ""
 						f.args = ""
 					}
-					label := "可执行文件"
+					label := tr("executable")
 					if f.mode == 1 {
-						label = "Shell 命令"
+						label = tr("shellCommand")
 					}
 					ui.Field(c, label, func() {
 						if f.mode == 1 {
@@ -91,31 +91,31 @@ func (s *windowState) editTask(t *model.Task) *taskForm {
 						}
 					})
 					if f.mode == 0 {
-						ui.Field(c, "参数（每行一个）", func() { ui.TextArea(c, &f.args).Height(60).FillWidth() })
+						ui.Field(c, tr("argumentsOnePerLine"), func() { ui.TextArea(c, &f.args).Height(60).FillWidth() })
 					}
-					ui.Field(c, "工作目录", func() { ui.TextInput(c, &f.input.Cwd).FillWidth() })
-					ui.Tabs(c, &f.plan, "手动", "定时", "间隔")
+					ui.Field(c, tr("workingDirectory"), func() { ui.TextInput(c, &f.input.Cwd).FillWidth() })
+					ui.Tabs(c, &f.plan, tr("manual"), tr("cron"), tr("interval"))
 					if f.plan > 0 {
-						label := "Cron 表达式"
+						label := tr("cronExpression")
 						example := "0 9 * * 1-5"
 						if f.plan == 2 {
-							label = "执行间隔"
+							label = tr("runInterval")
 							example = "30m"
 						}
 						ui.Field(c, label, func() { ui.TextInput(c, &f.expression).Placeholder(example).FillWidth() })
 					}
-					ui.Collapsible(c, "高级", &f.advanced, func() {
+					ui.Collapsible(c, tr("advanced"), &f.advanced, func() {
 						ui.Column(c).FillWidth().Gap(10).Children(func() {
-							ui.Field(c, "说明", func() { ui.TextInput(c, &f.input.Description).FillWidth() })
-							ui.Field(c, "超时", func() { ui.TextInput(c, &f.timeout).FillWidth() })
+							ui.Field(c, tr("description"), func() { ui.TextInput(c, &f.input.Description).FillWidth() })
+							ui.Field(c, tr("timeout"), func() { ui.TextInput(c, &f.timeout).FillWidth() })
 							if f.plan == 1 {
-								ui.Field(c, "时区", func() { ui.TextInput(c, &f.zone).FillWidth() })
+								ui.Field(c, tr("timeZone"), func() { ui.TextInput(c, &f.zone).FillWidth() })
 							}
-							ui.Field(c, "新增环境变量（每行 KEY=VALUE）", func() { ui.TextArea(c, &f.env).Height(60).FillWidth() })
-							ui.Field(c, "移除环境变量（每行一个名称）", func() { ui.TextArea(c, &f.unset).Height(50).FillWidth() })
-							ui.Checkbox(c, &f.input.Enabled, "自动运行")
+							ui.Field(c, tr("addEnvironmentVariablesKeyValuePerLine"), func() { ui.TextArea(c, &f.env).Height(60).FillWidth() })
+							ui.Field(c, tr("removeEnvironmentVariablesOneNamePerLine"), func() { ui.TextArea(c, &f.unset).Height(50).FillWidth() })
+							ui.Checkbox(c, &f.input.Enabled, tr("automaticRuns"))
 							if f.input.Schedule != nil {
-								ui.Checkbox(c, &f.input.Schedule.Enabled, "启用计划")
+								ui.Checkbox(c, &f.input.Schedule.Enabled, tr("enableSchedule"))
 							}
 						})
 					})
@@ -125,12 +125,12 @@ func (s *windowState) editTask(t *model.Task) *taskForm {
 				ui.Text(c, f.error).TextColor(c.Theme().Danger)
 			}
 			ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Children(func() {
-				if ui.Button(c, "取消").Disabled(f.busy).Clicked() {
+				if ui.Button(c, tr("cancel")).Disabled(f.busy).Clicked() {
 					f.win.Close()
 				}
-				label := "保存"
+				label := tr("save")
 				if f.busy {
-					label = "保存中…"
+					label = tr("saving")
 				}
 				if ui.PrimaryButton(c, label).Disabled(f.busy).Clicked() {
 					in := f.input
@@ -143,7 +143,7 @@ func (s *windowState) editTask(t *model.Task) *taskForm {
 						}
 						k, v, ok := strings.Cut(line, "=")
 						if !ok || k == "" {
-							f.error = "环境变量格式应为 KEY=VALUE"
+							f.error = tr("environmentVariablesMustUseKeyValue")
 							break
 						}
 						in.EnvSet[k] = v
@@ -155,7 +155,7 @@ func (s *windowState) editTask(t *model.Task) *taskForm {
 					}
 					duration, e := time.ParseDuration(f.timeout)
 					if e != nil || duration <= 0 {
-						f.error = "超时应为正时长，例如 30m"
+						f.error = tr("timeoutMustBePositiveForExample30M")
 					}
 					in.TimeoutMS = duration.Milliseconds()
 					in.Executable = f.command
@@ -216,23 +216,23 @@ func (s *windowState) showSettings() {
 	limit := strconv.FormatInt(v.LogLimitBytes/(1024*1024), 10)
 	message := ""
 	busy := false
-	s.settingsWin = mygo.NewWindow(mygo.WindowOptions{Title: "设置", Width: 480, Height: 460, MinWidth: 420, MinHeight: 340, Content: ui.View(func(c *ui.Context) {
+	s.settingsWin = mygo.NewWindow(mygo.WindowOptions{Title: tr("settings"), Width: 480, Height: 460, MinWidth: 420, MinHeight: 340, Content: ui.View(func(c *ui.Context) {
 		brandTheme(c)
 		ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
-					ui.Field(c, "默认超时", func() { ui.TextInput(c, &timeout).FillWidth() })
-					ui.Field(c, "同时运行任务数", func() { ui.TextInput(c, &max).FillWidth() })
-					ui.Field(c, "历史保留天数", func() { ui.TextInput(c, &days).FillWidth() })
-					ui.Field(c, "单个日志上限（MiB）", func() { ui.TextInput(c, &limit).FillWidth() })
-					ui.Checkbox(c, &v.NotifyFailure, "任务失败时通知")
-					ui.Checkbox(c, &v.NotifySuccess, "任务成功时通知")
-					ui.Checkbox(c, &v.NotifyObserver, "观察状态变化时通知")
-					if ui.Button(c, "命令行工具…").Clicked() {
+					ui.Field(c, tr("defaultTimeout"), func() { ui.TextInput(c, &timeout).FillWidth() })
+					ui.Field(c, tr("concurrentTasks"), func() { ui.TextInput(c, &max).FillWidth() })
+					ui.Field(c, tr("historyRetentionDays"), func() { ui.TextInput(c, &days).FillWidth() })
+					ui.Field(c, tr("logLimitPerStreamMib"), func() { ui.TextInput(c, &limit).FillWidth() })
+					ui.Checkbox(c, &v.NotifyFailure, tr("notifyOnTaskFailure"))
+					ui.Checkbox(c, &v.NotifySuccess, tr("notifyOnTaskSuccess"))
+					ui.Checkbox(c, &v.NotifyObserver, tr("notifyOnObserverStateChanges"))
+					if ui.Button(c, tr("commandLineTool")).Clicked() {
 						s.showCLI()
 					}
 					if loginSupported {
-						if ui.Checkbox(c, &loginEnabled, "登录时打开 Apilot").Changed() {
+						if ui.Checkbox(c, &loginEnabled, tr("openApilotAtLogin")).Changed() {
 							wanted := loginEnabled
 							go func() {
 								err := mygo.App.SetOpenAtLogin(wanted)
@@ -252,25 +252,25 @@ func (s *windowState) showSettings() {
 				ui.Text(c, message)
 			}
 			ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
-				if ui.PrimaryButton(c, "保存").Disabled(busy).Clicked() {
+				if ui.PrimaryButton(c, tr("save")).Disabled(busy).Clicked() {
 					duration, e := time.ParseDuration(timeout)
 					if e != nil {
-						message = "默认超时格式无效"
+						message = tr("invalidDefaultTimeout")
 						return
 					}
 					n, e := strconv.Atoi(max)
 					if e != nil {
-						message = "同时运行任务数应为整数"
+						message = tr("concurrentTasksMustBeAnInteger")
 						return
 					}
 					d, e := strconv.Atoi(days)
 					if e != nil {
-						message = "保留天数应为整数"
+						message = tr("retentionDaysMustBeAnInteger")
 						return
 					}
 					l, e := strconv.ParseInt(limit, 10, 64)
 					if e != nil {
-						message = "日志上限应为整数"
+						message = tr("logLimitMustBeAnInteger")
 						return
 					}
 					copy := v
@@ -287,7 +287,7 @@ func (s *windowState) showSettings() {
 								message = e.Error()
 							} else {
 								v = saved
-								message = "已保存"
+								message = tr("saved")
 							}
 						})
 					}()
