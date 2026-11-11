@@ -2,15 +2,16 @@ GO ?= go
 export GOTOOLCHAIN := go1.27.3
 export CGO_ENABLED := 1
 
-.PHONY: test race build app verify-ui verify-lifecycle verify
+.PHONY: test race cli build app verify-ui verify-lifecycle verify
 
 test:
 	$(GO) test ./...
 race:
 	$(GO) test -race ./...
-build:
+cli:
 	mkdir -p bin
 	$(GO) build -o bin/apilot ./cmd/apilot
+build: cli
 	$(GO) build -o bin/apilot-app ./cmd/apilot-app
 app:
 	$(GO) tool mygo build -skip-dmg -skip-notarize

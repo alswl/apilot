@@ -4,6 +4,15 @@ A lightweight, agent-friendly automation sidecar for macOS.
 
 apilot schedules local commands while its App is open. Close the window to keep it in the menu bar; choose Quit to stop scheduling and terminate managed tasks. Tasks, history and settings stay on this Mac. No account, cloud service or separate daemon.
 
+## Downloads
+
+- Tagged builds: [GitHub Releases](https://github.com/alswl/apilot/releases), with an App ZIP, standalone CLI archive and SHA256SUMS.
+- Development builds: [Build macOS Actions](https://github.com/alswl/apilot/actions/workflows/build.yml). Open a successful run and download its `apilot-macos-arm64-RUN_ID-ATTEMPT` artifact. GitHub sign-in is required; artifacts expire after 7 days.
+
+Downloads currently target Apple Silicon only. Unzip the artifact, then unzip `apilot-macos-arm64.zip` and move the App into Applications. The CLI archive preserves executable permissions. Verify checksums with `shasum -a 256 --check SHA256SUMS`.
+
+These builds are ad-hoc signed and not notarized; macOS may require explicit approval before opening the App. No signing certificate or credential is stored in the workflow.
+
 ## Build and launch
 
 Requires macOS 12+, Xcode Command Line Tools and Go 1.27.3. An installed Go 1.26.5 can bootstrap the required toolchain using go.mod/GOTOOLCHAIN; `.tool-versions` selects that installed bootstrap. Dependency downloads require network access. Local command execution does not require a network connection.
@@ -83,3 +92,9 @@ make verify-lifecycle
 These checks use disposable data. See [verification results](docs/verification/final.md), [architecture](docs/architecture.md) and [known limitations](docs/known-limitations.md). Runtime screenshots live in ignored `tmp/` and are not part of the source distribution.
 
 License: [MIT](LICENSE).
+
+## CI and release policy
+
+One standard macOS arm64 runner runs vet, the full race-enabled test suite and the App build. Go's setup action caches module downloads and compilation. The App is built once; the CI does not also build the unused development App binary. Pure documentation changes skip this workflow. PRs keep only their newest run; each default-branch push gets its own run. Downloads are compressed before upload and retained for 7 days.
+
+The workflow runs on PRs, relevant pushes to `master`, `v*` tags and manual dispatch. After merging it, push a tag matching the version in `packaging/mygo.json` to publish a GitHub Release. The Linux publication job reuses that run's verified files; it never rebuilds the App. Tag publication requires an intentional tag push and has not been exercised by the initial PR build.

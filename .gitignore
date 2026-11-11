@@ -29,3 +29,5 @@
 *.mobileprovision
 *.provisionprofile
 *.keystore
+
+/dist/

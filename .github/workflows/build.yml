@@ -1,0 +1,154 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+    paths:
+      - '.github/workflows/build.yml'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'mygo.json'
+      - 'packaging/**'
+      - 'scripts/**'
+  pull_request:
+    branches: [master]
+    paths:
+      - '.github/workflows/build.yml'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Makefile'
+      - 'mygo.json'
+      - 'packaging/**'
+      - 'scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CGO_ENABLED: '1'
+  GOFLAGS: '-mod=readonly -trimpath'
+  ARTIFACT_NAME: apilot-macos-arm64-${{ github.run_id }}-${{ github.run_attempt }}
+
+jobs:
+  build:
+    name: Test and build · macOS arm64
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Go and restore cache
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+          check-latest: false
+      - name: Verify platform and release version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          test "$(uname -m)" = arm64
+          go version
+          if [ "$IS_RELEASE" = true ]; then
+            python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          version = json.loads(Path('packaging/mygo.json').read_text())['version']
+          assert os.environ['RELEASE_TAG'] == 'v' + version, 'Tag must match packaging/mygo.json version'
+          PY
+          fi
+      - name: Resolve required dependencies
+        run: |
+          go list -deps -test ./... > /dev/null
+          go list -deps github.com/egoist/mygo/cmd/mygo > /dev/null
+      - name: Check formatting
+        run: |
+          files=$(gofmt -l cmd internal)
+          if [ -n "$files" ]; then
+            printf '%s\n' "$files"
+            exit 1
+          fi
+      - name: Vet
+        run: go vet ./...
+      - name: Test with race detector
+        run: go test -race -vet=off ./...
+      - name: Build CLI
+        run: make cli
+      - name: Build App
+        run: make app
+      - name: Package and verify downloads
+        run: packaging/package-downloads.sh
+      - name: Upload downloads
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+      - name: Download summary
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          GO_CACHE_HIT: ${{ steps.go.outputs.cache-hit }}
+        run: |
+          {
+            echo '### macOS arm64 downloads'
+            echo "[Download App, CLI and checksums]($ARTIFACT_URL) (GitHub sign-in required; retained 7 days)."
+            echo
+            echo "Go cache hit: $GO_CACHE_HIT"
+            echo 'The App is ad-hoc signed and is not notarized. Intel builds are not included.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Publish tagged downloads
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download this run's verified files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh run download "$GITHUB_RUN_ID" --name "$ARTIFACT_NAME" --dir dist
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          cd dist
+          sha256sum --check SHA256SUMS
+          printf '%s\n' \
+            'macOS Apple Silicon App and standalone CLI.' \
+            '' \
+            'The App is ad-hoc signed, not Developer ID signed or notarized. macOS may require explicit approval to open it.' \
+            '' \
+            'Verify downloads with SHA256SUMS. Build provenance is in build-info.json.' > /tmp/apilot-release-notes.md
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json --clobber
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "apilot $RELEASE_TAG" \
+              --notes-file /tmp/apilot-release-notes.md \
+              apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json
+          fi
