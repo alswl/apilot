@@ -67,3 +67,11 @@ search list and packaging config and removes temporary credentials on exit.
 Signing configuration, tag publishing and Apple's response have not yet been
 verified with live credentials. This setup does not enroll a developer account,
 generate/revoke certificates or spend on paid GitHub runners.
+
+## Brand assets
+
+The primary logo is the approved **Sunset Aviator (A)** portrait. Masters and
+monochrome alternatives live in `resources/brand/`; see its README for provenance
+and roles. `make icons` exports the bundle icon, in-app mark and alpha-only menu
+icon from those masters with the pinned Go dependencies. Generated PNGs are
+committed; CI needs no image generation service or extra graphics tools.

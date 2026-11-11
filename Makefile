@@ -2,7 +2,10 @@ GO ?= go
 export GOTOOLCHAIN := go1.27.3
 export CGO_ENABLED := 1
 
-.PHONY: test race cli build app verify-ui verify-lifecycle verify
+.PHONY: test race cli build app icons verify-ui verify-lifecycle verify
+
+icons:
+	$(GO) run packaging/render-icons.go
 
 test:
 	$(GO) test ./...

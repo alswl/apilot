@@ -8,5 +8,9 @@
     "minimumSystemVersion": "12.0",
     "dmgTitle": "apilot"
   },
-  "icon": "resources/icon.png"
+  "icon": "resources/icon.png",
+  "resourcesExclude": [
+    "brand",
+    "brand/**"
+  ]
 }
