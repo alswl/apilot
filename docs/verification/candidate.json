@@ -1,0 +1,9 @@
+{
+  "recorded_at": "2026-11-11T07:40:37.497946+00:00",
+  "source_manifest_sha256": "f20880d7a107a76a8b4da5a6229ef6c470aae0a131002cccec1045f04f25d146",
+  "app_binary_sha256": "2b9c23ef29c59f75557d38301a62f7b74c63581a9a735c8be19b2853c3a80d68",
+  "cli_binary_sha256": "60744e3845e3ba991e8d0e8ede550a5ef556458ab9b3ed213f7ab54eac2537bb",
+  "mygo_commit": "b4882ccc2592ff76e92031cf72186a57a5a9b70e",
+  "go": "1.27.3",
+  "platform": "macOS 27.2 (26B123), arm64"
+}
