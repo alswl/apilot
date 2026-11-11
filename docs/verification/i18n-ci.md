@@ -43,4 +43,37 @@ Tag publication verifies artifact checksums from the same run and retains Develo
 
 ## Remote validation
 
-Pending branch dispatch and signed `v0.0.2` release. PR cancellation/doc filtering and main independent runs are statically checked; this task does not manufacture PR/main commits solely to exercise existing behavior.
+Branch cold-cache dispatch [43120980145](https://github.com/alswl/apilot/actions/runs/43120980145) succeeded on source `837d178`. All formatting, vet, race, development App/DMG build and download verification passed. Cache miss; cache upload saved 408,155,403 bytes in a 13-second post step. Go acquisition plus setup took 15s, with no module/build restore. A superseded queued dispatch [43120862273](https://github.com/alswl/apilot/actions/runs/43120862273) was manually cancelled before any steps after the CLI version fix.
+
+| Metric | Recent baseline PRs (n=2, warm) | New branch dispatch (n=1, cold) | Interpretation |
+| --- | ---: | ---: | --- |
+| End-to-end p50 / descriptive p95 | 114s / 114s | 191s / insufficient sample | Different cache state and source; not a causal speed comparison |
+| Job wait | 5s / 11s | 4s | created→started, not billing |
+| Preparation | 42s / 52s | 19s | Cold run skips module/build cache restore |
+| Target work | 24s / 34s | 141s | Cold compilation included in actual target commands |
+| Finishing | 10s / 15s | 22s | New cache save adds 13s |
+| Unattributed | 26s / 6s | 3s | Left explicit |
+| macOS runner minutes, total / per run | 3.48 / 1.74 | 3.08 / 3.08 | No Linux job actually executes on non-tag dispatch |
+| Cache | Selected log: hit, 407,429,220 B; restore ~13s | Miss; saved 408,155,403 B | Branch/default/PR cache visibility differs |
+| Success | 2/2 | 1/1 | Same macOS checks; UI gained bilingual coverage |
+| Duplicate runs per trigger | 1 effective workflow per PR push | 1 effective workflow per dispatch | No branch push trigger added |
+| Compute charge | Public standard hosted runner: free | Same | No monetary savings claimed |
+
+The residual bottleneck on cold cache is compilation in vet/race/build. Splitting it into extra jobs would duplicate preparation and cannot remove platform-specific compilation. Keep the native setup-go cache rather than add another overlapping cache. A second identical branch dispatch was requested for warm-cache behavior; signed tag run is a separate workload.
+
+Tag `v0.0.2` points at `837d178` and is pushed. CLI and App status now share `internal/version.Version`; packaging rejects a CLI/App version mismatch. Signed release and warm dispatch results are recorded below.
+
+PR cancellation/doc filtering and main independent runs are statically checked; this task does not manufacture PR/main commits solely to exercise existing behavior.
+
+
+### Release blocker
+
+[v0.0.2 run 43121424733](https://github.com/alswl/apilot/actions/runs/43121424733) passed formatting, vet and race tests, then failed before signing: `security: SecKeychainItemImport: MAC verification failed during PKCS12 import (wrong password?)`. No release or downloads were published. The certificate payload/password Secrets must be repaired as a matching pair; no secret values were printed or read back. Existing `v0.0.2` tag is retained; rerun the failed jobs after repair.
+
+A local hidden-input repair wizard is available at `tmp/i18n-ci/repair-signing.sh` (ignored). It verifies the exported .p12 and the exact Developer ID identity using an isolated temporary keychain, updates only `APPLE_CERTIFICATE_P12_BASE64` and `APPLE_CERTIFICATE_PASSWORD` in `alswl/apilot`, then retries the existing run without retagging. It does not change the API key or signing identity. `bash -n` passes; stage-specific shellcheck passes with SC1087/SC2329 excluded for the unchanged wizard template's Readline string and unused helper functions. The interactive procedure was not executed; it requires the user's certificate file and hidden password.
+
+Warm dispatch [43121456108](https://github.com/alswl/apilot/actions/runs/43121456108) remained queued without a runner or executed steps for over five minutes and was cancelled to avoid leaving unnecessary work queued while credentials are unresolved. Remote warm-cache success is therefore unverified; the two local incremental builds passed. No p95 or speedup is inferred from one cold remote sample.
+
+Remaining risks: signed/notarized distribution is blocked by credentials; Intel and macOS 12 runtime support were not exercised; dynamic language changes in already-open native window titles were not tested (documented workflow is reopen the app). PR cancellation, document-only filtering, failing gate behavior and main/tag independence retain their existing workflow logic and were statically reviewed, not exhaustively exercised.
+
+Historical PR caches are scoped to their merge refs and cannot warm a new branch/tag. A successful trusted default-branch build can provide a cache for future branches/tags; no master push or merge was performed in this task. See [GitHub cache access restrictions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache). Cache usage after cold dispatch: two caches, 815,584,623 bytes, well below the default 10 GiB allowance.
