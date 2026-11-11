@@ -1,0 +1,8 @@
+
+# Private planning and agent instructions live in ../my-specs.
+/specs
+/.specify
+/AGENTS.md
+/CLAUDE.md
+/.claude/settings.local.json
+/.agents/skills/speckit-*
