@@ -4,7 +4,7 @@ Branch: `feat/i18n-release`. Reference: sibling `chatta` CI/tag release workflow
 
 ## Interface
 
-138 messages in English and Simplified Chinese, including menus, tasks, observers, settings, CLI installation and notification titles. MyGo resolves the macOS preferred app language; unsupported languages fall back to English. Packaging declares both languages. Native MyGo controls load their Chinese translation too. User names, commands, logs, stored event summaries, service errors and CLI JSON remain unchanged; CLI help remains English.
+137 messages in English and Simplified Chinese, including menus, tasks, observers, settings, CLI installation and notification titles. MyGo resolves the macOS preferred app language; unsupported languages fall back to English. Packaging declares both languages. Native MyGo controls load their Chinese translation too. User names, commands, logs, stored event summaries, service errors and CLI JSON remain unchanged; CLI help remains English.
 
 Catalog coverage, placeholder counts, static translation-call coverage and both languages' empty task/history views pass. Existing UI navigation assertions follow the active language. `go test -race ./...`, `go vet ./...`, YAML parsing and `git diff --check` pass. actionlint was unavailable.
 

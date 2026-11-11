@@ -12,7 +12,7 @@ fi
 test -d "$app_path"
 test -x bin/apilot
 codesign --verify --deep --strict "$app_path"
-./bin/apilot version --json > /dev/null
+./bin/apilot version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("packaging/mygo.json").read_text())["version"], "CLI and App versions must match"'
 mkdir -p "$output_dir"
 # MyGo builds the drag-to-Applications image together with the App.
 version=$(python3 -c 'import json; print(json.load(open("packaging/mygo.json"))["version"])')

@@ -10,6 +10,7 @@ import (
 	"github.com/alswl/apilot/internal/runner"
 	"github.com/alswl/apilot/internal/schedule"
 	"github.com/alswl/apilot/internal/storage"
+	"github.com/alswl/apilot/internal/version"
 	"os"
 	"path/filepath"
 	"sort"
@@ -167,7 +168,7 @@ func (s *Service) Status() map[string]any {
 	if s.stopping {
 		state = "stopping"
 	}
-	return map[string]any{"app_version": "0.1.0-dev", "protocol_version": 1, "state": state, "running_count": len(s.running), "observer_running_count": len(s.observing), "attention_count": n, "last_error": s.lastError}
+	return map[string]any{"app_version": version.Version, "protocol_version": 1, "state": state, "running_count": len(s.running), "observer_running_count": len(s.observing), "attention_count": n, "last_error": s.lastError}
 }
 func (s *Service) taskLocked(ref string) (model.Task, error) {
 	if t, ok := s.tasks[ref]; ok {
