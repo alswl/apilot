@@ -1,41 +1,78 @@
-<img src="resources/icon.png" width="88" height="88" alt="apilot icon" />
+<div align="center">
+
+<img src="resources/icon.png" width="96" height="96" alt="Apilot icon" />
 
 # Apilot — Agent Pilot
 
-A lightweight, agent-friendly automation sidecar for macOS.
+**A lightweight, agent-friendly automation sidecar for macOS.**
 
-Apilot schedules local commands while its App is open. Close the window to keep it in the menu bar; choose Quit to stop scheduling and terminate managed tasks. Tasks, history and settings stay on this Mac. No account, cloud service or separate daemon.
+[![Build macOS](https://github.com/alswl/apilot/actions/workflows/build.yml/badge.svg)](https://github.com/alswl/apilot/actions/workflows/build.yml)
 
-## Downloads
+[Install](#install) · [Quick start](#quick-start) · [CLI](#cli) · [Build](#build-from-source) · [Documentation](#documentation)
 
-- Tagged builds: [GitHub Releases](https://github.com/alswl/apilot/releases), with a drag-to-Applications DMG, App ZIP, standalone CLI archive and SHA256SUMS.
-- Development builds: [Build macOS Actions](https://github.com/alswl/apilot/actions/workflows/build.yml). Open a successful run and download its `apilot-macos-arm64-RUN_ID-ATTEMPT` artifact. GitHub sign-in is required; artifacts expire after 7 days.
+</div>
 
-Downloads currently target Apple Silicon only. Unzip the artifact, open `apilot-macos-arm64.dmg` and drag the App into Applications. The CLI archive preserves executable permissions. Verify checksums with `shasum -a 256 --check SHA256SUMS`.
+Run local commands on a schedule, check their history, and read their logs from a small menu-bar app or the terminal. Apilot works on its own and alongside Codex, Claude Code, Pi or herdr. It needs no account, cloud service or specific agent runtime.
 
-Development builds are ad-hoc signed and not notarized; macOS may require explicit approval before opening the App. Release signing/notarization can be enabled with repository Secrets; see [distribution setup](docs/distribution.md). No certificate or private key is committed.
+> [!IMPORTANT]
+> **Open the App to run the scheduler. Quit the App to stop it.** Closing a window keeps Apilot in the menu bar. The CLI connects to the running App; it never starts a scheduler or background daemon.
 
-## Build and launch
+## Features
 
-Requires macOS 12+, Xcode Command Line Tools and Go 1.27.3. An installed Go 1.26.5 can bootstrap the required toolchain using go.mod/GOTOOLCHAIN; `.tool-versions` selects that installed bootstrap. Dependency downloads require network access. Local command execution does not require a network connection.
+- **Local automation:** five-field cron, fixed intervals and manual runs, with live task updates.
+- **Menu-bar controls:** run tasks, stop active work and toggle automatic schedules without opening the main window.
+- **History and logs:** execution status, timing, exit codes, separate stdout/stderr and live log following.
+- **First-class CLI:** task management, versioned JSON, predictable exit codes and noninteractive operation.
+- **Read-only observation:** poll external CLI tools, retain their latest result and report state changes.
+- **Native integration:** system menus, compact management tabs, notifications and optional login launch.
+
+Task definitions, settings and execution history stay in local SQLite. Apilot is a sidecar for local automation; agent reasoning, orchestration and messaging remain with your existing tools.
+
+## Install
+
+Published builds are available from [GitHub Releases](https://github.com/alswl/apilot/releases). Download `apilot-macos-arm64.dmg`, open it and drag **Apilot** into **Applications**.
+
+> [!NOTE]
+> The first `v0.0.1` release is pending its [release workflow](https://github.com/alswl/apilot/actions/runs/43058323029). Release assets and successful Apple notarization are not yet verified. Development builds are ad-hoc signed and are not notarized.
+
+Downloads currently target **Apple Silicon**. The configured minimum is macOS 12; that version and Intel Macs have not been validated.
+
+1. Open `/Applications/Apilot.app`. It starts in the menu bar.
+2. Accept the first-launch CLI installation offer, or choose **设置… → 命令行工具…** later.
+3. Check the connection:
+
+   ```sh
+   apilot status
+   ```
+
+The installer creates `~/.local/bin/apilot` as a link to the App's bundled CLI. It needs no administrator access and does not overwrite an existing tool. If your shell cannot find it, add this to `~/.zshrc`:
 
 ```sh
-make build app
-open build/darwin-arm64/Apilot.app
-./bin/apilot status
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-The default build uses the current architecture. The arm64 App has been built and run locally; macOS 12 and Intel Macs have not been tested. The bundle uses ad-hoc signing for local use. Developer ID signing and notarization are available for tagged CI builds after credential setup; live notarization has not been verified.
+Development downloads are under [Actions](https://github.com/alswl/apilot/actions/workflows/build.yml): choose a successful run and download its artifact. These require GitHub sign-in and expire after seven days. Downloads also include an App ZIP, standalone CLI archive and `SHA256SUMS`; verify downloaded files with `shasum -a 256 --check SHA256SUMS`.
 
-To install, copy the App into Applications and accept the first-launch CLI installation offer, or open it later from Settings → 命令行工具. The CLI connects to the running App and never starts another scheduler. With the App closed, `apilot status --json` returns `APP_NOT_RUNNING` and exit code 3.
+## Quick start
 
-## Small native window
+Create a harmless hourly task and run it immediately:
 
-The main window has **任务 / 历史 / 观察** tabs. Open a task for its command, schedule and history; open a run to read its logs. New and edited tasks use a sheet. Settings open separately through the menu or `⌘,`. The main window starts at 640×480 and supports a narrower layout.
+```sh
+apilot task add hello --interval 1h -- /bin/echo "Hello from Apilot"
+apilot task run hello --json
+apilot run list --task hello --limit 5 --json
+apilot logs RUN_ID
+```
 
-Task commands use an executable and separate arguments. Choose Shell explicitly to use `/bin/zsh -lc`. A disabled task can still be run manually. The automatic schedule and task can be enabled independently. Defaults: no overlap for the same task, four concurrent tasks, 30-minute timeout, 30-day history retention and 50 MiB per stdout/stderr file. Capacity conflicts are recorded as skipped; missed schedules are not replayed.
+Replace `RUN_ID` with the ID returned by `task run`. Triggering returns immediately; use `apilot run show RUN_ID --json` to check completion.
+
+In the menu bar, each shortcut task has **立即运行**, **自动运行** when scheduled, and **编辑…**. **新建任务…** opens the task editor. **全部任务…** opens the **任务 / 历史 / 观察** tabs; select a run to read its logs. Running work and pending reminders appear when relevant, and **执行历史** lists recent completed runs. The menu previews up to five tasks; the complete list remains in the management window.
+
+Choose **设置…** or press `⌘,` for notifications, timeouts, concurrency and retention. Reopen the App to recover the management window if its menu-bar icon is hidden.
 
 ## CLI
+
+Schedule a coding-agent command:
 
 ```sh
 apilot task add daily-review \
@@ -44,67 +81,90 @@ apilot task add daily-review \
   -- codex exec "Review today's changes"
 
 apilot task list --json
+apilot task show daily-review --json
+apilot task update daily-review --timeout 10m
 apilot task run daily-review --json
-apilot run list --task daily-review --limit 20 --json
 apilot run show RUN_ID --json
 apilot logs RUN_ID --stream stderr
 apilot logs RUN_ID --follow
 apilot run stop RUN_ID
-apilot task update daily-review --timeout 10m
 apilot task disable daily-review
+apilot task enable daily-review
 apilot task remove daily-review
-apilot doctor --json
 ```
 
-Use `--json` **before** the `--` command separator; anything after the separator is a task argument. JSON fields are versioned, timestamps use UTC and unknown execution times/exit codes are null. `task run` returns the admitted Run immediately; poll `run show` for its final result. A skipped run is still a successfully recorded trigger.
+Commands use an executable and separate arguments. For shell features, explicitly supply a shell, such as `-- /bin/zsh -lc 'your script'`; the GUI also offers Shell mode. A disabled task can still run manually.
+
+> [!TIP]
+> Finder's environment, including `PATH`, can differ from your terminal's. Prefer absolute executable paths when needed. CLI-created tasks default to your current directory; GUI tasks default to your home directory.
+
+### Automation contract
+
+- Put `--json` **before** the executable separator `--`; everything after it belongs to the task command.
+- Responses use `protocol_version`, `data` and `error`. Timestamps use UTC; unknown values are `null`.
+- `task run` returns an admitted Run, not its eventual command exit code. Poll the Run's status; a recorded `skipped` trigger also returns successfully.
+- With the App closed, `apilot status --json` returns error code `APP_NOT_RUNNING` and exits with code `3`.
+
+| CLI exit code | Meaning |
+| --- | --- |
+| `0` | Request succeeded |
+| `1` | Other failure |
+| `2` | Invalid argument |
+| `3` | App not running |
+| `4` | Object not found |
+| `5` | Conflict or stale revision |
+| `6` | IPC unavailable, timeout or protocol mismatch |
+
+Use `apilot --help`, `apilot task add --help` or `apilot doctor --json` for command help and local diagnostics.
+
+### Observe an external tool
 
 ```sh
 apilot observe add herdr --interval 30s --output json -- herdr status --json
 apilot observe list --json
 apilot observe disable herdr
-apilot settings show --json
-apilot settings update --max-concurrent 2 --notify-success=false
 apilot event list --unread --json
 apilot event ack EVENT_ID
 ```
 
-An observer records its latest check, not Task Run history. Its exit code determines health; JSON mode also requires valid bounded JSON. Observers have a separate execution slot and never repair or control external tools automatically. Users must choose read-only commands.
+Choose read-only commands. An observer's exit code determines health; JSON mode also requires valid bounded JSON. Observers retain their latest check, use a separate concurrency slot and never automatically repair or control external tools.
 
-For credentials, use `--env-file PATH`, with one literal `KEY=VALUE` per line. Environment values are not returned by list/show or automatically logged. Explicit environment definitions are stored in the private local database; they are not encrypted. Task commands can print secrets themselves, so treat logs as private and avoid putting credentials in command arguments.
+## Execution and local data
 
-The App inherits the environment from its launch context. Finder's PATH may differ from your shell; prefer absolute executable paths. CLI-created tasks default to the CLI's current directory; GUI tasks visibly default to the user's home directory. Shell startup files are only used when explicitly choosing Shell mode.
+Defaults are **four concurrent tasks**, a **30-minute timeout**, **30-day history retention** and **50 MiB per log stream**. The same task cannot overlap itself. Capacity conflicts are recorded as skipped, missed schedules are not replayed, and Apilot does not prevent sleep.
 
-## Data and execution
+On Quit, Apilot stops scheduling and cancels managed work. A finite per-run helper handles process-group cleanup if the App crashes; unfinished records recover as `interrupted` on restart. Deliberately detached processes and helpers that are themselves killed fall outside this cleanup guarantee.
 
-Data: `~/Library/Application Support/apilot/apilot.db`, with logs below `logs/`. The App owns the SQLite write connection and a private Unix Socket. `APILOT_DATA_DIR` selects a separate local profile, primarily useful for isolated testing; CLI and App must use the same value.
+Data lives in `~/Library/Application Support/apilot/`: `apilot.db` holds definitions and history, and `logs/` holds output. Deleting a task preserves its history and never deletes its working directory. `APILOT_DATA_DIR` selects an isolated profile; App and CLI must use the same value.
 
-Every active Run has a finite execution helper inside the App binary. It has no scheduler, database or management server. If the App disappears, the helper terminates the command's process group and exits. On restart, unfinished Runs become interrupted, with unknown actual finish times left null. Processes deliberately detaching into another process group, or the execution helper itself being killed, are limitations.
+Use `--env-file PATH` for explicit `KEY=VALUE` environment definitions. Values are omitted from normal task list/show output and are not automatically logged, but are stored unencrypted in the private database. Commands can print secrets themselves; keep logs private and avoid credentials in command arguments.
 
-Deleting a task keeps its history and never deletes its working directory. Stop an active run before deleting its task. Log output is capped per stream and continues to drain after truncation. History cleanup only affects App-owned terminal records and files.
+## Build from source
 
-## Validation
+Requires macOS, Xcode Command Line Tools and Go. The project pins **Go 1.27.3** through `go.mod` and the Makefile; toolchain and dependency downloads need network access.
 
 ```sh
-make test
-make race
-make verify-ui
-make verify-lifecycle
+git clone https://github.com/alswl/apilot.git
+cd apilot
+make app
+open build/darwin-arm64/Apilot.app
+./bin/apilot status
 ```
 
-These checks use disposable data. See [verification results](docs/verification/final.md), [architecture](docs/architecture.md) and [known limitations](docs/known-limitations.md). Runtime screenshots live in ignored `tmp/` and are not part of the source distribution.
+On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-0.0.1-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
 
-License: [MIT](LICENSE).
+```sh
+make test               # Core, storage, IPC, CLI and UI tests
+make race               # Race-enabled suite
+make verify-ui          # Packaged native UI probe
+make verify-lifecycle   # Process cleanup and restart checks
+```
 
-## CI and release policy
+Verification commands use disposable data. The Go core is separate from MyGo UI: `internal/app` owns application behavior, `internal/storage` owns SQLite, `internal/runner` executes commands, and `internal/ipc` serves the CLI over a private Unix Socket.
 
-One standard macOS arm64 runner runs vet, the full race-enabled test suite and the App build. Go's setup action caches module downloads and compilation. The App is built once; the CI does not also build the unused development App binary. Pure documentation changes skip this workflow. PRs keep only their newest run; each default-branch push gets its own run. Downloads are compressed before upload and retained for 7 days.
+## Documentation
 
-The workflow runs on PRs, relevant pushes to `master`, `v*` tags and manual dispatch. After merging it, push a tag matching the version in `packaging/mygo.json` to publish a GitHub Release. The Linux publication job reuses that run's verified files; it never rebuilds the App. Tag publication requires an intentional tag push and has not been exercised by the initial PR build.
-
-### 菜单栏与安装
-
-打开 DMG，将 Apilot 拖入 Applications；启动后常驻菜单栏。任务菜单可直接运行、停止、开关自动运行或编辑，新建任务也无需先打开主窗口。「全部任务」提供任务 / 历史 / 观察三个 tab。
-
-首次启动提供 CLI 安装入口，将 App 内的工具链接到 `~/.local/bin/apilot`，不需要管理员权限，也不覆盖已有文件。若终端找不到命令，将 `export PATH="$HOME/.local/bin:$PATH"` 加入 `~/.zshrc`。可随时从设置的「命令行工具」重新打开安装入口。
-
-DMG、Developer ID 签名和自动公证的配置见 [分发说明](docs/distribution.md)。开发构建保持临时签名；配置 Apple 凭据并启用后，仅正式标签构建执行签名与公证。
+- [Architecture](docs/architecture.md) — ownership, scheduling, IPC and process lifecycle.
+- [Distribution](docs/distribution.md) — CI artifacts, Developer ID signing and notarization setup.
+- [Verification](docs/verification/final.md) and [native menu checks](docs/verification/native-menu.md) — measured behavior and test boundaries.
+- [Known limitations](docs/known-limitations.md) — including unverified OS integration, sleep/resume and accessibility behavior.
