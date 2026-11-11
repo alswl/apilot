@@ -1,0 +1,29 @@
+GO ?= go
+export GOTOOLCHAIN := go1.27.3
+export CGO_ENABLED := 1
+
+.PHONY: test race cli build app icons verify-ui verify-lifecycle verify
+
+icons:
+	$(GO) run packaging/render-icons.go
+
+test:
+	$(GO) test ./...
+race:
+	$(GO) test -race ./...
+cli:
+	mkdir -p bin
+	$(GO) build -o bin/apilot ./cmd/apilot
+build: cli
+	$(GO) build -o bin/apilot-app ./cmd/apilot-app
+MYGO_BUILD_FLAGS ?= -skip-notarize
+app: cli
+	mkdir -p resources/darwin/bin
+	cp bin/apilot resources/darwin/bin/apilot
+	$(GO) tool mygo build $(MYGO_BUILD_FLAGS)
+verify-ui: app
+	data_dir=$$(mktemp -d); trap 'rm -rf "$$data_dir"' EXIT; APILOT_DATA_DIR="$$data_dir" build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot --verify-lifecycle
+
+verify-lifecycle: build app
+	APILOT_VERIFY_APP="$(CURDIR)/build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot" scripts/verify-lifecycle.sh
+verify: test race verify-lifecycle
