@@ -228,8 +228,11 @@ func (s *windowState) showSettings() {
 					ui.Checkbox(c, &v.NotifyFailure, "任务失败时通知")
 					ui.Checkbox(c, &v.NotifySuccess, "任务成功时通知")
 					ui.Checkbox(c, &v.NotifyObserver, "观察状态变化时通知")
+					if ui.Button(c, "命令行工具…").Clicked() {
+						s.showCLI()
+					}
 					if loginSupported {
-						if ui.Checkbox(c, &loginEnabled, "登录时打开 apilot").Changed() {
+						if ui.Checkbox(c, &loginEnabled, "登录时打开 Apilot").Changed() {
 							wanted := loginEnabled
 							go func() {
 								err := mygo.App.SetOpenAtLogin(wanted)

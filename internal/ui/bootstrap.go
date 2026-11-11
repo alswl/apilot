@@ -29,6 +29,7 @@ type windowState struct {
 	win              *mygo.Window
 	settingsWin      *mygo.Window
 	cliWin           *mygo.Window
+	attentionWin     *mygo.Window
 	tray             *mygo.Tray
 	tab              int
 	tasks            []model.Task
@@ -58,7 +59,7 @@ func Run(probe bool) error {
 	defer server.Close()
 	s := &windowState{service: service, followLogs: true}
 	appUI := mygo.App
-	appUI.SetName("apilot")
+	appUI.SetName("Apilot")
 	appUI.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -81,16 +82,21 @@ func Run(probe bool) error {
 		cancel()
 		go func() { server.Close(); _ = service.Close(); mygo.RunOnMain(func() { allowQuit = true; appUI.Quit() }) }()
 	})
+	appUI.OnActivate(func(visible bool) {
+		if !visible && s.tray != nil {
+			s.show()
+		}
+	})
 	appUI.OnWindowAllClosed(func() { log.Print("window closed; app remains running") })
 	appUI.OnQuit(func() { cancel(); log.Print("app quit") })
 	mygo.Power.OnSuspend(func() { service.Suspend() })
 	mygo.Power.OnResume(func() { service.Resume() })
 	appUI.WhenReady(func() {
 		appUI.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
-			{Role: mygo.RoleEditMenu}, {Label: "窗口", Submenu: []*mygo.MenuItem{{Label: "打开 apilot", Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
+			{Label: "Apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
+			{Role: mygo.RoleEditMenu}, {Label: "窗口", Submenu: []*mygo.MenuItem{{Label: "打开 Apilot", Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
 		}))
-		s.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "apilot", Icon: menuBarIcon, IconIsTemplate: true, ToolTip: "apilot"})
+		s.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "apilot", Icon: menuBarIcon, IconIsTemplate: true, ToolTip: "Apilot"})
 		if err != nil {
 			allowQuit = true
 			appUI.Quit()
@@ -165,7 +171,7 @@ func Run(probe bool) error {
 }
 func (s *windowState) show() {
 	if s.win == nil || s.win.IsDestroyed() {
-		s.win = mygo.NewWindow(mygo.WindowOptions{Title: "apilot", Width: 640, Height: 480, MinWidth: 480, MinHeight: 360, StateKey: "main", Content: ui.View(s.view)})
+		s.win = mygo.NewWindow(mygo.WindowOptions{Title: "Apilot", Width: 640, Height: 480, MinWidth: 480, MinHeight: 360, StateKey: "main", Content: ui.View(s.view)})
 	}
 	s.win.Show()
 }
@@ -174,6 +180,9 @@ func (s *windowState) update(fn func()) {
 		fn()
 		if s.win != nil && !s.win.IsDestroyed() {
 			s.win.Invalidate()
+		}
+		if s.attentionWin != nil && !s.attentionWin.IsDestroyed() {
+			s.attentionWin.Invalidate()
 		}
 	})
 }
@@ -277,10 +286,7 @@ func (s *windowState) updateTray(status map[string]any) {
 	for _, t := range s.tasks {
 		signature += fmt.Sprintf("%s:%d;", t.ID, t.Revision)
 	}
-	for i, r := range s.runs {
-		if i >= 3 {
-			break
-		}
+	for _, r := range s.runs {
 		signature += r.ID + r.Status
 	}
 	for _, e := range s.events {
@@ -294,71 +300,6 @@ func (s *windowState) updateTray(status map[string]any) {
 	s.tray.SetMenu(mygo.NewMenu(s.trayItems(status)))
 }
 
-func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
-	menu := []*mygo.MenuItem{{Label: fmt.Sprintf("apilot · %v 运行中 · %v 待关注", status["running_count"], status["attention_count"]), Disabled: true}}
-	unread := 0
-	for _, e := range s.events {
-		if e.AcknowledgedAt == nil {
-			unread++
-			e := e
-			menu = append(menu, &mygo.MenuItem{Label: "关注：" + e.Summary, Click: func(*mygo.MenuItem, *mygo.Window) { s.selectEvent(e); s.show() }})
-			if unread >= 3 {
-				break
-			}
-		}
-	}
-	for i, r := range s.runs {
-		if i >= 3 {
-			break
-		}
-		r := r
-		menu = append(menu, &mygo.MenuItem{Label: statusText(r.Status) + " · " + r.TaskName, Click: func(*mygo.MenuItem, *mygo.Window) {
-			s.selectedTask = ""
-			s.selectedObserver = ""
-			s.selectedRun = r.ID
-			s.tab = 1
-			s.show()
-		}})
-	}
-	if s.err != "" {
-		menu = append(menu, &mygo.MenuItem{Label: "操作失败：" + s.err, Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }})
-	}
-	active := []*mygo.MenuItem{}
-	for _, r := range s.runs {
-		if !r.Active() {
-			continue
-		}
-		r := r
-		active = append(active, &mygo.MenuItem{Label: "停止「" + r.TaskName + "」", Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) {
-			s.action(func() error { _, e := s.service.StopRun(r.ID); return e })
-		}})
-	}
-	if len(active) > 0 {
-		menu = append(menu, mygo.Separator(), &mygo.MenuItem{Label: "正在运行", Submenu: active})
-	}
-	menu = append(menu, mygo.Separator())
-	for _, t := range s.tasks {
-		t := t
-		items := []*mygo.MenuItem{
-			{Label: "立即运行", Disabled: s.busy || taskActive(s.runs, t.ID), Click: func(*mygo.MenuItem, *mygo.Window) {
-				s.action(func() error { _, e := s.service.RunTask(t.ID, "manual"); return e })
-			}},
-		}
-		if t.Schedule != nil {
-			items = append(items, &mygo.MenuItem{Label: "自动运行", Type: mygo.MenuItemCheckbox, Checked: t.Enabled && t.Schedule.Enabled, Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) {
-				s.action(func() error { return s.setAutomatic(t) })
-			}})
-		}
-		items = append(items, &mygo.MenuItem{Label: "编辑…", Click: func(*mygo.MenuItem, *mygo.Window) { s.editTask(&t) }})
-		menu = append(menu, &mygo.MenuItem{ID: "task-" + t.ID, Label: t.Name, Submenu: items})
-	}
-	menu = append(menu, &mygo.MenuItem{ID: "new-task", Label: "新建任务…", Click: func(*mygo.MenuItem, *mygo.Window) { s.editTask(nil) }}, mygo.Separator(),
-		&mygo.MenuItem{ID: "manage", Label: "任务与历史…", Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }},
-		&mygo.MenuItem{ID: "install-cli", Label: "安装命令行工具…", Click: func(*mygo.MenuItem, *mygo.Window) { s.showCLI() }},
-		&mygo.MenuItem{Label: "设置…", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, &mygo.MenuItem{Role: mygo.RoleQuit})
-
-	return menu
-}
 func statusText(v string) string {
 	switch v {
 	case "queued":

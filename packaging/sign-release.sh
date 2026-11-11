@@ -53,10 +53,10 @@ PY
 # MyGo signs nested executables, enables hardened runtime/timestamps, builds
 # the DMG, submits it once, and staples the DMG and original App bundle.
 make app MYGO_BUILD_FLAGS=
-xcrun stapler validate build/darwin-arm64/apilot.app
+xcrun stapler validate build/darwin-arm64/Apilot.app
 version=$(python3 -c 'import json; print(json.load(open("packaging/mygo.json"))["version"])')
 xcrun stapler validate "build/darwin-arm64/apilot-$version-arm64.dmg"
-spctl --assess --type execute --verbose build/darwin-arm64/apilot.app
+spctl --assess --type execute --verbose build/darwin-arm64/Apilot.app
 # Distribute the very same signed CLI that Apple scanned inside the App.
-cp build/darwin-arm64/apilot.app/Contents/Resources/bin/apilot bin/apilot
+cp build/darwin-arm64/Apilot.app/Contents/Resources/bin/apilot bin/apilot
 codesign --verify --strict bin/apilot

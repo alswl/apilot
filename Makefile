@@ -22,8 +22,8 @@ app: cli
 	cp bin/apilot resources/darwin/bin/apilot
 	$(GO) tool mygo build $(MYGO_BUILD_FLAGS)
 verify-ui: app
-	data_dir=$$(mktemp -d); trap 'rm -rf "$$data_dir"' EXIT; APILOT_DATA_DIR="$$data_dir" build/darwin-arm64/apilot.app/Contents/MacOS/apilot --verify-lifecycle
+	data_dir=$$(mktemp -d); trap 'rm -rf "$$data_dir"' EXIT; APILOT_DATA_DIR="$$data_dir" build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot --verify-lifecycle
 
 verify-lifecycle: build app
-	APILOT_VERIFY_APP="$(CURDIR)/build/darwin-arm64/apilot.app/Contents/MacOS/apilot" scripts/verify-lifecycle.sh
+	APILOT_VERIFY_APP="$(CURDIR)/build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot" scripts/verify-lifecycle.sh
 verify: test race verify-lifecycle

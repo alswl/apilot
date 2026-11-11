@@ -16,7 +16,7 @@ func Call(path, method string, params any) (json.RawMessage, error) {
 	c, e := net.DialTimeout("unix", path, 500*time.Millisecond)
 	if e != nil {
 		if errors.Is(e, os.ErrNotExist) || errors.Is(e, syscall.ECONNREFUSED) {
-			return nil, model.Err("APP_NOT_RUNNING", "Open apilot.app and retry")
+			return nil, model.Err("APP_NOT_RUNNING", "Open Apilot.app and retry")
 		}
 		return nil, model.Err("IPC_UNAVAILABLE", e.Error())
 	}

@@ -1,10 +1,10 @@
 <img src="resources/icon.png" width="88" height="88" alt="apilot icon" />
 
-# apilot — Agent Pilot
+# Apilot — Agent Pilot
 
 A lightweight, agent-friendly automation sidecar for macOS.
 
-apilot schedules local commands while its App is open. Close the window to keep it in the menu bar; choose Quit to stop scheduling and terminate managed tasks. Tasks, history and settings stay on this Mac. No account, cloud service or separate daemon.
+Apilot schedules local commands while its App is open. Close the window to keep it in the menu bar; choose Quit to stop scheduling and terminate managed tasks. Tasks, history and settings stay on this Mac. No account, cloud service or separate daemon.
 
 ## Downloads
 
@@ -21,13 +21,13 @@ Requires macOS 12+, Xcode Command Line Tools and Go 1.27.3. An installed Go 1.26
 
 ```sh
 make build app
-open build/darwin-arm64/apilot.app
+open build/darwin-arm64/Apilot.app
 ./bin/apilot status
 ```
 
 The default build uses the current architecture. The arm64 App has been built and run locally; macOS 12 and Intel Macs have not been tested. The bundle uses ad-hoc signing for local use. Developer ID signing and notarization are available for tagged CI builds after credential setup; live notarization has not been verified.
 
-To install, copy the App into Applications and accept the first-launch CLI installation offer, or open it later from the menu bar. The CLI connects to the running App and never starts another scheduler. With the App closed, `apilot status --json` returns `APP_NOT_RUNNING` and exit code 3.
+To install, copy the App into Applications and accept the first-launch CLI installation offer, or open it later from Settings → 命令行工具. The CLI connects to the running App and never starts another scheduler. With the App closed, `apilot status --json` returns `APP_NOT_RUNNING` and exit code 3.
 
 ## Small native window
 
@@ -103,8 +103,8 @@ The workflow runs on PRs, relevant pushes to `master`, `v*` tags and manual disp
 
 ### 菜单栏与安装
 
-打开 DMG，将 apilot 拖入 Applications；启动后常驻菜单栏。任务菜单可直接运行、停止、开关自动运行或编辑，新建任务也无需先打开主窗口。「任务与历史」提供任务 / 历史 / 观察三个 tab。
+打开 DMG，将 Apilot 拖入 Applications；启动后常驻菜单栏。任务菜单可直接运行、停止、开关自动运行或编辑，新建任务也无需先打开主窗口。「全部任务」提供任务 / 历史 / 观察三个 tab。
 
-首次启动提供 CLI 安装入口，将 App 内的工具链接到 `~/.local/bin/apilot`，不需要管理员权限，也不覆盖已有文件。若终端找不到命令，将 `export PATH="$HOME/.local/bin:$PATH"` 加入 `~/.zshrc`。可随时从菜单栏重新打开安装入口。
+首次启动提供 CLI 安装入口，将 App 内的工具链接到 `~/.local/bin/apilot`，不需要管理员权限，也不覆盖已有文件。若终端找不到命令，将 `export PATH="$HOME/.local/bin:$PATH"` 加入 `~/.zshrc`。可随时从设置的「命令行工具」重新打开安装入口。
 
 DMG、Developer ID 签名和自动公证的配置见 [分发说明](docs/distribution.md)。开发构建保持临时签名；配置 Apple 凭据并启用后，仅正式标签构建执行签名与公证。

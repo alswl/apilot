@@ -70,7 +70,7 @@ func TestMenuOffersDailyActionsWithoutMainWindow(t *testing.T) {
 		}
 	}
 	walk(items)
-	for _, label := range []string{"停止「review」", "立即运行", "自动运行", "新建任务…", "安装命令行工具…", "任务与历史…"} {
+	for _, label := range []string{"停止「review」", "立即运行", "自动运行", "新建任务…", "全部任务…", "设置…"} {
 		if found[label] == nil {
 			t.Fatalf("missing menu action %q", label)
 		}

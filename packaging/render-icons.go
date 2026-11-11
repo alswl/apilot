@@ -57,24 +57,37 @@ func main() {
 	master := readPNG("resources/brand/apilot-sunset.png")
 	template := readPNG("resources/brand/apilot-template.png")
 	transparent, ink := 0, 0
+	art := image.Rectangle{}
 	for y := template.Bounds().Min.Y; y < template.Bounds().Max.Y; y++ {
 		for x := template.Bounds().Min.X; x < template.Bounds().Max.X; x++ {
 			_, _, _, a := template.At(x, y).RGBA()
 			if a == 0 {
 				transparent++
 			}
+			if a >= 0x8000 {
+				art = art.Union(image.Rect(x, y, x+1, y+1))
+			}
 			if a > 0 {
 				ink++
 			}
 		}
 	}
-	if transparent == 0 || ink == 0 {
+	if transparent == 0 || ink == 0 || art.Empty() {
 		panic("menu-bar master must contain both transparent space and artwork")
 	}
 	writePNG("resources/icon.png", appIcon(master, 1024))
 	writePNG("internal/ui/assets/app.png", appIcon(master, 128))
-	tray := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	xdraw.CatmullRom.Scale(tray, tray.Bounds(), template, template.Bounds(), draw.Src, nil)
+	// MyGo displays tray images at 18pt; export at 2x with a half-point inset.
+	const size, inset = 36, 1
+	tray := image.NewNRGBA(image.Rect(0, 0, size, size))
+	width, height := size-2*inset, size-2*inset
+	if art.Dx() > art.Dy() {
+		height = width * art.Dy() / art.Dx()
+	} else {
+		width = height * art.Dx() / art.Dy()
+	}
+	box := image.Rect((size-width)/2, (size-height)/2, (size+width)/2, (size+height)/2)
+	xdraw.CatmullRom.Scale(tray, box, template, art, draw.Src, nil)
 	// A template is alpha-only; discard any residual generated color.
 	for i := 0; i < len(tray.Pix); i += 4 {
 		tray.Pix[i] = 0

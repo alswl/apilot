@@ -23,7 +23,7 @@ func bundledCLI() (string, error) {
 	}
 	info, err := os.Stat(source)
 	if err != nil || info.IsDir() || info.Mode()&0111 == 0 {
-		return "", fmt.Errorf("未找到 App 内的命令行工具，请安装完整的 apilot.app")
+		return "", fmt.Errorf("未找到 App 内的命令行工具，请安装完整的 Apilot.app")
 	}
 	return source, nil
 }
@@ -80,7 +80,7 @@ func (s *windowState) showCLI() {
 		_ = os.WriteFile(filepath.Join(app.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
 		s.cliWin.Close()
 	}
-	s.cliWin = mygo.NewWindow(mygo.WindowOptions{Title: "apilot 命令行工具", Width: 500, Height: 350, MinWidth: 440, MinHeight: 330, Content: ui.View(func(c *ui.Context) {
+	s.cliWin = mygo.NewWindow(mygo.WindowOptions{Title: "Apilot 命令行工具", Width: 500, Height: 350, MinWidth: 440, MinHeight: 330, Content: ui.View(func(c *ui.Context) {
 		brandTheme(c)
 		ui.Column(c).Fill().Padding(20).Gap(14).Children(func() {
 			ui.Row(c).FillWidth().Gap(12).Children(func() {
