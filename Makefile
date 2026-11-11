@@ -13,8 +13,11 @@ cli:
 	$(GO) build -o bin/apilot ./cmd/apilot
 build: cli
 	$(GO) build -o bin/apilot-app ./cmd/apilot-app
-app:
-	$(GO) tool mygo build -skip-dmg -skip-notarize
+MYGO_BUILD_FLAGS ?= -skip-notarize
+app: cli
+	mkdir -p resources/darwin/bin
+	cp bin/apilot resources/darwin/bin/apilot
+	$(GO) tool mygo build $(MYGO_BUILD_FLAGS)
 verify-ui: app
 	data_dir=$$(mktemp -d); trap 'rm -rf "$$data_dir"' EXIT; APILOT_DATA_DIR="$$data_dir" build/darwin-arm64/apilot.app/Contents/MacOS/apilot --verify-lifecycle
 

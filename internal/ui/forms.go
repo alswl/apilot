@@ -69,6 +69,7 @@ func (s *windowState) editTask(t *model.Task) *taskForm {
 		}
 	}
 	f.win = mygo.NewWindow(mygo.WindowOptions{Title: title, Width: 560, Height: 520, MinWidth: 480, MinHeight: 360, Parent: s.win, Modal: true, Content: ui.View(func(c *ui.Context) {
+		brandTheme(c)
 		ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 			ui.Text(c, title).Bold().FontSize(17)
 			ui.Scroll(c).Grow(1).Children(func() {
@@ -216,6 +217,7 @@ func (s *windowState) showSettings() {
 	message := ""
 	busy := false
 	s.settingsWin = mygo.NewWindow(mygo.WindowOptions{Title: "设置", Width: 480, Height: 460, MinWidth: 420, MinHeight: 340, Content: ui.View(func(c *ui.Context) {
+		brandTheme(c)
 		ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {

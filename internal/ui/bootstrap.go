@@ -1,12 +1,8 @@
 package ui
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"log"
 	"math"
 	"os"
@@ -32,6 +28,7 @@ type windowState struct {
 	service          *app.Service
 	win              *mygo.Window
 	settingsWin      *mygo.Window
+	cliWin           *mygo.Window
 	tray             *mygo.Tray
 	tab              int
 	tasks            []model.Task
@@ -48,19 +45,6 @@ type windowState struct {
 	busy             bool
 }
 
-func trayIcon() []byte {
-	img := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	for y := 4; y < 28; y++ {
-		for x := 4; x < 28; x++ {
-			if (x-16)*(x-16)+(y-16)*(y-16) < 140 {
-				img.Set(x, y, color.Black)
-			}
-		}
-	}
-	var b bytes.Buffer
-	_ = png.Encode(&b, img)
-	return b.Bytes()
-}
 func Run(probe bool) error {
 	service, err := app.Open(app.DataDir())
 	if err != nil {
@@ -75,6 +59,7 @@ func Run(probe bool) error {
 	s := &windowState{service: service, followLogs: true}
 	appUI := mygo.App
 	appUI.SetName("apilot")
+	appUI.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var allowQuit bool
@@ -105,14 +90,25 @@ func Run(probe bool) error {
 			{Label: "apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: "设置…", Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
 			{Role: mygo.RoleEditMenu}, {Label: "窗口", Submenu: []*mygo.MenuItem{{Label: "打开 apilot", Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
 		}))
-		s.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "apilot", Icon: trayIcon(), IconIsTemplate: true, ToolTip: "apilot"})
+		s.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "apilot", Icon: menuBarIcon, IconIsTemplate: true, ToolTip: "apilot"})
 		if err != nil {
 			allowQuit = true
 			appUI.Quit()
 			return
 		}
 		log.Print("tray created")
-		s.show()
+		if !probe {
+			s.offerCLI()
+		}
+		if probe {
+			fmt.Printf("PROBE startup_main_window=%v\n", s.win != nil)
+			// Exercise the same management-window action used by the native menu.
+			for _, item := range s.trayItems(s.service.Status()) {
+				if item.ID == "manage" {
+					item.Click(item, nil)
+				}
+			}
+		}
 		s.refresh()
 		go s.poll(ctx)
 		if probe {
@@ -130,7 +126,13 @@ func Run(probe bool) error {
 						_ = os.WriteFile("tmp/"+name+".png", data, 0600)
 					}
 				}
-				mygo.RunOnMain(func() { s.win.SetSize(480, 360) })
+				mygo.RunOnMain(func() { s.showCLI() })
+				time.Sleep(300 * time.Millisecond)
+				capture("cli-install", s.cliWin)
+				mygo.RunOnMain(func() { s.cliWin.Close(); mygo.Theme.SetSource(mygo.ThemeDark) })
+				time.Sleep(300 * time.Millisecond)
+				capture("dark", s.win)
+				mygo.RunOnMain(func() { mygo.Theme.SetSource(mygo.ThemeSystem); s.win.SetSize(480, 360) })
 				time.Sleep(250 * time.Millisecond)
 				capture("narrow", s.win)
 				mygo.RunOnMain(func() {
@@ -271,7 +273,7 @@ func (s *windowState) poll(ctx context.Context) {
 	}
 }
 func (s *windowState) updateTray(status map[string]any) {
-	signature := fmt.Sprint(status)
+	signature := fmt.Sprint(status) + s.err + fmt.Sprint(s.busy)
 	for _, t := range s.tasks {
 		signature += fmt.Sprintf("%s:%d;", t.ID, t.Revision)
 	}
@@ -289,6 +291,10 @@ func (s *windowState) updateTray(status map[string]any) {
 	}
 	s.traySignature = signature
 
+	s.tray.SetMenu(mygo.NewMenu(s.trayItems(status)))
+}
+
+func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 	menu := []*mygo.MenuItem{{Label: fmt.Sprintf("apilot · %v 运行中 · %v 待关注", status["running_count"], status["attention_count"]), Disabled: true}}
 	unread := 0
 	for _, e := range s.events {
@@ -314,18 +320,44 @@ func (s *windowState) updateTray(status map[string]any) {
 			s.show()
 		}})
 	}
-	if len(s.tasks) > 0 {
-		items := []*mygo.MenuItem{}
-		for _, t := range s.tasks {
-			t := t
-			items = append(items, &mygo.MenuItem{Label: t.Name, Click: func(*mygo.MenuItem, *mygo.Window) {
+	if s.err != "" {
+		menu = append(menu, &mygo.MenuItem{Label: "操作失败：" + s.err, Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }})
+	}
+	active := []*mygo.MenuItem{}
+	for _, r := range s.runs {
+		if !r.Active() {
+			continue
+		}
+		r := r
+		active = append(active, &mygo.MenuItem{Label: "停止「" + r.TaskName + "」", Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) {
+			s.action(func() error { _, e := s.service.StopRun(r.ID); return e })
+		}})
+	}
+	if len(active) > 0 {
+		menu = append(menu, mygo.Separator(), &mygo.MenuItem{Label: "正在运行", Submenu: active})
+	}
+	menu = append(menu, mygo.Separator())
+	for _, t := range s.tasks {
+		t := t
+		items := []*mygo.MenuItem{
+			{Label: "立即运行", Disabled: s.busy || taskActive(s.runs, t.ID), Click: func(*mygo.MenuItem, *mygo.Window) {
 				s.action(func() error { _, e := s.service.RunTask(t.ID, "manual"); return e })
+			}},
+		}
+		if t.Schedule != nil {
+			items = append(items, &mygo.MenuItem{Label: "自动运行", Type: mygo.MenuItemCheckbox, Checked: t.Enabled && t.Schedule.Enabled, Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) {
+				s.action(func() error { return s.setAutomatic(t) })
 			}})
 		}
-		menu = append(menu, &mygo.MenuItem{Label: "运行任务", Submenu: items})
+		items = append(items, &mygo.MenuItem{Label: "编辑…", Click: func(*mygo.MenuItem, *mygo.Window) { s.editTask(&t) }})
+		menu = append(menu, &mygo.MenuItem{ID: "task-" + t.ID, Label: t.Name, Submenu: items})
 	}
-	menu = append(menu, mygo.Separator(), &mygo.MenuItem{Label: "打开主窗口", Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}, &mygo.MenuItem{Label: "设置…", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, &mygo.MenuItem{Role: mygo.RoleQuit})
-	s.tray.SetMenu(mygo.NewMenu(menu))
+	menu = append(menu, &mygo.MenuItem{ID: "new-task", Label: "新建任务…", Click: func(*mygo.MenuItem, *mygo.Window) { s.editTask(nil) }}, mygo.Separator(),
+		&mygo.MenuItem{ID: "manage", Label: "任务与历史…", Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }},
+		&mygo.MenuItem{ID: "install-cli", Label: "安装命令行工具…", Click: func(*mygo.MenuItem, *mygo.Window) { s.showCLI() }},
+		&mygo.MenuItem{Label: "设置…", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, &mygo.MenuItem{Role: mygo.RoleQuit})
+
+	return menu
 }
 func statusText(v string) string {
 	switch v {
@@ -347,6 +379,7 @@ func statusText(v string) string {
 	return v
 }
 func (s *windowState) view(c *ui.Context) {
+	brandTheme(c)
 	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 		if ui.Tabs(c, &s.tab, "任务", "历史", "观察").Changed() {
 			s.selectedTask = ""
@@ -383,6 +416,7 @@ func (s *windowState) taskList(c *ui.Context) {
 	})
 	if len(s.tasks) == 0 {
 		ui.Column(c).Fill().Center().Gap(12).Children(func() {
+			ui.Image(c, appMark).Size(64, 64)
 			ui.Text(c, "暂无任务")
 			if ui.PrimaryButton(c, "新建任务").Clicked() {
 				s.editTask(nil)
@@ -420,7 +454,7 @@ func (s *windowState) taskList(c *ui.Context) {
 							ui.Row(c).FillWidth().Gap(8).Children(func() {
 								ui.Text(c, t.Name).Grow(1)
 								if t.LastRun != nil {
-									ui.Text(c, statusText(t.LastRun.Status)).FontSize(12)
+									ui.Text(c, statusText(t.LastRun.Status)).FontSize(12).TextColor(resultColor(c, t.LastRun.Status))
 								}
 							})
 							ui.Text(c, planLabel(t)).FontSize(12).TextColor(c.Theme().TextMuted)
@@ -466,9 +500,9 @@ func (s *windowState) taskDetail(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).FillWidth().Gap(12).Children(func() {
 			ui.Text(c, planLabel(t))
-			on := t.Enabled
+			on := t.Enabled && (t.Schedule == nil || t.Schedule.Enabled)
 			if t.Schedule != nil && ui.Checkbox(c, &on, "自动运行").Changed() {
-				s.action(func() error { _, e := s.service.SetEnabled(t.ID, on); return e })
+				s.action(func() error { return s.setAutomatic(t) })
 			}
 			ui.Text(c, t.Executable).Selectable()
 			for _, arg := range t.Args {
@@ -512,7 +546,7 @@ func (s *windowState) runList(c *ui.Context) {
 				}
 				entry.Children(func() {
 					ui.Column(c).FillWidth().Gap(4).Children(func() {
-						ui.Text(c, r.TaskName+" · "+statusText(r.Status))
+						ui.Text(c, r.TaskName+" · "+statusText(r.Status)).TextColor(resultColor(c, r.Status))
 						ui.Text(c, r.CreatedAt.Local().Format("01-02 15:04:05")+" · "+triggerText(r.Trigger)).FontSize(12).TextColor(c.Theme().TextMuted)
 					})
 				})
@@ -541,7 +575,7 @@ func (s *windowState) runDetail(c *ui.Context) {
 		if ui.Button(c, "‹").Label("返回").Tooltip("返回").Clicked() {
 			s.selectedRun = ""
 		}
-		ui.Text(c, r.TaskName+" · "+statusText(r.Status)).Grow(1).Bold()
+		ui.Text(c, r.TaskName+" · "+statusText(r.Status)).TextColor(resultColor(c, r.Status)).Grow(1).Bold()
 		if r.Active() {
 			if ui.Button(c, "■").Label("停止运行").Tooltip("停止运行").Clicked() {
 				s.action(func() error { _, e := s.service.StopRun(r.ID); return e })
@@ -610,4 +644,24 @@ func (s *windowState) selectEvent(e model.AttentionEvent) {
 		s.selectedObserver = e.SourceID
 		s.tab = 2
 	}
+}
+
+func taskActive(runs []model.Run, taskID string) bool {
+	for _, r := range runs {
+		if r.TaskID == taskID && r.Active() {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *windowState) setAutomatic(t model.Task) error {
+	plan := *t.Schedule
+	on := !(t.Enabled && plan.Enabled)
+	plan.Enabled = on
+	_, err := s.service.SaveTask(t.ID, model.TaskInput{
+		Name: t.Name, Description: t.Description, Executable: t.Executable,
+		Args: t.Args, Cwd: t.Cwd, TimeoutMS: t.TimeoutMS, Enabled: on, Schedule: &plan,
+	}, t.Revision)
+	return err
 }

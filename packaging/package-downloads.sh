@@ -14,6 +14,11 @@ test -x bin/apilot
 codesign --verify --deep --strict "$app_path"
 ./bin/apilot version --json > /dev/null
 mkdir -p "$output_dir"
+# MyGo builds the drag-to-Applications image together with the App.
+version=$(python3 -c 'import json; print(json.load(open("packaging/mygo.json"))["version"])')
+dmg_path="build/darwin-arm64/apilot-$version-arm64.dmg"
+hdiutil verify "$dmg_path"
+cp "$dmg_path" "$output_dir/apilot-macos-arm64.dmg"
 rm -f "$output_dir/apilot-macos-arm64.zip" "$output_dir/apilot-cli-macos-arm64.tar.gz"
 ditto -c -k --sequesterRsrc --keepParent "$app_path" "$output_dir/apilot-macos-arm64.zip"
 tar -C bin -czf "$output_dir/apilot-cli-macos-arm64.tar.gz" apilot
@@ -34,14 +39,14 @@ info = {
     'platform': platform.platform(),
     'architecture': platform.machine(),
     'built_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    'signing': 'ad-hoc',
-    'notarized': False,
+    'signing': 'developer-id' if 'Authority=Developer ID Application:' in subprocess.run(['codesign', '-dv', 'build/darwin-arm64/apilot.app'], capture_output=True, text=True, check=True).stderr else 'ad-hoc',
+    'notarized': subprocess.run(['xcrun', 'stapler', 'validate', 'build/darwin-arm64/apilot.app'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0,
 }
 Path('dist/build-info.json').write_text(json.dumps(info, indent=2) + '\n')
 PY
 (
   cd "$output_dir"
-  shasum -a 256 apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz build-info.json > SHA256SUMS
+  shasum -a 256 apilot-macos-arm64.dmg apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz build-info.json > SHA256SUMS
   shasum -a 256 --check SHA256SUMS
 )
 

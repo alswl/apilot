@@ -13,6 +13,7 @@ on:
       - 'Makefile'
       - 'mygo.json'
       - 'packaging/**'
+      - 'resources/**'
       - 'scripts/**'
   pull_request:
     branches: [master]
@@ -25,6 +26,7 @@ on:
       - 'Makefile'
       - 'mygo.json'
       - 'packaging/**'
+      - 'resources/**'
       - 'scripts/**'
   workflow_dispatch:
 
@@ -88,10 +90,20 @@ jobs:
         run: go vet ./...
       - name: Test with race detector
         run: go test -race -vet=off ./...
-      - name: Build CLI
-        run: make cli
-      - name: Build App
+      - name: Build development App and DMG
+        if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.APPLE_SIGNING_ENABLED == 'true') }}
         run: make app
+      - name: Sign and notarize release App and DMG
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.APPLE_SIGNING_ENABLED == 'true'
+        timeout-minutes: 15
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: packaging/sign-release.sh
       - name: Package and verify downloads
         run: packaging/package-downloads.sh
       - name: Upload downloads
@@ -113,7 +125,7 @@ jobs:
             echo "[Download App, CLI and checksums]($ARTIFACT_URL) (GitHub sign-in required; retained 7 days)."
             echo
             echo "Go cache hit: $GO_CACHE_HIT"
-            echo 'The App is ad-hoc signed and is not notarized. Intel builds are not included.'
+            python3 -c 'import json; x=json.load(open("dist/build-info.json")); print("Signing: " + x["signing"] + "; notarized: " + str(x["notarized"]) + ". Apple Silicon only.")'
           } >> "$GITHUB_STEP_SUMMARY"
 
   release:
@@ -139,16 +151,17 @@ jobs:
         run: |
           cd dist
           sha256sum --check SHA256SUMS
-          printf '%s\n' \
-            'macOS Apple Silicon App and standalone CLI.' \
-            '' \
-            'The App is ad-hoc signed, not Developer ID signed or notarized. macOS may require explicit approval to open it.' \
-            '' \
-            'Verify downloads with SHA256SUMS. Build provenance is in build-info.json.' > /tmp/apilot-release-notes.md
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          info = json.loads(Path('build-info.json').read_text())
+          signing = 'Developer ID signed and notarized.' if info['notarized'] and info['signing'] == 'developer-id' else 'Ad-hoc signed; not notarized. macOS may require explicit approval.'
+          Path('/tmp/apilot-release-notes.md').write_text('macOS Apple Silicon. Open the DMG and drag apilot to Applications.\n\n' + signing + '\n\nVerify downloads with SHA256SUMS. Build provenance is in build-info.json.\n')
+          PY
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json --clobber
+            gh release upload "$RELEASE_TAG" apilot-macos-arm64.dmg apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json --clobber
           else
             gh release create "$RELEASE_TAG" --verify-tag --title "apilot $RELEASE_TAG" \
               --notes-file /tmp/apilot-release-notes.md \
-              apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json
+              apilot-macos-arm64.dmg apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json
           fi

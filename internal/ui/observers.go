@@ -143,6 +143,7 @@ func (s *windowState) editObserver(v *model.Observer) {
 	env, unset := "", ""
 	var win *mygo.Window
 	win = mygo.NewWindow(mygo.WindowOptions{Title: title, Width: 540, Height: 500, MinWidth: 480, MinHeight: 360, Parent: s.win, Modal: true, Content: ui.View(func(c *ui.Context) {
+		brandTheme(c)
 		ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 			ui.Text(c, title).Bold().FontSize(17)
 			ui.Scroll(c).Grow(1).Children(func() {

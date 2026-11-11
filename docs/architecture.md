@@ -8,7 +8,7 @@ The App is the only long-lived owner of the scheduler, SQLite write connection a
 - `internal/schedule`: robfig's five-field parser and Next calculation. App-owned timers apply skip-on-resume and dynamic reload policy. No custom daylight-saving logic.
 - `internal/runner`: per-Run helper and control/result pipes, process-group termination, independent timeout, separate bounded stdout/stderr files.
 - `internal/ipc` / `internal/cli`: current-user Unix Socket, versioned JSON requests, strict input and stable errors. No network listener.
-- `internal/ui`: MyGo native window, system menu/tray, compact tabs, sheets, settings window and notifications. Data snapshots are fetched outside the main thread.
+- `internal/ui`: MyGo native window, system menu/tray, on-demand compact tabs, sheets, settings and CLI-install windows, notifications, and brand colors following system appearance. The App starts as an accessory with no persistent Dock icon; routine actions live in its native status menu. Data snapshots are fetched outside the main thread.
 
 Launch takes a data-directory flock before migration, restores unfinished records as interrupted, recomputes future schedules and then starts IPC. Window close preserves the App; normal Quit blocks new work, closes IPC, cancels tasks, waits for cleanup and closes storage. A killed App cannot run cleanup code; each finite helper observes its App-owned pipe closing and terminates the target group before exiting. Neither helper nor CLI can schedule additional work.
 

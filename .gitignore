@@ -31,3 +31,5 @@
 *.keystore
 
 /dist/
+
+/resources/darwin/bin/

@@ -1,3 +1,5 @@
+<img src="resources/icon.png" width="88" height="88" alt="apilot icon" />
+
 # apilot — Agent Pilot
 
 A lightweight, agent-friendly automation sidecar for macOS.
@@ -6,12 +8,12 @@ apilot schedules local commands while its App is open. Close the window to keep 
 
 ## Downloads
 
-- Tagged builds: [GitHub Releases](https://github.com/alswl/apilot/releases), with an App ZIP, standalone CLI archive and SHA256SUMS.
+- Tagged builds: [GitHub Releases](https://github.com/alswl/apilot/releases), with a drag-to-Applications DMG, App ZIP, standalone CLI archive and SHA256SUMS.
 - Development builds: [Build macOS Actions](https://github.com/alswl/apilot/actions/workflows/build.yml). Open a successful run and download its `apilot-macos-arm64-RUN_ID-ATTEMPT` artifact. GitHub sign-in is required; artifacts expire after 7 days.
 
-Downloads currently target Apple Silicon only. Unzip the artifact, then unzip `apilot-macos-arm64.zip` and move the App into Applications. The CLI archive preserves executable permissions. Verify checksums with `shasum -a 256 --check SHA256SUMS`.
+Downloads currently target Apple Silicon only. Unzip the artifact, open `apilot-macos-arm64.dmg` and drag the App into Applications. The CLI archive preserves executable permissions. Verify checksums with `shasum -a 256 --check SHA256SUMS`.
 
-These builds are ad-hoc signed and not notarized; macOS may require explicit approval before opening the App. No signing certificate or credential is stored in the workflow.
+Development builds are ad-hoc signed and not notarized; macOS may require explicit approval before opening the App. Release signing/notarization can be enabled with repository Secrets; see [distribution setup](docs/distribution.md). No certificate or private key is committed.
 
 ## Build and launch
 
@@ -23,9 +25,9 @@ open build/darwin-arm64/apilot.app
 ./bin/apilot status
 ```
 
-The default build uses the current architecture. The arm64 App has been built and run locally; macOS 12 and Intel Macs have not been tested. The bundle uses ad-hoc signing for local use. Developer ID signing and notarization are not configured.
+The default build uses the current architecture. The arm64 App has been built and run locally; macOS 12 and Intel Macs have not been tested. The bundle uses ad-hoc signing for local use. Developer ID signing and notarization are available for tagged CI builds after credential setup; live notarization has not been verified.
 
-To install, copy the App into Applications and put `bin/apilot` on your PATH, for example in `~/.local/bin`. The CLI connects to the running App and never starts another scheduler. With the App closed, `apilot status --json` returns `APP_NOT_RUNNING` and exit code 3.
+To install, copy the App into Applications and accept the first-launch CLI installation offer, or open it later from the menu bar. The CLI connects to the running App and never starts another scheduler. With the App closed, `apilot status --json` returns `APP_NOT_RUNNING` and exit code 3.
 
 ## Small native window
 
@@ -98,3 +100,11 @@ License: [MIT](LICENSE).
 One standard macOS arm64 runner runs vet, the full race-enabled test suite and the App build. Go's setup action caches module downloads and compilation. The App is built once; the CI does not also build the unused development App binary. Pure documentation changes skip this workflow. PRs keep only their newest run; each default-branch push gets its own run. Downloads are compressed before upload and retained for 7 days.
 
 The workflow runs on PRs, relevant pushes to `master`, `v*` tags and manual dispatch. After merging it, push a tag matching the version in `packaging/mygo.json` to publish a GitHub Release. The Linux publication job reuses that run's verified files; it never rebuilds the App. Tag publication requires an intentional tag push and has not been exercised by the initial PR build.
+
+### 菜单栏与安装
+
+打开 DMG，将 apilot 拖入 Applications；启动后常驻菜单栏。任务菜单可直接运行、停止、开关自动运行或编辑，新建任务也无需先打开主窗口。「任务与历史」提供任务 / 历史 / 观察三个 tab。
+
+首次启动提供 CLI 安装入口，将 App 内的工具链接到 `~/.local/bin/apilot`，不需要管理员权限，也不覆盖已有文件。若终端找不到命令，将 `export PATH="$HOME/.local/bin:$PATH"` 加入 `~/.zshrc`。可随时从菜单栏重新打开安装入口。
+
+DMG、Developer ID 签名和自动公证的配置见 [分发说明](docs/distribution.md)。开发构建保持临时签名；配置 Apple 凭据并启用后，仅正式标签构建执行签名与公证。
