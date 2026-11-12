@@ -12,7 +12,7 @@ fi
 test -d "$app_path"
 test -x bin/apilot
 codesign --verify --deep --strict "$app_path"
-lipo -verify_arch arm64 "$app_path/Contents/Resources/bin/apilot"
+lipo "$app_path/Contents/Resources/bin/apilot" -verify_arch arm64
 "$app_path/Contents/Resources/bin/apilot" version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("mygo.json").read_text())["version"], "Bundled CLI version must match App"'
 ./bin/apilot version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("mygo.json").read_text())["version"], "CLI and App versions must match"'
 mkdir -p "$output_dir"

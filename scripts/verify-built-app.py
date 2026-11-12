@@ -25,7 +25,7 @@ def fingerprint():
 app = Path(os.environ.get('APILOT_VERIFY_APP', str(ROOT / 'build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot'))).resolve()
 if not app.is_file():
     raise SystemExit(f'Build App first: {app}')
-subprocess.run(['lipo', '-verify_arch', platform.machine(), str(app)], check=True)
+subprocess.run(['lipo', str(app), '-verify_arch', platform.machine()], check=True)
 identity = {'source': fingerprint(), 'app': str(app), 'sha256': hashlib.sha256(app.read_bytes()).hexdigest()}
 if '--record' in sys.argv:
     STAMP.parent.mkdir(parents=True, exist_ok=True)
