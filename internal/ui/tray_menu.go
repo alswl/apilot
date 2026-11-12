@@ -2,43 +2,15 @@ package ui
 
 import (
 	"fmt"
-	"strings"
-	"unicode"
 
+	"github.com/alswl/apilot/internal/presentation"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
-	"golang.org/x/text/width"
 )
 
-const quickTaskLimit = 5
+const quickTaskLimit = presentation.QuickTaskLimit
 
-// Bound dynamic labels before building NSMenu: its widest item sets the width.
-// This is a conservative text budget, not a pixel measurement of the system font.
-func menuLabel(text string) string {
-	text = strings.Join(strings.Fields(text), " ")
-	var out strings.Builder
-	units := 0
-	for _, r := range text {
-		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
-			continue
-		}
-		n := 1
-		switch width.LookupRune(r).Kind() {
-		case width.EastAsianWide, width.EastAsianFullwidth:
-			n = 2
-		}
-		if unicode.Is(unicode.Mn, r) {
-			n = 0
-		}
-		if units+n > 28 {
-			out.WriteRune('…')
-			break
-		}
-		out.WriteRune(r)
-		units += n
-	}
-	return out.String()
-}
+func menuLabel(text string) string { return presentation.MenuLabel(text) }
 
 func (s *windowState) openTasks() {
 	s.tab, s.query = 0, ""
@@ -53,6 +25,7 @@ func (s *windowState) openHistory(runID string) {
 }
 
 func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
+	projected := presentation.ProjectMenu(s.tasks, s.runs, s.events)
 	heading := tr("apilotReady")
 	if count := status["running_count"]; count != nil && fmt.Sprint(count) != "0" {
 		heading = fmt.Sprintf(tr("apilotVRunning"), count)
@@ -62,33 +35,21 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 	}
 	menu := []*mygo.MenuItem{{ID: "status", Label: heading, Disabled: true}}
 
-	unread := 0
+	unread := projected.UnreadCount
 	attention := []*mygo.MenuItem{}
-	for _, e := range s.events {
-		if e.AcknowledgedAt != nil {
-			continue
-		}
-		unread++
-		if len(attention) < 3 {
-			attention = append(attention, &mygo.MenuItem{ID: "event-" + e.ID, Label: menuLabel(e.Summary), ToolTip: e.Summary, Click: func(*mygo.MenuItem, *mygo.Window) { s.selectEvent(e); s.show() }})
-		}
+	for _, e := range projected.Attention {
+		attention = append(attention, &mygo.MenuItem{ID: "event-" + e.ID, Label: menuLabel(e.Summary), ToolTip: e.Summary, Click: func(*mygo.MenuItem, *mygo.Window) { s.selectEvent(e); s.show() }})
 	}
 	if unread > 0 {
 		attention = append(attention, mygo.Separator(), &mygo.MenuItem{Label: tr("allAlerts"), Click: func(*mygo.MenuItem, *mygo.Window) { s.showAttention() }})
 		menu = append(menu, &mygo.MenuItem{ID: "attention", Label: fmt.Sprintf(tr("attentionD"), unread), Submenu: attention})
 	}
 	active := []*mygo.MenuItem{}
-	activeCount := 0
-	for _, r := range s.runs {
-		if !r.Active() {
-			continue
-		}
-		activeCount++
-		if len(active) < 3 {
-			active = append(active, &mygo.MenuItem{ID: "stop-" + r.ID, Label: menuLabel(fmt.Sprintf(tr("stopS"), r.TaskName)), ToolTip: fmt.Sprintf(tr("stopS"), r.TaskName), Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) {
-				s.action(func() error { _, e := s.service.StopRun(r.ID); return e })
-			}})
-		}
+	activeCount := projected.ActiveCount
+	for _, r := range projected.Active {
+		active = append(active, &mygo.MenuItem{ID: "stop-" + r.ID, Label: menuLabel(fmt.Sprintf(tr("stopS"), r.TaskName)), ToolTip: fmt.Sprintf(tr("stopS"), r.TaskName), Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) {
+			s.action(func() error { _, e := s.service.StopRun(r.ID); return e })
+		}})
 	}
 	if activeCount > 0 {
 		if activeCount > 3 {
@@ -101,10 +62,7 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 	}
 
 	menu = append(menu, mygo.Separator(), &mygo.MenuItem{Label: tr("quickTasks"), Disabled: true})
-	for i, t := range s.tasks {
-		if i >= quickTaskLimit {
-			break
-		}
+	for _, t := range projected.Tasks {
 		items := []*mygo.MenuItem{{Label: tr("runNow"), Disabled: s.busy || taskActive(s.runs, t.ID), Click: func(*mygo.MenuItem, *mygo.Window) {
 			s.action(func() error { _, e := s.service.RunTask(t.ID, "manual"); return e })
 		}}}
@@ -124,14 +82,8 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 		&mygo.MenuItem{ID: "manage", Label: tr("allTasks"), Click: func(*mygo.MenuItem, *mygo.Window) { s.openTasks() }}, mygo.Separator())
 
 	recent := []*mygo.MenuItem{}
-	for _, r := range s.runs {
-		if r.Active() {
-			continue
-		}
+	for _, r := range projected.Recent {
 		recent = append(recent, &mygo.MenuItem{ID: "run-" + r.ID, Label: menuLabel(statusText(r.Status) + " · " + r.TaskName), ToolTip: r.TaskName, Click: func(*mygo.MenuItem, *mygo.Window) { s.openHistory(r.ID) }})
-		if len(recent) >= 3 {
-			break
-		}
 	}
 	if len(recent) > 0 {
 		recent = append(recent, mygo.Separator())

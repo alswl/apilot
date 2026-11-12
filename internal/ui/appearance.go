@@ -2,6 +2,7 @@ package ui
 
 import (
 	_ "embed"
+
 	"github.com/egoist/mygo/ui"
 )
 

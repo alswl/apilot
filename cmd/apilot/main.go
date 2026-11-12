@@ -1,8 +1,5 @@
 package main
 
-import (
-	"github.com/alswl/apilot/internal/cli"
-	"os"
-)
+import "os"
 
-func main() { os.Exit(cli.Execute(os.Args[1:], os.Stdout, os.Stderr)) }
+func main() { os.Exit(Execute()) }

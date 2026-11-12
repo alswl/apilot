@@ -1,10 +1,11 @@
 package ui
 
 import (
-	"github.com/egoist/mygo"
-	"golang.org/x/sys/unix"
 	"strconv"
 	"strings"
+
+	"github.com/egoist/mygo"
+	"golang.org/x/sys/unix"
 )
 
 func supportsLoginItem() bool {

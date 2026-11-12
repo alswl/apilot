@@ -4,38 +4,22 @@ on:
   push:
     branches: [master]
     tags: ['v*']
-    paths:
-      - '.github/workflows/build.yml'
-      - 'cmd/**'
-      - 'internal/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
-      - 'mygo.json'
-      - 'packaging/**'
-      - 'resources/**'
-      - 'scripts/**'
   pull_request:
     branches: [master]
-    paths:
-      - '.github/workflows/build.yml'
-      - 'cmd/**'
-      - 'internal/**'
-      - 'go.mod'
-      - 'go.sum'
-      - 'Makefile'
-      - 'mygo.json'
-      - 'packaging/**'
-      - 'resources/**'
-      - 'scripts/**'
   workflow_dispatch:
+    inputs:
+      notarize:
+        description: Developer ID signing and Apple notarization (no Release)
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/') && github.ref) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/')) }}
 
 env:
   CGO_ENABLED: '1'
@@ -52,7 +36,33 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Classify changes
+        id: changes
+        env:
+          BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: python3 scripts/classify-changes.py --base "$BASE_SHA"
+      - name: Check public documentation and change classification
+        run: |
+          make check-docs
+          python3 scripts/classify_changes_test.py
+      - name: Documentation-only summary
+        if: steps.changes.outputs.full != 'true'
+        run: echo 'Documentation checks passed. Native tests and packaging were not required.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Select signing mode
+        if: steps.changes.outputs.full == 'true'
+        id: signing
+        env:
+          REQUESTED: ${{ (github.event_name == 'workflow_dispatch' && inputs.notarize) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.APPLE_SIGNING_ENABLED == 'true') }}
+          ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
+        run: |
+          if [ "$REQUESTED" = true ] && [ "$ENABLED" != true ]; then
+            echo 'Signing was requested but APPLE_SIGNING_ENABLED is not true.' >&2
+            exit 1
+          fi
+          echo "enabled=$REQUESTED" >> "$GITHUB_OUTPUT"
       - name: Set up Go and restore cache
+        if: steps.changes.outputs.full == 'true'
         id: go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -61,6 +71,7 @@ jobs:
           cache-dependency-path: go.sum
           check-latest: false
       - name: Verify platform and release version
+        if: steps.changes.outputs.full == 'true'
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
@@ -71,26 +82,27 @@ jobs:
             python3 - <<'PY'
           import json, os
           from pathlib import Path
-          version = json.loads(Path('packaging/mygo.json').read_text())['version']
-          assert os.environ['RELEASE_TAG'] == 'v' + version, 'Tag must match packaging/mygo.json version'
+          version = json.loads(Path('mygo.json').read_text())['version']
+          assert os.environ['RELEASE_TAG'] == 'v' + version, 'Tag must match mygo.json version'
           PY
           fi
       - name: Check formatting
-        run: |
-          files=$(gofmt -l cmd internal)
-          if [ -n "$files" ]; then
-            printf '%s\n' "$files"
-            exit 1
-          fi
+        if: steps.changes.outputs.full == 'true'
+        run: make check-format
       - name: Vet
-        run: go vet ./...
-      - name: Test with race detector
-        run: go test -race -vet=off ./...
+        if: steps.changes.outputs.full == 'true'
+        run: make vet
+      - name: Check dependency boundary and versions
+        if: steps.changes.outputs.full == 'true'
+        run: make check-architecture check-version check-portable
+      - name: Test complete suite with race detector
+        if: steps.changes.outputs.full == 'true'
+        run: make race
       - name: Build development App and DMG
-        if: ${{ !(github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.APPLE_SIGNING_ENABLED == 'true') }}
+        if: steps.changes.outputs.full == 'true' && steps.signing.outputs.enabled != 'true'
         run: make app
-      - name: Sign and notarize release App and DMG
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.APPLE_SIGNING_ENABLED == 'true'
+      - name: Sign and notarize App and DMG
+        if: steps.signing.outputs.enabled == 'true'
         timeout-minutes: 15
         env:
           APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
@@ -99,10 +111,25 @@ jobs:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: packaging/sign-release.sh
+        run: packaging/darwin/sign-release.sh
+      - name: Platform acceptance boundary
+        if: steps.changes.outputs.full == 'true'
+        run: |
+          echo 'Packaged window/menu/Quit acceptance: NOT_VERIFIED in this noninteractive CI job; run make verify-ui verify-lifecycle in a macOS desktop session.' >> "$GITHUB_STEP_SUMMARY"
       - name: Package and verify downloads
-        run: packaging/package-downloads.sh
+        if: steps.changes.outputs.full == 'true'
+        run: packaging/darwin/package-downloads.sh
+      - name: Verify requested notarization
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          info = json.loads(Path('dist/build-info.json').read_text())
+          assert info['signing'] == 'developer-id' and info['notarized'], 'Requested signing/notarization must succeed'
+          PY
       - name: Upload downloads
+        if: steps.changes.outputs.full == 'true'
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -112,6 +139,7 @@ jobs:
           retention-days: 7
           compression-level: 0
       - name: Download summary
+        if: steps.changes.outputs.full == 'true'
         env:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
           GO_CACHE_HIT: ${{ steps.go.outputs.cache-hit }}
@@ -152,12 +180,12 @@ jobs:
           from pathlib import Path
           info = json.loads(Path('build-info.json').read_text())
           signing = 'Developer ID signed and notarized.' if info['notarized'] and info['signing'] == 'developer-id' else 'Ad-hoc signed; not notarized. macOS may require explicit approval.'
-          Path('/tmp/apilot-release-notes.md').write_text('Choose Follow System, English, or Simplified Chinese in Settings → Language. Changes apply immediately and are remembered across launches.\n\nmacOS Apple Silicon. Open the DMG and drag Apilot to Applications.\n\n' + signing + '\n\nVerify downloads with SHA256SUMS. Build provenance is in build-info.json.\n')
+          Path('/tmp/apilot-release-notes.md').write_text('macOS Apple Silicon. Open the DMG and drag Apilot to Applications.\n\n' + signing + '\n\nVerify downloads with SHA256SUMS. Build provenance is in build-info.json.\n')
           PY
           if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" apilot-macos-arm64.dmg apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json --clobber
           else
             gh release create "$RELEASE_TAG" --verify-tag --title "Apilot $RELEASE_TAG" \
-              --notes-file /tmp/apilot-release-notes.md \
+              --generate-notes --notes-file /tmp/apilot-release-notes.md \
               apilot-macos-arm64.dmg apilot-macos-arm64.zip apilot-cli-macos-arm64.tar.gz SHA256SUMS build-info.json
           fi

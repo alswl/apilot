@@ -1,10 +1,15 @@
 # Distribution
 
 `make app` builds the App, bundles the standalone CLI, signs ad hoc, and creates
-`build/darwin-arm64/apilot-0.1.0-arm64.dmg` using MyGo's native disk-image builder.
+`build/darwin-arm64/apilot-VERSION-arm64.dmg` using MyGo's native disk-image builder.
 The image contains apilot and an Applications shortcut with a Finder drag layout.
-`packaging/package-downloads.sh` verifies signatures and the image checksum, then
+`packaging/darwin/package-downloads.sh` verifies signatures and the image checksum, then
 exports DMG, App ZIP, CLI archive, provenance and SHA256SUMS into `dist/`.
+
+`mygo.json` is the shared configuration. `make app` stages the CLI under
+`resources/darwin-GOARCH/bin/`, then explicitly selects that MyGo build target;
+resources from other targets are excluded. Current download packaging remains
+macOS arm64. Linux/Windows application builds are not yet supported.
 
 ## Install and first launch
 
@@ -44,16 +49,19 @@ variables → Actions (never commit or paste private keys into an issue/chat):
 
 After configuring all six, set repository Variable `APPLE_SIGNING_ENABLED=true`.
 When false/unset, downloads remain ad hoc and metadata says `notarized: false`.
-When enabled, a missing/invalid secret or failed notarization fails the tag build;
+When enabled, a missing/invalid secret or failed notarization fails the signed build;
 it never silently publishes an unsigned replacement.
 
-Only a pushed `v*` tag runs signing/notarization, and its version must match
-`packaging/mygo.json`. PRs, regular pushes and manual development runs never
-receive signing secrets. No `pull_request_target`, no credentials in Go caches.
+Pushed `v*` tags use signing/notarization when enabled; the tag must match
+`mygo.json`. To build a signed temporary package without a tag or Release, run
+the workflow on the desired branch with `notarize=true`. Its verified files are
+available as an Actions artifact for seven days. PRs, regular pushes and manual
+runs without that option never receive signing secrets. No `pull_request_target`,
+no credentials in Go caches.
 The existing standard macOS job does the signing, with a 15-minute step limit;
 there is no second native build or per-PR notarization.
 
-`packaging/sign-release.sh` creates a temporary keychain, imports the certificate,
+`packaging/darwin/sign-release.sh` creates a temporary keychain, imports the certificate,
 stores notarytool credentials there, and invokes MyGo's existing signing and
 notarization support. MyGo signs nested CLI code and the App with hardened runtime
 and timestamps, signs the DMG, submits it once to Apple, and staples the DMG and
@@ -64,14 +72,15 @@ App is covered by the notarized, stapled image. The script validates both ticket
 and the App's Gatekeeper assessment before packaging. It restores the keychain
 search list and packaging config and removes temporary credentials on exit.
 
-Signing configuration, tag publishing and Apple's response have not yet been
-verified with live credentials. This setup does not enroll a developer account,
-generate/revoke certificates or spend on paid GitHub runners.
+Published downloads are Developer ID signed and notarized when their
+`build-info.json` reports `signing: developer-id` and `notarized: true`.
+Unsigned development runs remain ad hoc. Prerelease labels remain visible in the
+App and CLI; signed bundles use the numeric base version in Apple's version keys.
+Check each download's metadata and
+`SHA256SUMS`; do not infer signing from its filename.
 
 ## Brand assets
 
-The primary logo is the approved **Sunset Aviator (A)** portrait. Masters and
-monochrome alternatives live in `resources/brand/`; see its README for provenance
-and roles. `make icons` exports the bundle icon, in-app mark and alpha-only menu
-icon from those masters with the pinned Go dependencies. Generated PNGs are
-committed; CI needs no image generation service or extra graphics tools.
+Committed masters and their provenance live in [design/brand](../design/brand/README.md).
+`make icons` renders the App and menu marks with pinned Go dependencies;
+normal builds need no image-generation service.
