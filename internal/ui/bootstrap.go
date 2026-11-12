@@ -396,12 +396,15 @@ func statusText(v string) string {
 func (s *windowState) view(c *ui.Context) {
 	brandTheme(c)
 	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
-		if ui.Tabs(c, &s.tab, tr("tasks"), tr("history"), tr("observers")).Changed() {
-			s.selectedTask = ""
-			s.selectedRun = ""
-			s.selectedObserver = ""
-			s.err = ""
-		}
+		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
+			if ui.Tabs(c, &s.tab, tr("tasks"), tr("history"), tr("observers")).Grow(1).Changed() {
+				s.selectedTask = ""
+				s.selectedRun = ""
+				s.selectedObserver = ""
+				s.err = ""
+			}
+			ui.Text(c, "v"+common.Version).FontSize(11).TextColor(c.Theme().TextMuted).Shrink(0).Selectable()
+		})
 		if s.err != "" {
 			ui.Text(c, s.err).TextColor(c.Theme().Danger)
 		}

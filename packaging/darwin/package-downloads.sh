@@ -3,7 +3,7 @@ set -eu
 cd "$(dirname "$0")/../.."
 
 app_path=build/darwin-arm64/Apilot.app
-output_dir=dist
+output_dir=${APILOT_DIST_DIR:-dist}
 if [ "$(uname -s)" != Darwin ] || [ "$(uname -m)" != arm64 ]; then
   echo 'Packaging requires macOS arm64.' >&2
   exit 1
@@ -25,7 +25,7 @@ rm -f "$output_dir/apilot-macos-arm64.zip" "$output_dir/apilot-cli-macos-arm64.t
 ditto -c -k --sequesterRsrc --keepParent "$app_path" "$output_dir/apilot-macos-arm64.zip"
 tar -C bin -czf "$output_dir/apilot-cli-macos-arm64.tar.gz" apilot
 python3 - <<'PY'
-import datetime, hashlib, json, platform, subprocess
+import datetime, hashlib, json, os, platform, subprocess
 from pathlib import Path
 
 def command(*args):
@@ -44,7 +44,7 @@ info = {
     'signing': 'developer-id' if 'Authority=Developer ID Application:' in subprocess.run(['codesign', '-dvv', 'build/darwin-arm64/Apilot.app'], capture_output=True, text=True, check=True).stderr else 'ad-hoc',
     'notarized': subprocess.run(['xcrun', 'stapler', 'validate', 'build/darwin-arm64/Apilot.app'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0,
 }
-Path('dist/build-info.json').write_text(json.dumps(info, indent=2) + '\n')
+(Path(os.environ.get('APILOT_DIST_DIR', 'dist')) / 'build-info.json').write_text(json.dumps(info, indent=2) + '\n')
 PY
 (
   cd "$output_dir"

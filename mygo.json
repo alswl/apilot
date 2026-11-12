@@ -1,7 +1,7 @@
 {
   "name": "Apilot",
   "identifier": "com.alswl.apilot",
-  "version": "0.0.3",
+  "version": "0.0.4-dev",
   "main": "./cmd/apilot-app",
   "out": "build",
   "macos": {
