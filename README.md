@@ -151,7 +151,7 @@ open build/darwin-arm64/Apilot.app
 ./bin/apilot status
 ```
 
-On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-0.0.3-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
+On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-VERSION-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
 
 ```sh
 make check              # Read-only source, dependency and documentation checks
@@ -165,6 +165,15 @@ make verify-lifecycle   # Process cleanup and restart checks
 Verification commands use disposable data. The [contributor guide](CONTRIBUTING.md) links the pinned Go/UI standards and project exceptions.
 
 The Go core is separate from MyGo UI: `pkg/services` owns application behavior, `pkg/dal` owns SQLite, `pkg/integrations` executes commands, and `pkg/server` serves the CLI over a private Unix Socket.
+
+## Agent skill
+
+The [apilot skill](skills/apilot/SKILL.md) provides task operations, a
+[CLI reference](skills/apilot/references/cli.md), and session reconnection with
+runtime discovery and a verified delivery handshake. Install the `skills/apilot`
+directory using your agent runtime's skill loader.
+
+> $apilot，把这个项目已有的提醒任务接到当前会话，并验证一次真实投递。
 
 ## Documentation
 

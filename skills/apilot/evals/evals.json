@@ -1,0 +1,44 @@
+{
+  "skill_name": "apilot",
+  "evals": [
+    {
+      "id": 1,
+      "name": "pending-receipt-conflict",
+      "prompt": "把当前项目已有的提醒任务接到当前会话，并验证真实投递。以下是离线夹具，不是真实服务；只输出操作轨迹和结论，不能执行服务命令。当前项目 /workspace/cedar，Task T-1 name=reminder cwd=/workspace/cedar revision=7 enabled=false，schedule={interval:1h,enabled:false}，timeout_ms=60000，executable=/tools/project-adapter，args=[\"--topic\",\"review\"], env_keys=[\"RECEIVER_REF\",\"API_TOKEN\"]（值不可见）。项目适配器文档说只用RECEIVER_REF选择收件人，支持独立probe配置将challenge带入下一次任务投递。当前runtime的受支持工具确认 receiver=R-new、native push ready，env里旧的SESSION_ID=R-old。更新revision7时返回STALE_REVISION；重读revision8，仅timeout_ms已被另一人改为90000。按revision8更新目标并读回后，Task Run Q-1 succeeded，发送端日志是queue accepted，只有一条发给R-old的旧收件记录，没有当前会话收到新challenge的事件。请给出准确CLI/适配步骤和现在的状态。",
+      "expected_output": "用真实runtime能力确认R-new，只更新目标并保留secret/disabled schedule/他人timeout；stale后重读再CAS。只触发一次Q-1，不以succeeded/queue/旧收件断言完成，报告待接收并yield；无idle wake成功声称。",
+      "files": [],
+      "assertions": [
+        "Uses supported current receiver R-new rather than the stale environment ID; no launcher/client-name detection dependency.",
+        "Handles STALE_REVISION by rereading revision8, preserves the newer timeout90000, disabled schedule and hidden API_TOKEN, and changes only RECEIVER_REF.",
+        "Triggers the selected task once and tracks Run Q-1; does not replace it with an independent direct-send test.",
+        "Reports execution succeeded but delivery awaiting current-session receipt; rejects old R-old receipt/queue acceptance and does not claim idle wake-up."
+      ]
+    },
+    {
+      "id": 2,
+      "name": "unsupported-runtime",
+      "prompt": "把这个项目的 apilot 提醒接到当前会话，agent是我随便起的名字，不要依赖任何特定启动命令。离线夹具：Task T-2 cwd=/workspace/maple revision=2，现有业务程序和时间表要保留。当前runtime仅提供terminal.run和read-file，文档明确不支持注入当前对话、订阅或收件API。有SESSION_ID=old-42环境变量，某脚本能在终端打印send-ok；没有当前会话的可寻址收件人或实际入站事件。不得执行真实服务命令；请仅写操作轨迹、判断和最小恢复前提。",
+      "expected_output": "发现无受支持接收能力，既不按命令/环境变量猜runtime也不把打印当收到；不改目标不运行任务，不装特定消息客户端、不重启别的会话；指出需runtime支持的当前会话接收接口后才能握手。",
+      "files": [],
+      "assertions": [
+        "Identifies that no supported addressable receiver exists; does not treat SESSION_ID or terminal send-ok as receiver/receipt evidence.",
+        "Keeps task T-2 definition and schedule unchanged and does not trigger a probe to an unverified receiver.",
+        "Asks only for a supported current-conversation receiving interface/prerequisite; does not prescribe a particular launcher or messaging client.",
+        "Reports delivery unsupported/unverified and does not claim a completed handshake or automatic idle reception."
+      ]
+    },
+    {
+      "id": 3,
+      "name": "verified-task-path",
+      "prompt": "确认这次 apilot 任务到当前会话的交接是否完成。离线记录：runtime受支持接口确认本会话receiver=R-77，接收模式为手动inbox read，无idle push。Task T-3 revision10到11只把receiver由R-76改为R-77，工作目录/argv/隐藏env/时间表/启用状态未变。使用适配器文档的probe机制配置唯一challenge apilot-probe-a19，apilot task run T-3只执行一次，返回Run Q-3 running。适配器文档说明需要收件ACK才退出。当前会话通过该接口手动读取到本次Q-3的challenge事件E-9，receiver=R-77；尚未ACK。提供ACK后Run Q-3 succeeded这一后续夹具结果。请写出下一步轨迹和最终结论。只使用给定夹具，不执行真实命令。",
+      "expected_output": "先确认当前收件证据并ACK challenge/E-9，再查询Q-3终态，报告execution succeeded、task->current receiver收到且ack，限定手动接收已验证，idle wake不可声称。",
+      "files": [],
+      "assertions": [
+        "Acknowledges current-session challenge apilot-probe-a19 / E-9 before waiting for Q-3 terminal completion.",
+        "Uses the provided same-task/current-receiver correlation and reports completed execution and received+acknowledged delivery, rather than an independent test.",
+        "Preserves the existing task, uses a single Run Q-3 and does not propose destructive/global routing changes.",
+        "Limits verification to manual reception and explicitly does not claim idle push/wake-up."
+      ]
+    }
+  ]
+}

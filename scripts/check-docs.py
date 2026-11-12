@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def check():
     errors = []
     files = [ROOT / name for name in ('README.md', 'CONTRIBUTING.md', 'GLOSSARY.md')]
-    for folder in ('docs',):
+    for folder in ('docs', 'skills'):
         files.extend((ROOT / folder).rglob('*.md'))
     for path in files:
         text = re.sub(r'^```.*?^```[^\n]*', '', path.read_text(), flags=re.M | re.S)
