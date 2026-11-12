@@ -49,12 +49,15 @@ variables → Actions (never commit or paste private keys into an issue/chat):
 
 After configuring all six, set repository Variable `APPLE_SIGNING_ENABLED=true`.
 When false/unset, downloads remain ad hoc and metadata says `notarized: false`.
-When enabled, a missing/invalid secret or failed notarization fails the tag build;
+When enabled, a missing/invalid secret or failed notarization fails the signed build;
 it never silently publishes an unsigned replacement.
 
-Only a pushed `v*` tag runs signing/notarization, and its version must match
-`mygo.json`. PRs, regular pushes and manual development runs never
-receive signing secrets. No `pull_request_target`, no credentials in Go caches.
+Pushed `v*` tags use signing/notarization when enabled; the tag must match
+`mygo.json`. To build a signed temporary package without a tag or Release, run
+the workflow on the desired branch with `notarize=true`. Its verified files are
+available as an Actions artifact for seven days. PRs, regular pushes and manual
+runs without that option never receive signing secrets. No `pull_request_target`,
+no credentials in Go caches.
 The existing standard macOS job does the signing, with a 15-minute step limit;
 there is no second native build or per-PR notarization.
 
@@ -71,7 +74,9 @@ search list and packaging config and removes temporary credentials on exit.
 
 Published downloads are Developer ID signed and notarized when their
 `build-info.json` reports `signing: developer-id` and `notarized: true`.
-Development downloads remain ad hoc. Check each download's metadata and
+Unsigned development runs remain ad hoc. Prerelease labels remain visible in the
+App and CLI; signed bundles use the numeric base version in Apple's version keys.
+Check each download's metadata and
 `SHA256SUMS`; do not infer signing from its filename.
 
 ## Brand assets

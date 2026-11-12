@@ -1,5 +1,5 @@
 #!/bin/bash
-# Release-only: import credentials into an isolated, temporary keychain.
+# Signed builds: import credentials into an isolated, temporary keychain.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 : "${APPLE_CERTIFICATE_P12_BASE64:?Missing Developer ID certificate secret}"
@@ -42,12 +42,19 @@ subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', sys.argv[2], *
 PY
 xcrun notarytool store-credentials apilot-notary --key "$work/AuthKey.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --keychain "$keychain" > /dev/null
 python3 - "$keychain" <<'PY'
-import json, os, sys
+import json, os, re, sys
 from pathlib import Path
 p = Path('mygo.json')
 c = json.loads(p.read_text())
 c['macos']['signingIdentity'] = os.environ['APPLE_SIGNING_IDENTITY']
 c['macos']['notarize'] = {'keychainProfile': 'apilot-notary', 'keychain': sys.argv[1]}
+# Keep prerelease labels in the UI/CLI while Apple's bundle versions stay numeric.
+bundle_version = re.split('[-+]', c['version'], maxsplit=1)[0]
+assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', bundle_version), 'Expected a semantic version'
+c['macos'].setdefault('infoPlist', {}).update({
+    'CFBundleVersion': bundle_version,
+    'CFBundleShortVersionString': bundle_version,
+})
 p.write_text(json.dumps(c, indent=2) + '\n')
 PY
 # MyGo signs nested executables, enables hardened runtime/timestamps, builds
