@@ -77,3 +77,12 @@ Warm dispatch [43121456108](https://github.com/alswl/apilot/actions/runs/4312145
 Remaining risks: signed/notarized distribution is blocked by credentials; Intel and macOS 12 runtime support were not exercised; dynamic language changes in already-open native window titles were not tested (documented workflow is reopen the app). PR cancellation, document-only filtering, failing gate behavior and main/tag independence retain their existing workflow logic and were statically reviewed, not exhaustively exercised.
 
 Historical PR caches are scoped to their merge refs and cannot warm a new branch/tag. A successful trusted default-branch build can provide a cache for future branches/tags; no master push or merge was performed in this task. See [GitHub cache access restrictions](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache). Cache usage after cold dispatch: two caches, 815,584,623 bytes, well below the default 10 GiB allowance.
+
+
+## Release completed — 2026-11-12
+
+The user repaired the matching certificate/password Secrets. Attempt 2 of run 43121424733 succeeded, including signing, Apple notarization, staple validation and publication: https://github.com/alswl/apilot/releases/tag/v0.0.2 . All five release assets exist. Downloaded archives and metadata passed SHA256SUMS; the downloaded App reports Developer ID Application: Jingchao Di (3494952NTZ) and its stapled ticket validates locally. Source is clean commit 837d178. This resolves the earlier credential blocker.
+
+A metadata detection bug was found during downloaded-artifact verification: `codesign -dv` omits Authority on this system; `-dvv` exposes it. Packaging now uses `-dvv`. Published build-info signing was corrected to developer-id using the downloaded App's verified authority, SHA256SUMS regenerated, and release notes corrected; executable archives were unchanged.
+
+Future tag releases reuse the GitHub Secrets; no repeat export is needed until credentials change. The current public signing certificate expires 2027-02-01 22:12:15 UTC (2027-02-02 in Asia/Shanghai). A private-key-only .p12 can be combined with the matching public certificate read from the local keychain; the repair wizard checks public-key equality before packaging, validates an isolated-keychain identity, and uploads the combined archive and its matching password. No .p7b export is needed.

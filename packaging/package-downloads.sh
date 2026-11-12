@@ -39,7 +39,7 @@ info = {
     'platform': platform.platform(),
     'architecture': platform.machine(),
     'built_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    'signing': 'developer-id' if 'Authority=Developer ID Application:' in subprocess.run(['codesign', '-dv', 'build/darwin-arm64/Apilot.app'], capture_output=True, text=True, check=True).stderr else 'ad-hoc',
+    'signing': 'developer-id' if 'Authority=Developer ID Application:' in subprocess.run(['codesign', '-dvv', 'build/darwin-arm64/Apilot.app'], capture_output=True, text=True, check=True).stderr else 'ad-hoc',
     'notarized': subprocess.run(['xcrun', 'stapler', 'validate', 'build/darwin-arm64/Apilot.app'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0,
 }
 Path('dist/build-info.json').write_text(json.dumps(info, indent=2) + '\n')
