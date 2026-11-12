@@ -12,7 +12,7 @@ fi
 test -d "$app_path"
 test -x bin/apilot
 codesign --verify --deep --strict "$app_path"
-./bin/apilot version --json > /dev/null
+./bin/apilot version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("packaging/mygo.json").read_text())["version"], "CLI and App versions must match"'
 mkdir -p "$output_dir"
 # MyGo builds the drag-to-Applications image together with the App.
 version=$(python3 -c 'import json; print(json.load(open("packaging/mygo.json"))["version"])')
@@ -39,7 +39,7 @@ info = {
     'platform': platform.platform(),
     'architecture': platform.machine(),
     'built_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    'signing': 'developer-id' if 'Authority=Developer ID Application:' in subprocess.run(['codesign', '-dv', 'build/darwin-arm64/Apilot.app'], capture_output=True, text=True, check=True).stderr else 'ad-hoc',
+    'signing': 'developer-id' if 'Authority=Developer ID Application:' in subprocess.run(['codesign', '-dvv', 'build/darwin-arm64/Apilot.app'], capture_output=True, text=True, check=True).stderr else 'ad-hoc',
     'notarized': subprocess.run(['xcrun', 'stapler', 'validate', 'build/darwin-arm64/Apilot.app'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0,
 }
 Path('dist/build-info.json').write_text(json.dumps(info, indent=2) + '\n')

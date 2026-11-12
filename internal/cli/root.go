@@ -8,6 +8,7 @@ import (
 	"github.com/alswl/apilot/internal/app"
 	"github.com/alswl/apilot/internal/ipc"
 	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/internal/version"
 	"github.com/spf13/cobra"
 	"io"
 	"os"
@@ -106,7 +107,7 @@ func Execute(args []string, out, errout io.Writer) int {
 	root.SetArgs(args)
 	root.PersistentFlags().BoolVar(&c.json, "json", c.json, "Output versioned JSON")
 	root.AddCommand(&cobra.Command{Use: "version", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {
-		return c.show(map[string]any{"app_version": "0.1.0-dev", "protocol_version": 1})
+		return c.show(map[string]any{"app_version": version.Version, "protocol_version": 1})
 	}})
 	root.AddCommand(&cobra.Command{Use: "status", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error { return c.invoke("status", nil) }})
 	root.AddCommand(&cobra.Command{Use: "doctor", Args: cobra.NoArgs, RunE: func(*cobra.Command, []string) error {

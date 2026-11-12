@@ -33,7 +33,7 @@ Task definitions, settings and execution history stay in local SQLite. Apilot is
 Published builds are available from [GitHub Releases](https://github.com/alswl/apilot/releases). Download `apilot-macos-arm64.dmg`, open it and drag **Apilot** into **Applications**.
 
 > [!NOTE]
-> The first `v0.0.1` release is pending its [release workflow](https://github.com/alswl/apilot/actions/runs/43058323029). Release assets and successful Apple notarization are not yet verified. Development builds are ad-hoc signed and are not notarized.
+> Development builds are ad-hoc signed. Tagged releases use Developer ID signing and Apple notarization when configured; check each release’s build-info.json for its verified signing status.
 
 Downloads currently target **Apple Silicon**. The configured minimum is macOS 12; that version and Intel Macs have not been validated.
 
@@ -151,7 +151,7 @@ open build/darwin-arm64/Apilot.app
 ./bin/apilot status
 ```
 
-On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-0.0.1-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
+On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-0.0.3-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
 
 ```sh
 make test               # Core, storage, IPC, CLI and UI tests
@@ -168,3 +168,9 @@ Verification commands use disposable data. The Go core is separate from MyGo UI:
 - [Distribution](docs/distribution.md) — CI artifacts, Developer ID signing and notarization setup.
 - [Verification](docs/verification/final.md) and [native menu checks](docs/verification/native-menu.md) — measured behavior and test boundaries.
 - [Known limitations](docs/known-limitations.md) — including unverified OS integration, sleep/resume and accessibility behavior.
+
+### Interface language
+
+Apilot supports English and Simplified Chinese. It follows the preferred macOS app language, with English as the fallback. Choose Follow System, English, or 简体中文 in Apilot Settings → Language. Changes apply immediately and are remembered across launches. For a temporary local preview, launch the App executable with `MYGO_LOCALE=en` or `MYGO_LOCALE=zh-Hans`. Task names, commands, logs, stored event summaries and CLI JSON values remain unchanged.
+
+Translations live in `internal/ui/locales`; `tr` resolves interface messages using MyGo’s selected language. CLI commands and help remain English.

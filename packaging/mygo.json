@@ -1,7 +1,7 @@
 {
   "name": "Apilot",
   "identifier": "com.alswl.apilot",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "main": "./cmd/apilot-app",
   "out": "build",
   "macos": {
@@ -13,5 +13,9 @@
     "brand",
     "brand/**"
   ],
-  "slug": "apilot"
+  "slug": "apilot",
+  "i18n": {
+    "dir": "internal/ui/locales",
+    "source": "en"
+  }
 }

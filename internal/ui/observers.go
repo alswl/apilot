@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"github.com/alswl/apilot/internal/model"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -16,14 +17,14 @@ func (s *windowState) observerList(c *ui.Context) {
 	}
 	ui.Row(c).FillWidth().Children(func() {
 		ui.Spacer(c).Grow(1)
-		if ui.Button(c, "＋").Label("新建观察器").Tooltip("新建观察器").Clicked() {
+		if ui.Button(c, "＋").Label(tr("newObserver")).Tooltip(tr("newObserver")).Clicked() {
 			s.editObserver(nil)
 		}
 	})
 	if len(s.observers) == 0 {
 		ui.Column(c).Fill().Center().Gap(12).Children(func() {
-			ui.Text(c, "暂无观察器")
-			if ui.PrimaryButton(c, "新建观察器").Clicked() {
+			ui.Text(c, tr("noObservers"))
+			if ui.PrimaryButton(c, tr("newObserver")).Clicked() {
 				s.editObserver(nil)
 			}
 		})
@@ -35,7 +36,7 @@ func (s *windowState) observerList(c *ui.Context) {
 				v := v
 				label := healthText(v.Health)
 				if !v.Enabled {
-					label += " · 已停用"
+					label += tr("disabled")
 				}
 				entry := ui.ButtonBase(c.Key(v.ID)).Label(v.Name).FillWidth().Padding(8).Justify(ui.Start)
 				if entry.Hovered() {
@@ -54,11 +55,11 @@ func (s *windowState) observerList(c *ui.Context) {
 func healthText(v string) string {
 	switch v {
 	case "healthy":
-		return "正常"
+		return tr("healthy")
 	case "unhealthy":
-		return "异常"
+		return tr("unhealthy")
 	default:
-		return "尚未检查"
+		return tr("notCheckedYet")
 	}
 }
 func (s *windowState) observerDetail(c *ui.Context) {
@@ -76,42 +77,42 @@ func (s *windowState) observerDetail(c *ui.Context) {
 	}
 	v := *observer
 	ui.Row(c).FillWidth().Gap(8).Children(func() {
-		if ui.Button(c, "‹").Label("返回观察器").Tooltip("返回观察器").Clicked() {
+		if ui.Button(c, "‹").Label(tr("backToObservers")).Tooltip(tr("backToObservers")).Clicked() {
 			s.selectedObserver = ""
 		}
 		ui.Text(c, v.Name).Grow(1).Bold()
-		if ui.Button(c, "编辑").Clicked() {
+		if ui.Button(c, tr("edit")).Clicked() {
 			s.editObserver(&v)
 		}
 	})
 	ui.Text(c, healthText(v.Health))
 	if len(v.EnvKeys) > 0 {
-		ui.Text(c, "环境变量："+strings.Join(v.EnvKeys, ", "))
+		ui.Text(c, tr("environmentVariables")+strings.Join(v.EnvKeys, ", "))
 	}
 	on := v.Enabled
-	if ui.Checkbox(c, &on, "自动检查").Changed() {
+	if ui.Checkbox(c, &on, tr("automaticChecks")).Changed() {
 		s.action(func() error { _, e := s.service.SetObserverEnabled(v.ID, on); return e })
 	}
 	if v.LastCheckedAt != nil {
-		ui.Text(c, "上次检查 "+v.LastCheckedAt.Local().Format("01-02 15:04:05")).FontSize(12)
+		ui.Text(c, tr("lastChecked")+v.LastCheckedAt.Local().Format("01-02 15:04:05")).FontSize(12)
 	}
 	if v.Error != "" {
 		ui.Text(c, v.Error).TextColor(c.Theme().Danger)
 	}
 	text := v.Result
-	ui.TextArea(c, &text).ReadOnly(true).Grow(1).Label("最近观察结果")
+	ui.TextArea(c, &text).ReadOnly(true).Grow(1).Label(tr("latestObservation"))
 	for _, event := range s.events {
 		if event.SourceType == "observer" && event.SourceID == v.ID && event.AcknowledgedAt == nil {
 			event := event
-			if ui.Button(c, "标为已读").Clicked() {
+			if ui.Button(c, tr("markAsRead")).Clicked() {
 				s.action(func() error { _, e := s.service.AckEvent(event.ID); return e })
 			}
 			break
 		}
 	}
-	if ui.Button(c, "删除观察器…").Clicked() {
+	if ui.Button(c, tr("deleteObserver2")).Clicked() {
 		go func() {
-			result, e := mygo.Dialog.Message(mygo.MessageOptions{Parent: s.win, Type: mygo.MessageWarning, Message: "删除观察器「" + v.Name + "」？", Detail: "停止后续检查。不会操作被观察的工具。", Buttons: []string{"取消", "删除观察器"}})
+			result, e := mygo.Dialog.Message(mygo.MessageOptions{Parent: s.win, Type: mygo.MessageWarning, Message: fmt.Sprintf(tr("deleteObserverS"), v.Name), Detail: tr("stopFutureChecksTheObservedToolIsLeftUnchanged"), Buttons: []string{tr("cancel"), tr("deleteObserver")}})
 			if e == nil && result.Button == 1 {
 				s.update(func() { s.action(func() error { return s.service.DeleteObserver(v.ID) }) })
 			}
@@ -123,9 +124,9 @@ func (s *windowState) editObserver(v *model.Observer) {
 	in := model.ObserverInput{Cwd: home, IntervalMS: 30000, TimeoutMS: 10000, Enabled: true, OutputMode: "text"}
 	ref := ""
 	revision := int64(0)
-	title := "新建观察器"
+	title := tr("newObserver")
 	if v != nil {
-		title = "编辑观察器"
+		title = tr("editObserver")
 		ref = v.ID
 		revision = v.Revision
 		in = model.ObserverInput{Name: v.Name, Executable: v.Executable, Args: v.Args, Cwd: v.Cwd, IntervalMS: v.IntervalMS, TimeoutMS: v.TimeoutMS, Enabled: v.Enabled, OutputMode: v.OutputMode}
@@ -148,17 +149,17 @@ func (s *windowState) editObserver(v *model.Observer) {
 			ui.Text(c, title).Bold().FontSize(17)
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
-					ui.Field(c, "名称", func() { ui.TextInput(c, &in.Name).FillWidth() })
-					ui.Field(c, "可执行文件", func() { ui.TextInput(c, &in.Executable).FillWidth() })
-					ui.Field(c, "参数（每行一个）", func() { ui.TextArea(c, &args).Height(60).FillWidth() })
-					ui.Field(c, "工作目录", func() { ui.TextInput(c, &in.Cwd).FillWidth() })
-					ui.Field(c, "检查间隔", func() { ui.TextInput(c, &interval).FillWidth() })
-					ui.Collapsible(c, "高级", &advanced, func() {
-						ui.Field(c, "超时", func() { ui.TextInput(c, &timeout).FillWidth() })
-						ui.Tabs(c, &format, "文本", "JSON")
-						ui.Checkbox(c, &in.Enabled, "自动检查")
-						ui.Field(c, "新增环境变量（每行 KEY=VALUE）", func() { ui.TextArea(c, &env).Height(60).FillWidth() })
-						ui.Field(c, "移除环境变量（每行一个名称）", func() { ui.TextArea(c, &unset).Height(50).FillWidth() })
+					ui.Field(c, tr("name"), func() { ui.TextInput(c, &in.Name).FillWidth() })
+					ui.Field(c, tr("executable"), func() { ui.TextInput(c, &in.Executable).FillWidth() })
+					ui.Field(c, tr("argumentsOnePerLine"), func() { ui.TextArea(c, &args).Height(60).FillWidth() })
+					ui.Field(c, tr("workingDirectory"), func() { ui.TextInput(c, &in.Cwd).FillWidth() })
+					ui.Field(c, tr("checkInterval"), func() { ui.TextInput(c, &interval).FillWidth() })
+					ui.Collapsible(c, tr("advanced"), &advanced, func() {
+						ui.Field(c, tr("timeout"), func() { ui.TextInput(c, &timeout).FillWidth() })
+						ui.Tabs(c, &format, tr("text"), "JSON")
+						ui.Checkbox(c, &in.Enabled, tr("automaticChecks"))
+						ui.Field(c, tr("addEnvironmentVariablesKeyValuePerLine"), func() { ui.TextArea(c, &env).Height(60).FillWidth() })
+						ui.Field(c, tr("removeEnvironmentVariablesOneNamePerLine"), func() { ui.TextArea(c, &unset).Height(50).FillWidth() })
 					})
 				})
 			})
@@ -166,18 +167,18 @@ func (s *windowState) editObserver(v *model.Observer) {
 				ui.Text(c, message).TextColor(c.Theme().Danger)
 			}
 			ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Children(func() {
-				if ui.Button(c, "取消").Disabled(busy).Clicked() {
+				if ui.Button(c, tr("cancel")).Disabled(busy).Clicked() {
 					win.Close()
 				}
-				if ui.PrimaryButton(c, "保存").Disabled(busy).Clicked() {
+				if ui.PrimaryButton(c, tr("save")).Disabled(busy).Clicked() {
 					d, e := time.ParseDuration(interval)
 					if e != nil {
-						message = "检查间隔格式无效"
+						message = tr("invalidCheckInterval")
 						return
 					}
 					t, e := time.ParseDuration(timeout)
 					if e != nil {
-						message = "超时格式无效"
+						message = tr("invalidTimeout")
 						return
 					}
 					copy := in
@@ -189,7 +190,7 @@ func (s *windowState) editObserver(v *model.Observer) {
 						}
 						k, v, ok := strings.Cut(line, "=")
 						if !ok || k == "" {
-							message = "环境变量格式应为 KEY=VALUE"
+							message = tr("environmentVariablesMustUseKeyValue")
 							return
 						}
 						copy.EnvSet[k] = v

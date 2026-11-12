@@ -61,7 +61,7 @@ func TestTrayHidesEmptyGroupsButRetainsCoreCommands(t *testing.T) {
 	found := map[string]bool{}
 	for _, item := range items {
 		found[item.ID] = true
-		if item.ID == "recent" && (len(item.Submenu) != 1 || item.Submenu[0].Label != "全部历史…") {
+		if item.ID == "recent" && (len(item.Submenu) != 1 || item.Submenu[0].Label != tr("allHistory")) {
 			t.Fatal("history command disappeared when history is empty")
 		}
 	}
