@@ -6,11 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"github.com/alswl/apilot/internal/model"
-	"github.com/alswl/apilot/internal/runner"
-	"github.com/alswl/apilot/internal/schedule"
-	"github.com/alswl/apilot/internal/storage"
-	"github.com/alswl/apilot/internal/version"
 	"os"
 	"path/filepath"
 	"sort"
@@ -18,6 +13,12 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/internal/runner"
+	"github.com/alswl/apilot/internal/schedule"
+	"github.com/alswl/apilot/internal/storage"
+	"github.com/alswl/apilot/internal/version"
 )
 
 type active struct {
@@ -134,18 +135,28 @@ func Open(dir string) (*Service, error) {
 	go s.tick()
 	return s, nil
 }
+
+// StopAdmission also cancels managed work before waiting for IPC or UI workers.
+func (s *Service) StopAdmission() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopping {
+		return
+	}
+	s.stopping = true
+	s.cancel()
+	for id, a := range s.running {
+		a.cancelRequested = true
+		s.running[id] = a
+		a.cancel()
+	}
+}
 func (s *Service) Close() error {
+	s.StopAdmission()
 	s.closeOnce.Do(func() {
-		s.mu.Lock()
-		s.stopping = true
-		s.cancel()
-		for id, a := range s.running {
-			a.cancelRequested = true
-			s.running[id] = a
-			a.cancel()
-		}
-		s.mu.Unlock()
 		s.wg.Wait()
+		s.mu.Lock()
+		defer s.mu.Unlock()
 		s.closeError = s.store.Close()
 		_ = syscall.Flock(int(s.lock.Fd()), syscall.LOCK_UN)
 		s.lock.Close()
@@ -157,7 +168,10 @@ func (s *Service) Suspend() { s.mu.Lock(); s.suspended = true; s.mu.Unlock() }
 func (s *Service) Status() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	events, _ := s.store.Events()
+	var events []model.AttentionEvent
+	if !s.stopping {
+		events, _ = s.store.Events()
+	}
 	n := 0
 	for _, e := range events {
 		if e.AcknowledgedAt == nil {
@@ -333,6 +347,9 @@ func (s *Service) SetEnabled(ref string, on bool) (model.Task, error) {
 func (s *Service) DeleteTask(ref string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return model.Err("CONFLICT", "App is stopping")
+	}
 	t, e := s.taskLocked(ref)
 	if e != nil {
 		return e
@@ -576,6 +593,9 @@ func (s *Service) Settings() model.Settings { s.mu.Lock(); defer s.mu.Unlock(); 
 func (s *Service) SaveSettings(v model.Settings) (model.Settings, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return v, model.Err("CONFLICT", "App is stopping")
+	}
 	if v.MaxConcurrent < len(s.running) {
 		return v, model.Err("CONFLICT", "Stop active runs before lowering the limit below the active count")
 	}
@@ -595,11 +615,17 @@ func (s *Service) SaveSettings(v model.Settings) (model.Settings, error) {
 func (s *Service) Events() ([]model.AttentionEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return nil, model.Err("CONFLICT", "App is stopping")
+	}
 	return s.store.Events()
 }
 func (s *Service) AckEvent(id string) (model.AttentionEvent, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return model.AttentionEvent{}, model.Err("CONFLICT", "App is stopping")
+	}
 	events, e := s.store.Events()
 	if e != nil {
 		return model.AttentionEvent{}, e
@@ -629,11 +655,17 @@ func (s *Service) String() string { return fmt.Sprintf("apilot(%s)", s.dir) }
 func (s *Service) AllowNotification(key string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return false, model.Err("CONFLICT", "App is stopping")
+	}
 	return s.store.AllowNotification(key, time.Now())
 }
 func (s *Service) Prune() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return model.Err("CONFLICT", "App is stopping")
+	}
 	cutoff := time.Now().Add(-time.Duration(s.settings.RetentionDays) * 24 * time.Hour)
 	for id, r := range s.runs {
 		if !r.Active() && r.CreatedAt.Before(cutoff) {

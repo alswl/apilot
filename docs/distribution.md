@@ -1,7 +1,7 @@
 # Distribution
 
 `make app` builds the App, bundles the standalone CLI, signs ad hoc, and creates
-`build/darwin-arm64/apilot-0.1.0-arm64.dmg` using MyGo's native disk-image builder.
+`build/darwin-arm64/apilot-VERSION-arm64.dmg` using MyGo's native disk-image builder.
 The image contains apilot and an Applications shortcut with a Finder drag layout.
 `packaging/package-downloads.sh` verifies signatures and the image checksum, then
 exports DMG, App ZIP, CLI archive, provenance and SHA256SUMS into `dist/`.
@@ -64,14 +64,13 @@ App is covered by the notarized, stapled image. The script validates both ticket
 and the App's Gatekeeper assessment before packaging. It restores the keychain
 search list and packaging config and removes temporary credentials on exit.
 
-Signing configuration, tag publishing and Apple's response have not yet been
-verified with live credentials. This setup does not enroll a developer account,
-generate/revoke certificates or spend on paid GitHub runners.
+Published downloads are Developer ID signed and notarized when their
+`build-info.json` reports `signing: developer-id` and `notarized: true`.
+Development downloads remain ad hoc. Check each download's metadata and
+`SHA256SUMS`; do not infer signing from its filename.
 
 ## Brand assets
 
-The primary logo is the approved **Sunset Aviator (A)** portrait. Masters and
-monochrome alternatives live in `resources/brand/`; see its README for provenance
-and roles. `make icons` exports the bundle icon, in-app mark and alpha-only menu
-icon from those masters with the pinned Go dependencies. Generated PNGs are
-committed; CI needs no image generation service or extra graphics tools.
+Committed masters and their provenance live in [resources/brand](../resources/brand/README.md).
+`make icons` renders the App and menu marks with pinned Go dependencies;
+normal builds need no image-generation service.

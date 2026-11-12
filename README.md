@@ -154,19 +154,22 @@ open build/darwin-arm64/Apilot.app
 On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-0.0.3-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
 
 ```sh
-make test               # Core, storage, IPC, CLI and UI tests
+make check              # Read-only source, dependency and documentation checks
+make test-core          # Logic and real-resource tests without MyGo
+make test               # Complete suite including MyGo presentation tests
 make race               # Race-enabled suite
 make verify-ui          # Packaged native UI probe
 make verify-lifecycle   # Process cleanup and restart checks
 ```
 
-Verification commands use disposable data. The Go core is separate from MyGo UI: `internal/app` owns application behavior, `internal/storage` owns SQLite, `internal/runner` executes commands, and `internal/ipc` serves the CLI over a private Unix Socket.
+Verification commands use disposable data. The [contributor guide](CONTRIBUTING.md) links the pinned Go/UI standards and project exceptions.
+
+The Go core is separate from MyGo UI: `internal/app` owns application behavior, `internal/storage` owns SQLite, `internal/runner` executes commands, and `internal/ipc` serves the CLI over a private Unix Socket.
 
 ## Documentation
 
 - [Architecture](docs/architecture.md) — ownership, scheduling, IPC and process lifecycle.
 - [Distribution](docs/distribution.md) — CI artifacts, Developer ID signing and notarization setup.
-- [Verification](docs/verification/final.md) and [native menu checks](docs/verification/native-menu.md) — measured behavior and test boundaries.
 - [Known limitations](docs/known-limitations.md) — including unverified OS integration, sleep/resume and accessibility behavior.
 
 ### Interface language

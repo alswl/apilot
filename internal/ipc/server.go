@@ -3,22 +3,27 @@ package ipc
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/alswl/apilot/internal/app"
-	"github.com/alswl/apilot/internal/model"
-	"golang.org/x/sys/unix"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/alswl/apilot/internal/app"
+	"github.com/alswl/apilot/internal/model"
+	"golang.org/x/sys/unix"
 )
 
 type Server struct {
-	listener *net.UnixListener
-	wg       sync.WaitGroup
-	done     chan struct{}
-	path     string
+	listener    *net.UnixListener
+	mu          sync.Mutex
+	closeOnce   sync.Once
+	closing     bool
+	connections map[*net.UnixConn]struct{}
+	wg          sync.WaitGroup
+	done        chan struct{}
+	path        string
 }
 
 func Listen(s *app.Service, path string) (*Server, error) {
@@ -50,7 +55,7 @@ func Listen(s *app.Service, path string) (*Server, error) {
 		l.Close()
 		return nil, e
 	}
-	srv := &Server{listener: l, done: make(chan struct{}), path: path}
+	srv := &Server{listener: l, done: make(chan struct{}), path: path, connections: make(map[*net.UnixConn]struct{})}
 	slots := make(chan struct{}, 32)
 	srv.wg.Add(1)
 	go func() {
@@ -60,12 +65,28 @@ func Listen(s *app.Service, path string) (*Server, error) {
 			if e != nil {
 				return
 			}
+			srv.mu.Lock()
+			if srv.closing {
+				srv.mu.Unlock()
+				c.Close()
+				return
+			}
+			srv.connections[c] = struct{}{}
+			srv.mu.Unlock()
 			select {
 			case slots <- struct{}{}:
 				srv.wg.Add(1)
-				go func() { defer srv.wg.Done(); defer func() { <-slots }(); defer c.Close(); handle(s, c) }()
+				go func() {
+					defer srv.wg.Done()
+					defer func() { <-slots }()
+					defer func() { c.Close(); srv.mu.Lock(); delete(srv.connections, c); srv.mu.Unlock() }()
+					handle(s, c)
+				}()
 			default:
 				c.Close()
+				srv.mu.Lock()
+				delete(srv.connections, c)
+				srv.mu.Unlock()
 			}
 		}
 	}()
@@ -109,4 +130,15 @@ func handle(s *app.Service, c *net.UnixConn) {
 	}
 	_ = json.NewEncoder(c).Encode(resp)
 }
-func (s *Server) Close() { s.listener.Close(); s.wg.Wait() }
+func (s *Server) Close() {
+	s.closeOnce.Do(func() {
+		s.mu.Lock()
+		s.closing = true
+		s.listener.Close()
+		for c := range s.connections {
+			c.Close()
+		}
+		s.mu.Unlock()
+		s.wg.Wait()
+	})
+}

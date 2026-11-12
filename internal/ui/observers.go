@@ -2,12 +2,13 @@ package ui
 
 import (
 	"fmt"
-	"github.com/alswl/apilot/internal/model"
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"os"
 	"strings"
-	"time"
+
+	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/internal/presentation"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func (s *windowState) observerList(c *ui.Context) {
@@ -111,37 +112,25 @@ func (s *windowState) observerDetail(c *ui.Context) {
 		}
 	}
 	if ui.Button(c, tr("deleteObserver2")).Clicked() {
-		go func() {
+		s.background(func() {
 			result, e := mygo.Dialog.Message(mygo.MessageOptions{Parent: s.win, Type: mygo.MessageWarning, Message: fmt.Sprintf(tr("deleteObserverS"), v.Name), Detail: tr("stopFutureChecksTheObservedToolIsLeftUnchanged"), Buttons: []string{tr("cancel"), tr("deleteObserver")}})
 			if e == nil && result.Button == 1 {
 				s.update(func() { s.action(func() error { return s.service.DeleteObserver(v.ID) }) })
 			}
-		}()
+		})
 	}
 }
 func (s *windowState) editObserver(v *model.Observer) {
 	home, _ := os.UserHomeDir()
-	in := model.ObserverInput{Cwd: home, IntervalMS: 30000, TimeoutMS: 10000, Enabled: true, OutputMode: "text"}
-	ref := ""
-	revision := int64(0)
+	draft := presentation.NewObserverDraft(v, home)
 	title := tr("newObserver")
 	if v != nil {
 		title = tr("editObserver")
-		ref = v.ID
-		revision = v.Revision
-		in = model.ObserverInput{Name: v.Name, Executable: v.Executable, Args: v.Args, Cwd: v.Cwd, IntervalMS: v.IntervalMS, TimeoutMS: v.TimeoutMS, Enabled: v.Enabled, OutputMode: v.OutputMode}
 	}
-	args := strings.Join(in.Args, "\n")
-	interval := time.Duration(in.IntervalMS * int64(time.Millisecond)).String()
-	timeout := time.Duration(in.TimeoutMS * int64(time.Millisecond)).String()
-	format := 0
-	if in.OutputMode == "json" {
-		format = 1
-	}
+	var operation presentation.OperationState
 	message := ""
 	busy := false
 	advanced := false
-	env, unset := "", ""
 	var win *mygo.Window
 	win = mygo.NewWindow(mygo.WindowOptions{Title: title, Width: 540, Height: 500, MinWidth: 480, MinHeight: 360, Parent: s.win, Modal: true, Content: ui.View(func(c *ui.Context) {
 		brandTheme(c)
@@ -149,17 +138,17 @@ func (s *windowState) editObserver(v *model.Observer) {
 			ui.Text(c, title).Bold().FontSize(17)
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
-					ui.Field(c, tr("name"), func() { ui.TextInput(c, &in.Name).FillWidth() })
-					ui.Field(c, tr("executable"), func() { ui.TextInput(c, &in.Executable).FillWidth() })
-					ui.Field(c, tr("argumentsOnePerLine"), func() { ui.TextArea(c, &args).Height(60).FillWidth() })
-					ui.Field(c, tr("workingDirectory"), func() { ui.TextInput(c, &in.Cwd).FillWidth() })
-					ui.Field(c, tr("checkInterval"), func() { ui.TextInput(c, &interval).FillWidth() })
+					ui.Field(c, tr("name"), func() { ui.TextInput(c, &draft.Values.Name).FillWidth() })
+					ui.Field(c, tr("executable"), func() { ui.TextInput(c, &draft.Values.Executable).FillWidth() })
+					ui.Field(c, tr("argumentsOnePerLine"), func() { ui.TextArea(c, &draft.Args).Height(60).FillWidth() })
+					ui.Field(c, tr("workingDirectory"), func() { ui.TextInput(c, &draft.Values.Cwd).FillWidth() })
+					ui.Field(c, tr("checkInterval"), func() { ui.TextInput(c, &draft.Interval).FillWidth() })
 					ui.Collapsible(c, tr("advanced"), &advanced, func() {
-						ui.Field(c, tr("timeout"), func() { ui.TextInput(c, &timeout).FillWidth() })
-						ui.Tabs(c, &format, tr("text"), "JSON")
-						ui.Checkbox(c, &in.Enabled, tr("automaticChecks"))
-						ui.Field(c, tr("addEnvironmentVariablesKeyValuePerLine"), func() { ui.TextArea(c, &env).Height(60).FillWidth() })
-						ui.Field(c, tr("removeEnvironmentVariablesOneNamePerLine"), func() { ui.TextArea(c, &unset).Height(50).FillWidth() })
+						ui.Field(c, tr("timeout"), func() { ui.TextInput(c, &draft.Timeout).FillWidth() })
+						ui.Tabs(c, &draft.Format, tr("text"), "JSON")
+						ui.Checkbox(c, &draft.Values.Enabled, tr("automaticChecks"))
+						ui.Field(c, tr("addEnvironmentVariablesKeyValuePerLine"), func() { ui.TextArea(c, &draft.Env).Height(60).FillWidth() })
+						ui.Field(c, tr("removeEnvironmentVariablesOneNamePerLine"), func() { ui.TextArea(c, &draft.Unset).Height(50).FillWidth() })
 					})
 				})
 			})
@@ -171,57 +160,37 @@ func (s *windowState) editObserver(v *model.Observer) {
 					win.Close()
 				}
 				if ui.PrimaryButton(c, tr("save")).Disabled(busy).Clicked() {
-					d, e := time.ParseDuration(interval)
-					if e != nil {
-						message = tr("invalidCheckInterval")
+					copy, fieldErr := draft.Input()
+					if fieldErr != nil {
+						message = presentationMessage(fieldErr.Code)
 						return
 					}
-					t, e := time.ParseDuration(timeout)
-					if e != nil {
-						message = tr("invalidTimeout")
+					token, ok := operation.Begin()
+					if !ok {
 						return
 					}
-					copy := in
-					copy.EnvSet = map[string]string{}
-					copy.EnvUnset = nil
-					for _, line := range strings.Split(env, "\n") {
-						if line == "" {
-							continue
-						}
-						k, v, ok := strings.Cut(line, "=")
-						if !ok || k == "" {
-							message = tr("environmentVariablesMustUseKeyValue")
-							return
-						}
-						copy.EnvSet[k] = v
-					}
-					for _, line := range strings.Split(unset, "\n") {
-						if line != "" {
-							copy.EnvUnset = append(copy.EnvUnset, line)
-						}
-					}
-					copy.IntervalMS = d.Milliseconds()
-					copy.TimeoutMS = t.Milliseconds()
-					copy.Args = []string{}
-					if args != "" {
-						copy.Args = strings.Split(args, "\n")
-					}
-					copy.OutputMode = []string{"text", "json"}[format]
+					ref, revision := draft.ID, draft.Revision
+
 					busy = true
-					go func() {
+					s.background(func() {
 						_, e := s.service.SaveObserver(ref, copy, revision)
 						win.Update(func() {
+							if s.stopping || !operation.Complete(token) {
+								return
+							}
 							busy = false
 							if e != nil {
 								message = e.Error()
 							} else {
 								win.Close()
-								go s.refresh()
+								s.refresh()
 							}
 						})
-					}()
+					})
 				}
 			})
 		})
 	})})
+
+	win.OnClosed(func() { operation.Invalidate() })
 }

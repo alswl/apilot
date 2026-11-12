@@ -33,3 +33,7 @@
 /dist/
 
 /resources/darwin/bin/
+
+# Script caches.
+__pycache__/
+*.pyc

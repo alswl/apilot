@@ -8,17 +8,27 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/alswl/apilot/internal/app"
-	"github.com/alswl/apilot/internal/ipc"
+	"github.com/alswl/apilot/internal/host"
 	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/internal/presentation"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
 type windowState struct {
 	traySignature    string
+	stopping         bool
+	workers          sync.WaitGroup
+	operation        presentation.OperationState
+	refreshState     presentation.RefreshState
+	logState         presentation.LogSelection
+	logOperation     presentation.OperationState
+	seen             map[string]bool
+	ctx              context.Context
 	taskScroll       ui.ScrollState
 	runScroll        ui.ScrollState
 	logScroll        ui.ScrollState
@@ -46,24 +56,17 @@ type windowState struct {
 	busy             bool
 }
 
-func Run(probe bool) error {
+func Run(runtime *host.Runtime, probe bool) error {
 	mygo.App.SetLanguages("en", "zh-Hans")
-	service, err := app.Open(app.DataDir())
-	if err != nil {
-		return err
-	}
-	defer service.Close()
-	server, err := ipc.Listen(service, app.SocketPath(app.DataDir()))
-	if err != nil {
-		return err
-	}
-	defer server.Close()
-	s := &windowState{service: service, followLogs: true}
+	service := runtime.Service
+	var err error
+	s := &windowState{service: service, followLogs: true, seen: presentation.InitialSeen(service.Runs(""), mustEvents(service))}
 	appUI := mygo.App
 	appUI.SetName("Apilot")
 	appUI.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	s.ctx = ctx
 	var allowQuit bool
 	appUI.OnBeforeQuit(func(e *mygo.QuitEvent) {
 		if allowQuit {
@@ -71,17 +74,28 @@ func Run(probe bool) error {
 		}
 		if e.SessionEnding {
 			cancel()
-			service.Suspend()
+			s.stopping = true
+			go runtime.StopAdmission()
 			return
 		}
 		e.PreventDefault()
-		if s.busy && s.err == tr("quitting") {
+		if s.stopping {
 			return
 		}
+		s.stopping = true
+		s.operation.Invalidate()
+		s.refreshState.Invalidate()
+		s.logOperation.Invalidate()
 		s.err = tr("quitting")
 		s.busy = true
 		cancel()
-		go func() { server.Close(); _ = service.Close(); mygo.RunOnMain(func() { allowQuit = true; appUI.Quit() }) }()
+		go func() {
+			runtime.StopAdmission()
+			runtime.StopIPC()
+			s.workers.Wait()
+			_ = runtime.Close()
+			mygo.RunOnMain(func() { allowQuit = true; appUI.Quit() })
+		}()
 	})
 	appUI.OnActivate(func(visible bool) {
 		if !visible && s.tray != nil {
@@ -130,7 +144,8 @@ func Run(probe bool) error {
 			}
 		}
 		s.refresh()
-		go s.poll(ctx)
+		s.workers.Add(1)
+		go func() { defer s.workers.Done(); s.poll(ctx) }()
 		if probe {
 			go func() {
 				time.Sleep(2 * time.Second)
@@ -181,16 +196,28 @@ func Run(probe bool) error {
 	if e := appUI.Run(); e != nil {
 		return e
 	}
+	cancel()
 	return err
 }
+func mustEvents(s *app.Service) []model.AttentionEvent { v, _ := s.Events(); return v }
 func (s *windowState) show() {
 	if s.win == nil || s.win.IsDestroyed() {
 		s.win = mygo.NewWindow(mygo.WindowOptions{Title: "Apilot", Width: 640, Height: 480, MinWidth: 480, MinHeight: 360, StateKey: "main", Content: ui.View(s.view)})
+		s.win.OnClosed(func() {
+			s.operation.Invalidate()
+			s.busy = false
+			s.refreshState.Invalidate()
+			s.logOperation.Invalidate()
+			s.logState.Generation++
+		})
 	}
 	s.win.Show()
 }
 func (s *windowState) update(fn func()) {
 	mygo.RunOnMain(func() {
+		if s.stopping {
+			return
+		}
 		fn()
 		if s.win != nil && !s.win.IsDestroyed() {
 			s.win.Invalidate()
@@ -200,100 +227,133 @@ func (s *windowState) update(fn func()) {
 		}
 	})
 }
+func (s *windowState) background(fn func()) {
+	if s.stopping {
+		return
+	}
+	s.workers.Add(1)
+	go func() { defer s.workers.Done(); fn() }()
+}
 func (s *windowState) action(fn func() error) {
-	if s.busy {
+	if s.stopping {
+		return
+	}
+	token, ok := s.operation.Begin()
+	if !ok {
 		return
 	}
 	s.busy = true
 	s.err = ""
+	s.workers.Add(1)
 	go func() {
+		defer s.workers.Done()
 		err := fn()
 		s.update(func() {
+			if !s.operation.Complete(token) {
+				return
+			}
 			s.busy = false
 			if err != nil {
 				s.err = err.Error()
 			}
+			s.refresh()
 		})
-		s.refresh()
 	}()
 }
 func (s *windowState) refresh() {
-	tasks := s.service.Tasks()
-	runs := s.service.Runs("")
-	observers := s.service.Observers()
-	events, e := s.service.Events()
-	status := s.service.Status()
-	if e != nil {
-		return
-	}
-	s.update(func() {
-		s.tasks = tasks
-		s.runs = runs
-		s.events = events
-		s.observers = observers
-		s.updateTray(status)
+	mygo.RunOnMain(func() {
+		if s.stopping {
+			return
+		}
+		token, ok := s.refreshState.Begin()
+		if !ok {
+			return
+		}
+		s.workers.Add(1)
+		go func() {
+			defer s.workers.Done()
+			tasks, runs, observers := s.service.Tasks(), s.service.Runs(""), s.service.Observers()
+			events, err := s.service.Events()
+			status := s.service.Status()
+			settings := s.service.Settings()
+			s.update(func() {
+				if !s.refreshState.Complete(token) {
+					return
+				}
+				if err != nil {
+					s.err = err.Error()
+				} else {
+					s.tasks, s.runs, s.observers, s.events = tasks, runs, observers, events
+					if s.tray != nil {
+						s.updateTray(status)
+					}
+					for _, candidate := range presentation.Notifications(settings, runs, events, s.seen) {
+						s.sendNotification(candidate)
+					}
+				}
+				if s.refreshState.Pending() {
+					s.refresh()
+				}
+			})
+		}()
 	})
 }
 func (s *windowState) poll(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	seen := map[string]bool{}
-	for _, r := range s.service.Runs("") {
-		if !r.Active() {
-			seen[r.ID] = true
-		}
-	}
-	events, _ := s.service.Events()
-	for _, e := range events {
-		seen[e.ID] = true
-	}
-	lastPrune := time.Time{}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.refresh()
-			s.notify(ctx, seen)
-			if time.Since(lastPrune) > 24*time.Hour {
-				_ = s.service.Prune()
-				lastPrune = time.Now()
-			}
-			var runID string
-			var stream int
-			var offset int64
-			var key string
-			mygo.RunOnMain(func() {
-				runID = s.selectedRun
-				stream = s.stream
-				key = runID + []string{"stdout", "stderr"}[stream]
-				if s.logKey != key {
-					s.logText = ""
-					s.logOffset = 0
-					s.logKey = key
-				}
-				offset = s.logOffset
-			})
-			if runID != "" {
-				name := []string{"stdout", "stderr"}[stream]
-				chunk, e := s.service.Logs(runID, name, offset, 65536)
-				s.update(func() {
-					if e != nil {
-						s.err = e.Error()
-					} else if s.logKey == key {
-						if s.followLogs && s.logScroll.Y >= s.logScroll.MaxY-1 {
-							s.logScroll.Y = math.MaxFloat32
-						}
-						s.logText += string(chunk.Data)
-						if len(s.logText) > 256*1024 {
-							s.logText = s.logText[len(s.logText)-256*1024:]
-						}
-						s.logOffset = chunk.NextOffset
-					}
-				})
-			}
+			s.update(func() { s.refresh(); s.readLogs() })
 		}
 	}
+}
+func (s *windowState) readLogs() {
+	stream := []string{"stdout", "stderr"}[s.stream]
+	key := s.selectedRun + stream
+	if s.logKey != key {
+		s.logKey = key
+		s.logText = ""
+		s.logOffset = 0
+		s.logState.Generation++
+		s.logOperation.Invalidate()
+	}
+	if s.selectedRun == "" {
+		return
+	}
+	token, ok := s.logOperation.Begin()
+	if !ok {
+		return
+	}
+	selected := presentation.LogSelection{RunID: s.selectedRun, Stream: stream, Offset: s.logOffset, Generation: s.logState.Generation}
+	s.workers.Add(1)
+	go func() {
+		defer s.workers.Done()
+		chunk, err := s.service.Logs(selected.RunID, selected.Stream, selected.Offset, 65536)
+		s.update(func() {
+			if !s.logOperation.Complete(token) {
+				return
+			}
+			current := presentation.LogSelection{RunID: s.selectedRun, Stream: []string{"stdout", "stderr"}[s.stream], Offset: s.logOffset, Generation: s.logState.Generation}
+			if selected != current {
+				return
+			}
+			if err != nil {
+				s.err = err.Error()
+				return
+			}
+			if s.followLogs && s.logScroll.Y >= s.logScroll.MaxY-1 {
+				s.logScroll.Y = math.MaxFloat32
+			}
+			s.logText += string(chunk.Data)
+			if len(s.logText) > 256*1024 {
+				s.logText = s.logText[len(s.logText)-256*1024:]
+			}
+			s.logOffset = chunk.NextOffset
+		})
+	}()
 }
 func (s *windowState) updateTray(status map[string]any) {
 	signature := fmt.Sprint(status) + s.err + fmt.Sprint(s.busy)
@@ -590,34 +650,17 @@ func triggerText(v string) string {
 }
 
 func (s *windowState) selectEvent(e model.AttentionEvent) {
+	target := presentation.EventTarget(e)
 	s.selectedTask = ""
-	s.selectedObserver = ""
-	s.selectedRun = e.RunID
-	s.tab = 1
-	if e.SourceType == "observer" {
-		s.selectedRun = ""
-		s.selectedObserver = e.SourceID
-		s.tab = 2
-	}
+	s.selectedRun, s.selectedObserver, s.tab = target.RunID, target.ObserverID, target.Tab
 }
 
-func taskActive(runs []model.Run, taskID string) bool {
-	for _, r := range runs {
-		if r.TaskID == taskID && r.Active() {
-			return true
-		}
-	}
-	return false
-}
-
+func taskActive(runs []model.Run, id string) bool { return presentation.TaskActive(runs, id) }
 func (s *windowState) setAutomatic(t model.Task) error {
-	plan := *t.Schedule
-	on := !(t.Enabled && plan.Enabled)
-	plan.Enabled = on
-	_, err := s.service.SaveTask(t.ID, model.TaskInput{
-		Name: t.Name, Description: t.Description, Executable: t.Executable,
-		Args: t.Args, Cwd: t.Cwd, TimeoutMS: t.TimeoutMS, Enabled: on, Schedule: &plan,
-	}, t.Revision)
+	if t.Schedule == nil {
+		return model.Err("INVALID_ARGUMENT", "Task has no schedule")
+	}
+	_, err := s.service.SetAutomatic(t.ID, !(t.Enabled && t.Schedule.Enabled), t.Revision)
 	return err
 }
 

@@ -3,6 +3,7 @@
 import json, os, pathlib, signal, subprocess, tempfile, time
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 APP = pathlib.Path(os.environ.get('APILOT_VERIFY_APP', str(ROOT/'bin/apilot-app')))
+subprocess.run(['python3', str(ROOT/'scripts/verify-built-app.py')],check=True)
 CLI = ROOT/'bin/apilot'
 WORK = ROOT/'tmp/lifecycle'
 WORK.mkdir(parents=True, exist_ok=True)

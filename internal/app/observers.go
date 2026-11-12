@@ -3,13 +3,14 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"github.com/alswl/apilot/internal/model"
-	"github.com/alswl/apilot/internal/runner"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/internal/runner"
 )
 
 func publicObserver(v model.Observer) model.Observer {
@@ -106,6 +107,9 @@ func (s *Service) SaveObserver(ref string, in model.ObserverInput, expected int6
 func (s *Service) SetObserverEnabled(ref string, on bool) (model.Observer, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return model.Observer{}, model.Err("CONFLICT", "App is stopping")
+	}
 	v, e := s.observerLocked(ref)
 	if e != nil {
 		return v, e
@@ -125,6 +129,9 @@ func (s *Service) SetObserverEnabled(ref string, on bool) (model.Observer, error
 func (s *Service) DeleteObserver(ref string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping {
+		return model.Err("CONFLICT", "App is stopping")
+	}
 	v, e := s.observerLocked(ref)
 	if e != nil {
 		return e
