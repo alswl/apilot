@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 app_path=build/darwin-arm64/Apilot.app
 output_dir=dist
@@ -12,10 +12,12 @@ fi
 test -d "$app_path"
 test -x bin/apilot
 codesign --verify --deep --strict "$app_path"
-./bin/apilot version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("packaging/mygo.json").read_text())["version"], "CLI and App versions must match"'
+lipo -verify_arch arm64 "$app_path/Contents/Resources/bin/apilot"
+"$app_path/Contents/Resources/bin/apilot" version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("mygo.json").read_text())["version"], "Bundled CLI version must match App"'
+./bin/apilot version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("mygo.json").read_text())["version"], "CLI and App versions must match"'
 mkdir -p "$output_dir"
 # MyGo builds the drag-to-Applications image together with the App.
-version=$(python3 -c 'import json; print(json.load(open("packaging/mygo.json"))["version"])')
+version=$(python3 -c 'import json; print(json.load(open("mygo.json"))["version"])')
 dmg_path="build/darwin-arm64/apilot-$version-arm64.dmg"
 hdiutil verify "$dmg_path"
 cp "$dmg_path" "$output_dir/apilot-macos-arm64.dmg"
@@ -30,7 +32,7 @@ def command(*args):
     return subprocess.check_output(args, text=True).strip()
 
 info = {
-    'version': json.loads(Path('packaging/mygo.json').read_text())['version'],
+    'version': json.loads(Path('mygo.json').read_text())['version'],
     'source_commit': command('git', 'rev-parse', 'HEAD'),
     'source_dirty': bool(command('git', 'status', '--porcelain')),
     'app_binary_sha256': hashlib.sha256(Path('build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot').read_bytes()).hexdigest(),

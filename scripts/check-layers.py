@@ -31,6 +31,8 @@ def main():
             if layer not in ALLOWED or path != 'pkg/' + layer:
                 errors.append(f'Unexpected application package: {path}')
             for dependency in package.get('Imports', []):
+                if layer in {'services', 'managers', 'common'} and dependency in {'syscall', 'golang.org/x/sys/unix', 'golang.org/x/sys/windows'}:
+                    errors.append(f'Platform syscall must live in an adapter: {path} -> {dependency}')
                 if not dependency.startswith(PREFIX):
                     continue
                 target = dependency.removeprefix(PREFIX)

@@ -23,7 +23,7 @@ def main():
                 return 1
     elif mode == 'version':
         declared = re.search(r'const Version = "([^"]+)"', (ROOT / 'pkg/common/version.go').read_text()).group(1)
-        packaged = json.loads((ROOT / 'packaging/mygo.json').read_text())['version']
+        packaged = json.loads((ROOT / 'mygo.json').read_text())['version']
         if declared != packaged:
             raise ValueError(f'Version mismatch: {declared} != {packaged}')
         print(f'App/CLI source version: {declared}')

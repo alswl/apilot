@@ -64,8 +64,8 @@ jobs:
             python3 - <<'PY'
           import json, os
           from pathlib import Path
-          version = json.loads(Path('packaging/mygo.json').read_text())['version']
-          assert os.environ['RELEASE_TAG'] == 'v' + version, 'Tag must match packaging/mygo.json version'
+          version = json.loads(Path('mygo.json').read_text())['version']
+          assert os.environ['RELEASE_TAG'] == 'v' + version, 'Tag must match mygo.json version'
           PY
           fi
       - name: Check formatting
@@ -76,7 +76,7 @@ jobs:
         run: make vet
       - name: Check dependency boundary and versions
         if: steps.changes.outputs.full == 'true'
-        run: make check-architecture check-version
+        run: make check-architecture check-version check-portable
       - name: Test complete suite with race detector
         if: steps.changes.outputs.full == 'true'
         run: make race
@@ -93,14 +93,14 @@ jobs:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: packaging/sign-release.sh
+        run: packaging/darwin/sign-release.sh
       - name: Platform acceptance boundary
         if: steps.changes.outputs.full == 'true'
         run: |
           echo 'Packaged window/menu/Quit acceptance: NOT_VERIFIED in this noninteractive CI job; run make verify-ui verify-lifecycle in a macOS desktop session.' >> "$GITHUB_STEP_SUMMARY"
       - name: Package and verify downloads
         if: steps.changes.outputs.full == 'true'
-        run: packaging/package-downloads.sh
+        run: packaging/darwin/package-downloads.sh
       - name: Upload downloads
         if: steps.changes.outputs.full == 'true'
         id: upload

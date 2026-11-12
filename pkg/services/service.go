@@ -2,14 +2,16 @@ package services
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/integrations"
 )
 
 type active struct {
@@ -27,7 +29,7 @@ type Service struct {
 	mu           sync.Mutex
 	store        Store
 	dir          string
-	lock         *os.File
+	lock         io.Closer
 	ctx          context.Context
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
@@ -46,14 +48,14 @@ func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
 	if e := os.Chmod(dir, 0700); e != nil {
 		return nil, e
 	}
-	lock, e := os.OpenFile(filepath.Join(dir, "app.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	lock, e := integrations.LockFile(filepath.Join(dir, "app.lock"))
+	if errors.Is(e, integrations.ErrLocked) {
+		return nil, common.Err("CONFLICT", "apilot is already running for this data directory")
+	}
 	if e != nil {
 		return nil, e
 	}
-	if e = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); e != nil {
-		lock.Close()
-		return nil, common.Err("CONFLICT", "apilot is already running for this data directory")
-	}
+
 	db, e := openStore(filepath.Join(dir, "apilot.db"))
 	if e != nil {
 		lock.Close()
@@ -131,7 +133,6 @@ func (s *Service) Close() error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.closeError = s.store.Close()
-		_ = syscall.Flock(int(s.lock.Fd()), syscall.LOCK_UN)
 		s.lock.Close()
 	})
 	return s.closeError

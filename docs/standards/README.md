@@ -14,9 +14,10 @@ The copies preserve upstream wording and attribution. Links to editions or demos
 | Entry points | Both `main.go` files only call `os.Exit(Execute())`. Each CLI command/subcommand has its own file under `cmd/apilot/` and registers with its parent in `init()`. |
 | Business rules | Commands call services; server adapters call the Application Service. Services depend on a constructor-injected storage interface; DAL owns SQL. Files are grouped by entity within each layer. |
 | UI | MyGo rendering and platform callbacks stay in UI; drafts/state projections must not depend on MyGo. |
+| Desktop layout | Keep `internal/ui` and the root `mygo.json`; use MyGo `resources/<goos>-<goarch>/` overlays for target executables. Brand masters live in `design/`, platform distribution in `packaging/<goos>/`. OS syscalls stay in platform adapters, outside business rules. |
 | Storage/configuration | Existing SQLite migrations, macOS data paths and environment patches; no ORM, HTTP server or Viper migration. |
 | Tests/checks | Standard Go tests, race, formatting and vet. No additional assertion/lint dependency is required. |
-| Version | `pkg/common.Version` and `packaging/mygo.json` must agree; packaging verifies actual binaries. |
+| Version | `pkg/common.Version` and `mygo.json` must agree; packaging verifies actual binaries. |
 | Automation | Existing noninteractive CLI contract takes precedence over generic confirmation examples. |
 
 Only the domain modeling principles from the information-page guide apply; Ant Design/Web/TUI stacks and demos are outside this project.

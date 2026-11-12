@@ -3,8 +3,13 @@
 `make app` builds the App, bundles the standalone CLI, signs ad hoc, and creates
 `build/darwin-arm64/apilot-VERSION-arm64.dmg` using MyGo's native disk-image builder.
 The image contains apilot and an Applications shortcut with a Finder drag layout.
-`packaging/package-downloads.sh` verifies signatures and the image checksum, then
+`packaging/darwin/package-downloads.sh` verifies signatures and the image checksum, then
 exports DMG, App ZIP, CLI archive, provenance and SHA256SUMS into `dist/`.
+
+`mygo.json` is the shared configuration. `make app` stages the CLI under
+`resources/darwin-GOARCH/bin/`, then explicitly selects that MyGo build target;
+resources from other targets are excluded. Current download packaging remains
+macOS arm64. Linux/Windows application builds are not yet supported.
 
 ## Install and first launch
 
@@ -48,12 +53,12 @@ When enabled, a missing/invalid secret or failed notarization fails the tag buil
 it never silently publishes an unsigned replacement.
 
 Only a pushed `v*` tag runs signing/notarization, and its version must match
-`packaging/mygo.json`. PRs, regular pushes and manual development runs never
+`mygo.json`. PRs, regular pushes and manual development runs never
 receive signing secrets. No `pull_request_target`, no credentials in Go caches.
 The existing standard macOS job does the signing, with a 15-minute step limit;
 there is no second native build or per-PR notarization.
 
-`packaging/sign-release.sh` creates a temporary keychain, imports the certificate,
+`packaging/darwin/sign-release.sh` creates a temporary keychain, imports the certificate,
 stores notarytool credentials there, and invokes MyGo's existing signing and
 notarization support. MyGo signs nested CLI code and the App with hardened runtime
 and timestamps, signs the DMG, submits it once to Apple, and staples the DMG and
@@ -71,6 +76,6 @@ Development downloads remain ad hoc. Check each download's metadata and
 
 ## Brand assets
 
-Committed masters and their provenance live in [resources/brand](../resources/brand/README.md).
+Committed masters and their provenance live in [design/brand](../design/brand/README.md).
 `make icons` renders the App and menu marks with pinned Go dependencies;
 normal builds need no image-generation service.

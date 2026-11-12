@@ -54,8 +54,8 @@ func appIcon(master image.Image, size int) image.Image {
 }
 
 func main() {
-	master := readPNG("resources/brand/apilot-sunset.png")
-	template := readPNG("resources/brand/apilot-template.png")
+	master := readPNG("design/brand/apilot-sunset.png")
+	template := readPNG("design/brand/apilot-template.png")
 	transparent, ink := 0, 0
 	art := image.Rectangle{}
 	for y := template.Bounds().Min.Y; y < template.Bounds().Max.Y; y++ {

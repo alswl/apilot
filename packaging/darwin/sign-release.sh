@@ -1,7 +1,7 @@
 #!/bin/bash
 # Release-only: import credentials into an isolated, temporary keychain.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 : "${APPLE_CERTIFICATE_P12_BASE64:?Missing Developer ID certificate secret}"
 : "${APPLE_CERTIFICATE_PASSWORD:?Missing certificate password secret}"
 : "${APPLE_SIGNING_IDENTITY:?Missing Developer ID Application identity}"
@@ -54,7 +54,7 @@ PY
 # the DMG, submits it once, and staples the DMG and original App bundle.
 make app MYGO_BUILD_FLAGS=
 xcrun stapler validate build/darwin-arm64/Apilot.app
-version=$(python3 -c 'import json; print(json.load(open("packaging/mygo.json"))["version"])')
+version=$(python3 -c 'import json; print(json.load(open("mygo.json"))["version"])')
 xcrun stapler validate "build/darwin-arm64/apilot-$version-arm64.dmg"
 spctl --assess --type execute --verbose build/darwin-arm64/Apilot.app
 # Distribute the very same signed CLI that Apple scanned inside the App.

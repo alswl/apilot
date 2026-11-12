@@ -6,6 +6,7 @@
 - GUI navigation has headless tests plus real native screenshots at 640×480 and 480×360. Full mouse/keyboard form submission, file opening, copy and scroll restoration still need manual acceptance.
 - Real Codex/herdr commands have not been run as acceptance fixtures. Generic local command/observer integration is tested.
 - macOS 12 and Intel/universal binaries have not been validated. Published downloads target Apple Silicon; development builds are ad hoc. See [distribution](distribution.md) for signing metadata.
+- Linux and Windows applications are not implemented or accepted. Cross-compilation checks cover only the shared domain, configuration, scheduling and presentation packages; process helpers, IPC, desktop integration and SQLite's C toolchain still need platform work.
 - JSON output is the stable automation format. CLI event/observer lists use default pagination; additional pagination flags are pending.
 - Observer results are limited to the latest bounded check. There is no observation history or external-tool-specific health parser.
 - History is held in memory for the retention period and refreshed in UI snapshots. Large histories beyond the tested 1,000 records require further profiling.

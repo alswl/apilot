@@ -2,11 +2,11 @@ include hack/project.mk
 .DEFAULT_GOAL := build
 include hack/makefile-go/general.mk
 
-.PHONY: build cli download clean check check-format fmt vet check-version check-architecture check-docs lint test test-core race race-core race-ui app icons verify-ui verify-lifecycle verify verify-app-path
+.PHONY: build cli download clean check check-format fmt vet check-version check-architecture check-docs check-portable check-app-platform lint test test-core race race-core race-ui app icons verify-ui verify-lifecycle verify verify-app-path
 .NOTPARALLEL: verify race
 
 ##@ Checks
-check: check-format vet check-version check-architecture check-docs ## Run read-only checks
+check: check-format vet check-version check-architecture check-docs check-portable ## Run read-only checks
 lint: check ## Run read-only checks
 check-format: ## Check first-party Go formatting
 	python3 scripts/check-source.py format
@@ -20,6 +20,8 @@ check-architecture: ## Check logic and test dependencies contain no MyGo
 	scripts/check-architecture.sh
 check-docs: ## Check local documentation links and pinned standards
 	python3 scripts/check-docs.py
+check-portable: ## Cross-compile shared packages for Linux and Windows
+	bash scripts/check-portable.sh
 
 TEST_FLAGS ?=
 
@@ -45,16 +47,17 @@ download: ## Download Go dependencies
 clean: ## Remove generated binaries only
 	$(MAKE) -f hack/build.mk clean
 MYGO_BUILD_FLAGS ?= -skip-notarize
-app: cli ## Build ad-hoc App and DMG without release credentials
-	mkdir -p resources/darwin/bin
-	cp bin/apilot resources/darwin/bin/apilot
-	go tool mygo build $(MYGO_BUILD_FLAGS)
+check-app-platform:
+	@test "$(GOOS)" = darwin && test "$$(go env GOHOSTOS)" = darwin && test "$(GOARCH)" = "$$(go env GOHOSTARCH)" || { echo 'App packaging currently requires native macOS; other platforms need runtime adapters and acceptance.' >&2; exit 1; }
+app: check-app-platform cli ## Build ad-hoc native macOS App and DMG
+	python3 scripts/prepare-resources.py --os $(GOOS) --arch $(GOARCH)
+	go tool mygo build -platform $(GOOS)/$(GOARCH) $(MYGO_BUILD_FLAGS)
 	python3 scripts/verify-built-app.py --record
 icons: ## Render committed brand masters
-	go run packaging/render-icons.go
+	go run design/render-icons.go
 
 ##@ Platform verification (requires a desktop session)
-APILOT_VERIFY_APP ?= $(CURDIR)/build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot
+APILOT_VERIFY_APP ?= $(CURDIR)/build/$(GOOS)-$(GOARCH)/Apilot.app/Contents/MacOS/Apilot
 ifneq ($(VERIFY_SKIP_BUILD),1)
 verify-app-path: app
 endif

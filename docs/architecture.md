@@ -18,6 +18,12 @@ The App is the only long-lived owner of SQLite, scheduling, task execution and t
 
 Dependencies flow from commands/server to services, then managers/DAL/integrations/common. Production service code does not depend on the concrete DAL; the App server constructs it. SQL migrations and saved data remain compatible.
 
+The shared MyGo UI stays in `internal/ui`; this project uses its own Go layering rather than the starter template layout. OS adapters use Go platform file suffixes/build tags within their owning layer: file locks and execution in integrations, IPC authentication in server, and desktop integration in UI. Services hold a closeable lock lease without making OS syscalls.
+
+The root `mygo.json` configures the desktop app. `resources/` is MyGo's runtime resource tree: shared assets live at its root and target executables under `<goos>-<goarch>/bin/`; MyGo merges the selected overlay into the installed resources. `design/` holds brand masters and export tooling; `packaging/darwin/` holds current distribution scripts. Platform directories are added with implementations, not empty placeholders.
+
+Only macOS Apple Silicon has application acceptance. Shared domain, configuration, scheduling and presentation packages are also compiled for Linux and Windows. Other platforms still need execution, IPC/locking, desktop integration and packaging acceptance; SQLite currently requires a target C toolchain.
+
 The entry point dispatches execution-helper mode before opening any App resources. Normal startup acquires the data lock, migrates and recovers records, then starts IPC. Failed startup releases acquired resources.
 
 Closing a window preserves the App. Quit prevents new mutations and scheduling and cancels managed work, closes IPC connections, joins UI/maintenance work, then closes storage. In-flight mutations finish under the Service lock or encounter the stopping gate; queued UI completions cannot revive closed windows. The UI thread remains available while shutdown finishes in the background.

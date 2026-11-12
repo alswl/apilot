@@ -1,3 +1,5 @@
+//go:build darwin || linux
+
 package server
 
 import (
@@ -7,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/alswl/apilot/pkg/common"
@@ -37,8 +38,7 @@ func Listen(s *services.Service, path string) (*Server, error) {
 		return nil, e
 	}
 	if st, e := os.Lstat(path); e == nil {
-		stat, ok := st.Sys().(*syscall.Stat_t)
-		if !ok || int(stat.Uid) != os.Getuid() || st.Mode()&os.ModeSocket == 0 {
+		if !socketOwnedByCurrentUser(st) || st.Mode()&os.ModeSocket == 0 {
 			return nil, unix.EPERM
 		}
 		if e = os.Remove(path); e != nil {
@@ -93,18 +93,8 @@ func Listen(s *services.Service, path string) (*Server, error) {
 	return srv, nil
 }
 func handle(s *services.Service, c *net.UnixConn) {
-	raw, e := c.SyscallConn()
-	if e != nil {
-		return
-	}
-	uid := -1
-	_ = raw.Control(func(fd uintptr) {
-		u, err := unix.GetsockoptXucred(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERCRED)
-		if err == nil {
-			uid = int(u.Uid)
-		}
-	})
-	if uid != os.Getuid() {
+	uid, e := peerUID(c)
+	if e != nil || uid != os.Getuid() {
 		return
 	}
 	c.SetDeadline(time.Now().Add(2 * time.Second))
