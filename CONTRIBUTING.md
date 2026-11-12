@@ -1,6 +1,6 @@
 # Contributing
 
-Read the [engineering standards](standards/README.md), [domain language](GLOSSARY.md) and [architecture](docs/architecture.md) before changing behavior.
+Read the [engineering standards](docs/standards/README.md), [domain language](GLOSSARY.md) and [architecture](docs/architecture.md) before changing behavior.
 
 Development requires macOS, Xcode Command Line Tools, Python 3, and the Go toolchain pinned in `go.mod`. Toolchain and module downloads require network access.
 

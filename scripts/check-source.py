@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def files():
     raw = subprocess.check_output(['git', 'ls-files', '--cached', '--others', '--exclude-standard', '-z', '*.go'], cwd=ROOT)
-    return sorted({str(ROOT / p.decode()) for p in raw.split(b'\0') if p and not p.startswith(b'hack/makefile-go/')})
+    return sorted({str(ROOT / p.decode()) for p in raw.split(b'\0') if p and not p.startswith(b'hack/makefile-go/') and (ROOT / p.decode()).is_file()})
 
 def main():
     mode = sys.argv[1]
@@ -22,7 +22,7 @@ def main():
             if mode == 'format':
                 return 1
     elif mode == 'version':
-        declared = re.search(r'const Version = "([^"]+)"', (ROOT / 'internal/version/version.go').read_text()).group(1)
+        declared = re.search(r'const Version = "([^"]+)"', (ROOT / 'pkg/common/version.go').read_text()).group(1)
         packaged = json.loads((ROOT / 'packaging/mygo.json').read_text())['version']
         if declared != packaged:
             raise ValueError(f'Version mismatch: {declared} != {packaged}')

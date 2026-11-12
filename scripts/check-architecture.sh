@@ -16,6 +16,7 @@ case "${1:-}" in
   --core-packages) printf '%s\n' "${core[@]}" ;;
   --ui-packages) printf '%s\n' "${ui[@]}" ;;
   '')
+    python3 scripts/check-layers.py
     dependencies=$(go list -deps -test "${core[@]}")
     while IFS= read -r package; do
       case "$package" in github.com/egoist/mygo|github.com/egoist/mygo/*) echo "Core depends on MyGo: $package" >&2; exit 1 ;; esac

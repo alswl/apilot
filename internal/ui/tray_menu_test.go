@@ -6,18 +6,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo"
 )
 
 func TestTrayBoundsDynamicContentAndKeepsIdentity(t *testing.T) {
 	s := &windowState{err: strings.Repeat("sensitive/path/long-error", 30)}
 	for i := 0; i < 40; i++ {
-		s.tasks = append(s.tasks, model.Task{ID: fmt.Sprint(i), Name: strings.Repeat("相同的很长任务名称", 10) + fmt.Sprint(i)})
-		s.runs = append(s.runs, model.Run{ID: fmt.Sprint(i), TaskID: fmt.Sprint(i), TaskName: s.tasks[i].Name, Status: "running"})
-		s.events = append(s.events, model.AttentionEvent{ID: fmt.Sprint(i), Summary: "第一行\n" + strings.Repeat("异常详情", 50)})
+		s.tasks = append(s.tasks, common.Task{ID: fmt.Sprint(i), Name: strings.Repeat("相同的很长任务名称", 10) + fmt.Sprint(i)})
+		s.runs = append(s.runs, common.Run{ID: fmt.Sprint(i), TaskID: fmt.Sprint(i), TaskName: s.tasks[i].Name, Status: "running"})
+		s.events = append(s.events, common.AttentionEvent{ID: fmt.Sprint(i), Summary: "第一行\n" + strings.Repeat("异常详情", 50)})
 	}
-	s.runs = append(s.runs, model.Run{ID: "failed", TaskName: "失败任务", Status: "failed"})
+	s.runs = append(s.runs, common.Run{ID: "failed", TaskName: "失败任务", Status: "failed"})
 	items := s.trayItems(map[string]any{"running_count": 40})
 	if len(items) > 20 {
 		t.Fatalf("root grows with task count: %d", len(items))
@@ -56,7 +56,7 @@ func TestTrayBoundsDynamicContentAndKeepsIdentity(t *testing.T) {
 
 func TestTrayHidesEmptyGroupsButRetainsCoreCommands(t *testing.T) {
 	now := time.Now()
-	s := &windowState{events: []model.AttentionEvent{{ID: "ack", Summary: "old", AcknowledgedAt: &now}}}
+	s := &windowState{events: []common.AttentionEvent{{ID: "ack", Summary: "old", AcknowledgedAt: &now}}}
 	items := s.trayItems(map[string]any{"running_count": 0})
 	found := map[string]bool{}
 	for _, item := range items {

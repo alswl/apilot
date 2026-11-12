@@ -3,12 +3,12 @@ package presentation
 import (
 	"testing"
 
-	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/pkg/common"
 )
 
 func TestTaskDraftRoundTrip(t *testing.T) {
-	original := model.Task{ID: "t", Revision: 7, Name: "task", Executable: "/bin/echo", Args: []string{"a", "", "b"}, Cwd: "/tmp", Enabled: true, TimeoutMS: 1000, Schedule: &model.Schedule{ID: "s", Type: "interval", Expression: "1h", Enabled: false}}
-	d := NewTaskDraft(&original, model.DefaultSettings(), "/home")
+	original := common.Task{ID: "t", Revision: 7, Name: "task", Executable: "/bin/echo", Args: []string{"a", "", "b"}, Cwd: "/tmp", Enabled: true, TimeoutMS: 1000, Schedule: &common.Schedule{ID: "s", Type: "interval", Expression: "1h", Enabled: false}}
+	d := NewTaskDraft(&original, common.DefaultSettings(), "/home")
 	d.Env = "TOKEN=a=b\n\nTOKEN=c=d"
 	d.Unset = "OLD\n"
 	in, e := d.Input()
@@ -53,14 +53,14 @@ func TestObserverAndSettingsConversion(t *testing.T) {
 	if _, e = d.Input(); e == nil {
 		t.Fatal("sub-millisecond timeout")
 	}
-	s := NewSettingsDraft(model.DefaultSettings())
+	s := NewSettingsDraft(common.DefaultSettings())
 	s.Limit = "9223372036854775807"
 	if _, e = s.Settings(); e == nil {
 		t.Fatal("MiB overflow")
 	}
-	s = NewSettingsDraft(model.DefaultSettings())
+	s = NewSettingsDraft(common.DefaultSettings())
 	v, e := s.Settings()
-	if e != nil || v != model.DefaultSettings() {
+	if e != nil || v != common.DefaultSettings() {
 		t.Fatal(v, e)
 	}
 }

@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/alswl/apilot/internal/model"
 	"github.com/alswl/apilot/internal/presentation"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -64,7 +64,7 @@ func healthText(v string) string {
 	}
 }
 func (s *windowState) observerDetail(c *ui.Context) {
-	var observer *model.Observer
+	var observer *common.Observer
 	for _, v := range s.observers {
 		if v.ID == s.selectedObserver {
 			cp := v
@@ -120,7 +120,7 @@ func (s *windowState) observerDetail(c *ui.Context) {
 		})
 	}
 }
-func (s *windowState) editObserver(v *model.Observer) {
+func (s *windowState) editObserver(v *common.Observer) {
 	home, _ := os.UserHomeDir()
 	draft := presentation.NewObserverDraft(v, home)
 	title := tr("newObserver")

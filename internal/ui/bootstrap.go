@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alswl/apilot/internal/app"
-	"github.com/alswl/apilot/internal/host"
-	"github.com/alswl/apilot/internal/model"
 	"github.com/alswl/apilot/internal/presentation"
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/server"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -33,18 +33,18 @@ type windowState struct {
 	runScroll        ui.ScrollState
 	logScroll        ui.ScrollState
 	followLogs       bool
-	observers        []model.Observer
+	observers        []common.Observer
 	selectedObserver string
-	service          *app.Service
+	service          *services.Service
 	win              *mygo.Window
 	settingsWin      *mygo.Window
 	cliWin           *mygo.Window
 	attentionWin     *mygo.Window
 	tray             *mygo.Tray
 	tab              int
-	tasks            []model.Task
-	runs             []model.Run
-	events           []model.AttentionEvent
+	tasks            []common.Task
+	runs             []common.Run
+	events           []common.AttentionEvent
 	selectedTask     string
 	selectedRun      string
 	query            string
@@ -56,7 +56,7 @@ type windowState struct {
 	busy             bool
 }
 
-func Run(runtime *host.Runtime, probe bool) error {
+func Run(runtime *server.Runtime, probe bool) error {
 	mygo.App.SetLanguages("en", "zh-Hans")
 	service := runtime.Service
 	var err error
@@ -199,7 +199,7 @@ func Run(runtime *host.Runtime, probe bool) error {
 	cancel()
 	return err
 }
-func mustEvents(s *app.Service) []model.AttentionEvent { v, _ := s.Events(); return v }
+func mustEvents(s *services.Service) []common.AttentionEvent { v, _ := s.Events(); return v }
 func (s *windowState) show() {
 	if s.win == nil || s.win.IsDestroyed() {
 		s.win = mygo.NewWindow(mygo.WindowOptions{Title: "Apilot", Width: 640, Height: 480, MinWidth: 480, MinHeight: 360, StateKey: "main", Content: ui.View(s.view)})
@@ -487,7 +487,7 @@ func (s *windowState) taskList(c *ui.Context) {
 	})
 }
 func (s *windowState) taskDetail(c *ui.Context) {
-	var task *model.Task
+	var task *common.Task
 	for _, t := range s.tasks {
 		if t.ID == s.selectedTask {
 			cp := t
@@ -573,7 +573,7 @@ func (s *windowState) runList(c *ui.Context) {
 	})
 }
 func (s *windowState) runDetail(c *ui.Context) {
-	var run *model.Run
+	var run *common.Run
 	for _, r := range s.runs {
 		if r.ID == s.selectedRun {
 			cp := r
@@ -649,16 +649,16 @@ func triggerText(v string) string {
 	return v
 }
 
-func (s *windowState) selectEvent(e model.AttentionEvent) {
+func (s *windowState) selectEvent(e common.AttentionEvent) {
 	target := presentation.EventTarget(e)
 	s.selectedTask = ""
 	s.selectedRun, s.selectedObserver, s.tab = target.RunID, target.ObserverID, target.Tab
 }
 
-func taskActive(runs []model.Run, id string) bool { return presentation.TaskActive(runs, id) }
-func (s *windowState) setAutomatic(t model.Task) error {
+func taskActive(runs []common.Run, id string) bool { return presentation.TaskActive(runs, id) }
+func (s *windowState) setAutomatic(t common.Task) error {
 	if t.Schedule == nil {
-		return model.Err("INVALID_ARGUMENT", "Task has no schedule")
+		return common.Err("INVALID_ARGUMENT", "Task has no schedule")
 	}
 	_, err := s.service.SetAutomatic(t.ID, !(t.Enabled && t.Schedule.Enabled), t.Revision)
 	return err

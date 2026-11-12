@@ -18,7 +18,7 @@ def fingerprint():
         if not item:
             continue
         p = ROOT / os.fsdecode(item)
-        if (p.parts[len(ROOT.parts)] in {'cmd', 'internal', 'packaging', 'resources', 'hack'} or p.name in {'Makefile', 'go.mod', 'go.sum', 'mygo.json'}) and p.is_file() and not p.is_symlink():
+        if (p.parts[len(ROOT.parts)] in {'cmd', 'pkg', 'internal', 'packaging', 'resources', 'hack'} or p.name in {'Makefile', 'go.mod', 'go.sum', 'mygo.json'}) and p.is_file() and not p.is_symlink():
             digest.update(item + b'\0' + p.read_bytes())
     return digest.hexdigest()
 

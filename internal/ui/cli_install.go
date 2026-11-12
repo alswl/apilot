@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alswl/apilot/internal/app"
+	"github.com/alswl/apilot/pkg/config"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -55,7 +55,7 @@ func (s *windowState) offerCLI() {
 	if _, err := os.Lstat(filepath.Join(home, ".local", "bin", "apilot")); err == nil {
 		return
 	}
-	if _, err := os.Stat(filepath.Join(app.DataDir(), "cli-introduction-seen")); err == nil {
+	if _, err := os.Stat(filepath.Join(config.DataDir(), "cli-introduction-seen")); err == nil {
 		return
 	}
 	s.showCLI()
@@ -77,7 +77,7 @@ func (s *windowState) showCLI() {
 	}
 	pathCommand := `export PATH="$HOME/.local/bin:$PATH"`
 	dismiss := func() {
-		_ = os.WriteFile(filepath.Join(app.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
+		_ = os.WriteFile(filepath.Join(config.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
 		s.cliWin.Close()
 	}
 	s.cliWin = mygo.NewWindow(mygo.WindowOptions{Title: tr("apilotCommandLineTool"), Width: 500, Height: 350, MinWidth: 440, MinHeight: 330, Content: ui.View(func(c *ui.Context) {
@@ -109,11 +109,13 @@ func (s *windowState) showCLI() {
 						message = err.Error()
 					} else {
 						message = tr("installedRunApilotStatusToCheckTheConnection")
-						_ = os.WriteFile(filepath.Join(app.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
+						_ = os.WriteFile(filepath.Join(config.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
 					}
 				}
 			})
 		})
 	})})
-	s.cliWin.OnClosed(func() { _ = os.WriteFile(filepath.Join(app.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600) })
+	s.cliWin.OnClosed(func() {
+		_ = os.WriteFile(filepath.Join(config.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
+	})
 }

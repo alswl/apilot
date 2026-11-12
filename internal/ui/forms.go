@@ -4,14 +4,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/alswl/apilot/internal/model"
 	"github.com/alswl/apilot/internal/presentation"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
 func contains(s, q string) bool { return strings.Contains(strings.ToLower(s), strings.ToLower(q)) }
-func planLabel(t model.Task) string {
+func planLabel(t common.Task) string {
 	if t.Schedule == nil {
 		return tr("manualRun")
 	}
@@ -36,7 +36,7 @@ type taskForm struct {
 	operation      presentation.OperationState
 }
 
-func (s *windowState) editTask(t *model.Task) *taskForm {
+func (s *windowState) editTask(t *common.Task) *taskForm {
 	home, _ := os.UserHomeDir()
 	f := &taskForm{TaskDraft: presentation.NewTaskDraft(t, s.service.Settings(), home)}
 	title := tr("newTask")

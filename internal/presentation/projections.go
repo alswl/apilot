@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/pkg/common"
 	"golang.org/x/text/width"
 )
 
@@ -36,7 +36,7 @@ func MenuLabel(text string) string {
 	}
 	return out.String()
 }
-func TaskActive(runs []model.Run, id string) bool {
+func TaskActive(runs []common.Run, id string) bool {
 	for _, r := range runs {
 		if r.TaskID == id && r.Active() {
 			return true
@@ -50,7 +50,7 @@ type Target struct {
 	RunID, ObserverID string
 }
 
-func EventTarget(e model.AttentionEvent) Target {
+func EventTarget(e common.AttentionEvent) Target {
 	if e.SourceType == "observer" {
 		return Target{Tab: 2, ObserverID: e.SourceID}
 	}
@@ -58,13 +58,13 @@ func EventTarget(e model.AttentionEvent) Target {
 }
 
 type MenuProjection struct {
-	Tasks                    []model.Task
-	Active, Recent           []model.Run
-	Attention                []model.AttentionEvent
+	Tasks                    []common.Task
+	Active, Recent           []common.Run
+	Attention                []common.AttentionEvent
 	ActiveCount, UnreadCount int
 }
 
-func ProjectMenu(tasks []model.Task, runs []model.Run, events []model.AttentionEvent) MenuProjection {
+func ProjectMenu(tasks []common.Task, runs []common.Run, events []common.AttentionEvent) MenuProjection {
 	p := MenuProjection{Tasks: tasks}
 	if len(p.Tasks) > QuickTaskLimit {
 		p.Tasks = p.Tasks[:QuickTaskLimit]
@@ -92,7 +92,7 @@ func ProjectMenu(tasks []model.Task, runs []model.Run, events []model.AttentionE
 
 type NotificationCandidate struct{ Key, TitleKey, Body, RunID, ObserverID string }
 
-func InitialSeen(runs []model.Run, events []model.AttentionEvent) map[string]bool {
+func InitialSeen(runs []common.Run, events []common.AttentionEvent) map[string]bool {
 	seen := map[string]bool{}
 	for _, r := range runs {
 		if !r.Active() {
@@ -104,7 +104,7 @@ func InitialSeen(runs []model.Run, events []model.AttentionEvent) map[string]boo
 	}
 	return seen
 }
-func Notifications(settings model.Settings, runs []model.Run, events []model.AttentionEvent, seen map[string]bool) []NotificationCandidate {
+func Notifications(settings common.Settings, runs []common.Run, events []common.AttentionEvent, seen map[string]bool) []NotificationCandidate {
 	var out []NotificationCandidate
 	for _, e := range events {
 		if seen[e.ID] {

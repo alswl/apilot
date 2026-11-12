@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alswl/apilot/internal/model"
+	"github.com/alswl/apilot/pkg/common"
 )
 
 type FieldError struct{ Field, Code string }
@@ -47,21 +47,21 @@ func arguments(s string) []string {
 }
 
 type TaskDraft struct {
-	Values                                               model.TaskInput
+	Values                                               common.TaskInput
 	ID                                                   string
 	Revision                                             int64
 	Mode, Plan                                           int
 	Command, Args, Expression, Zone, Timeout, Env, Unset string
 }
 
-func NewTaskDraft(t *model.Task, defaults model.Settings, home string) TaskDraft {
-	d := TaskDraft{Values: model.TaskInput{Enabled: true, Cwd: home, TimeoutMS: defaults.DefaultTimeoutMS}, Zone: "Local", Timeout: (time.Duration(defaults.DefaultTimeoutMS) * time.Millisecond).String()}
+func NewTaskDraft(t *common.Task, defaults common.Settings, home string) TaskDraft {
+	d := TaskDraft{Values: common.TaskInput{Enabled: true, Cwd: home, TimeoutMS: defaults.DefaultTimeoutMS}, Zone: "Local", Timeout: (time.Duration(defaults.DefaultTimeoutMS) * time.Millisecond).String()}
 	if t == nil {
 		return d
 	}
 	d.ID = t.ID
 	d.Revision = t.Revision
-	d.Values = model.TaskInput{Name: t.Name, Description: t.Description, Executable: t.Executable, Args: append([]string{}, t.Args...), Cwd: t.Cwd, Enabled: t.Enabled, TimeoutMS: t.TimeoutMS}
+	d.Values = common.TaskInput{Name: t.Name, Description: t.Description, Executable: t.Executable, Args: append([]string{}, t.Args...), Cwd: t.Cwd, Enabled: t.Enabled, TimeoutMS: t.TimeoutMS}
 	d.Command = t.Executable
 	d.Args = strings.Join(t.Args, "\n")
 	d.Timeout = (time.Duration(t.TimeoutMS) * time.Millisecond).String()
@@ -82,16 +82,16 @@ func NewTaskDraft(t *model.Task, defaults model.Settings, home string) TaskDraft
 	}
 	return d
 }
-func (d TaskDraft) Input() (model.TaskInput, *FieldError) {
+func (d TaskDraft) Input() (common.TaskInput, *FieldError) {
 	in := d.Values
 	var e *FieldError
 	in.EnvSet, in.EnvUnset, e = environment(d.Env, d.Unset)
 	if e != nil {
-		return model.TaskInput{}, e
+		return common.TaskInput{}, e
 	}
 	in.TimeoutMS, e = duration(d.Timeout, "timeout", "timeoutMustBePositiveForExample30M")
 	if e != nil {
-		return model.TaskInput{}, e
+		return common.TaskInput{}, e
 	}
 	in.Executable = d.Command
 	in.Args = arguments(d.Args)
@@ -105,7 +105,7 @@ func (d TaskDraft) Input() (model.TaskInput, *FieldError) {
 		if d.Plan == 2 {
 			kind = "interval"
 		}
-		in.Schedule = &model.Schedule{Type: kind, Expression: d.Expression, Timezone: d.Zone, Enabled: true}
+		in.Schedule = &common.Schedule{Type: kind, Expression: d.Expression, Timezone: d.Zone, Enabled: true}
 		if d.Values.Schedule != nil {
 			in.Schedule.ID = d.Values.Schedule.ID
 			in.Schedule.Enabled = d.Values.Schedule.Enabled
@@ -115,19 +115,19 @@ func (d TaskDraft) Input() (model.TaskInput, *FieldError) {
 }
 
 type ObserverDraft struct {
-	Values                              model.ObserverInput
+	Values                              common.ObserverInput
 	ID                                  string
 	Revision                            int64
 	Args, Interval, Timeout, Env, Unset string
 	Format                              int
 }
 
-func NewObserverDraft(v *model.Observer, home string) ObserverDraft {
-	d := ObserverDraft{Values: model.ObserverInput{Cwd: home, IntervalMS: 30000, TimeoutMS: 10000, Enabled: true, OutputMode: "text"}}
+func NewObserverDraft(v *common.Observer, home string) ObserverDraft {
+	d := ObserverDraft{Values: common.ObserverInput{Cwd: home, IntervalMS: 30000, TimeoutMS: 10000, Enabled: true, OutputMode: "text"}}
 	if v != nil {
 		d.ID = v.ID
 		d.Revision = v.Revision
-		d.Values = model.ObserverInput{Name: v.Name, Executable: v.Executable, Args: append([]string{}, v.Args...), Cwd: v.Cwd, IntervalMS: v.IntervalMS, TimeoutMS: v.TimeoutMS, Enabled: v.Enabled, OutputMode: v.OutputMode}
+		d.Values = common.ObserverInput{Name: v.Name, Executable: v.Executable, Args: append([]string{}, v.Args...), Cwd: v.Cwd, IntervalMS: v.IntervalMS, TimeoutMS: v.TimeoutMS, Enabled: v.Enabled, OutputMode: v.OutputMode}
 	}
 	d.Args = strings.Join(d.Values.Args, "\n")
 	d.Interval = (time.Duration(d.Values.IntervalMS) * time.Millisecond).String()
@@ -137,20 +137,20 @@ func NewObserverDraft(v *model.Observer, home string) ObserverDraft {
 	}
 	return d
 }
-func (d ObserverDraft) Input() (model.ObserverInput, *FieldError) {
+func (d ObserverDraft) Input() (common.ObserverInput, *FieldError) {
 	in := d.Values
 	var e *FieldError
 	in.IntervalMS, e = duration(d.Interval, "interval", "invalidCheckInterval")
 	if e != nil {
-		return model.ObserverInput{}, e
+		return common.ObserverInput{}, e
 	}
 	in.TimeoutMS, e = duration(d.Timeout, "timeout", "invalidTimeout")
 	if e != nil {
-		return model.ObserverInput{}, e
+		return common.ObserverInput{}, e
 	}
 	in.EnvSet, in.EnvUnset, e = environment(d.Env, d.Unset)
 	if e != nil {
-		return model.ObserverInput{}, e
+		return common.ObserverInput{}, e
 	}
 	in.Args = arguments(d.Args)
 	in.OutputMode = "text"
@@ -161,14 +161,14 @@ func (d ObserverDraft) Input() (model.ObserverInput, *FieldError) {
 }
 
 type SettingsDraft struct {
-	Values                    model.Settings
+	Values                    common.Settings
 	Timeout, Max, Days, Limit string
 }
 
-func NewSettingsDraft(v model.Settings) SettingsDraft {
+func NewSettingsDraft(v common.Settings) SettingsDraft {
 	return SettingsDraft{v, (time.Duration(v.DefaultTimeoutMS) * time.Millisecond).String(), strconv.Itoa(v.MaxConcurrent), strconv.Itoa(v.RetentionDays), strconv.FormatInt(v.LogLimitBytes/(1024*1024), 10)}
 }
-func (d SettingsDraft) Settings() (model.Settings, *FieldError) {
+func (d SettingsDraft) Settings() (common.Settings, *FieldError) {
 	v := d.Values
 	var err error
 	var e *FieldError

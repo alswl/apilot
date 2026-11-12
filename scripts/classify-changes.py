@@ -12,7 +12,7 @@ def requires_full(paths, event, baseline_available):
     if event in ('tag', 'workflow_dispatch') or not baseline_available or not paths:
         return True
     return any(path not in DOC_ROOTS and not (
-        (path.startswith('docs/') or path.startswith('standards/'))
+        path.startswith('docs/')
         and PurePosixPath(path).suffix.lower() in DOC_SUFFIXES
     ) for path in paths)
 

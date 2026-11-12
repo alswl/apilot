@@ -164,7 +164,7 @@ make verify-lifecycle   # Process cleanup and restart checks
 
 Verification commands use disposable data. The [contributor guide](CONTRIBUTING.md) links the pinned Go/UI standards and project exceptions.
 
-The Go core is separate from MyGo UI: `internal/app` owns application behavior, `internal/storage` owns SQLite, `internal/runner` executes commands, and `internal/ipc` serves the CLI over a private Unix Socket.
+The Go core is separate from MyGo UI: `pkg/services` owns application behavior, `pkg/dal` owns SQLite, `pkg/integrations` executes commands, and `pkg/server` serves the CLI over a private Unix Socket.
 
 ## Documentation
 

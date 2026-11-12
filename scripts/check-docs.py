@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def check():
     errors = []
     files = [ROOT / name for name in ('README.md', 'CONTRIBUTING.md', 'GLOSSARY.md')]
-    for folder in ('docs', 'standards'):
+    for folder in ('docs',):
         files.extend((ROOT / folder).rglob('*.md'))
     for path in files:
         text = re.sub(r'^```.*?^```[^\n]*', '', path.read_text(), flags=re.M | re.S)
@@ -26,7 +26,7 @@ def check():
             resolved = (path.parent / unquote(uri.path)).resolve()
             if not resolved.is_relative_to(ROOT) or not resolved.exists():
                 errors.append(f'{path.relative_to(ROOT)}: broken local link {target}')
-    manifest = json.loads((ROOT / 'standards/sources.json').read_text())
+    manifest = json.loads((ROOT / 'docs/standards/sources.json').read_text())
     for source in manifest:
         if not re.fullmatch('[a-f0-9]{40}', source['commit']):
             errors.append('Invalid upstream commit')

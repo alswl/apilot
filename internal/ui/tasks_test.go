@@ -2,17 +2,18 @@ package ui
 
 import (
 	"fmt"
-	"github.com/alswl/apilot/internal/app"
-	"github.com/alswl/apilot/internal/model"
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
 	"testing"
 	"time"
+
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/server"
+	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestCompactTaskNavigation(t *testing.T) {
 	for _, size := range [][2]int{{640, 480}, {480, 360}} {
-		s := &windowState{tasks: []model.Task{{ID: "demo", Name: "长任务名称 demo", Enabled: true, Schedule: &model.Schedule{Type: "cron", Expression: "0 9 * * 1-5", Enabled: true}}}}
+		s := &windowState{tasks: []common.Task{{ID: "demo", Name: "长任务名称 demo", Enabled: true, Schedule: &common.Schedule{Type: "cron", Expression: "0 9 * * 1-5", Enabled: true}}}}
 		tt := ui.NewTester(s.view, size[0], size[1])
 		if !tt.HasText(tr("tasks")) || !tt.HasText(tr("history")) || !tt.HasText(tr("observers")) {
 			t.Fatal(tt.Texts())
@@ -37,7 +38,7 @@ func TestEmptyHistoryAndResultLabels(t *testing.T) {
 	if !tt.HasText(tr("noRunsYet")) {
 		t.Fatal(tt.Texts())
 	}
-	s.runs = []model.Run{{ID: "run", TaskName: "demo", Status: "failed", CreatedAt: time.Now()}}
+	s.runs = []common.Run{{ID: "run", TaskName: "demo", Status: "failed", CreatedAt: time.Now()}}
 	tt = ui.NewTester(s.view, 640, 480)
 	if e := tt.Click("demo " + tr("failed")); e != nil {
 		t.Fatal(e)
@@ -49,18 +50,18 @@ func TestEmptyHistoryAndResultLabels(t *testing.T) {
 
 func TestAttentionRoutesToSource(t *testing.T) {
 	s := &windowState{selectedTask: "previous"}
-	s.selectEvent(model.AttentionEvent{SourceType: "observer", SourceID: "observer"})
+	s.selectEvent(common.AttentionEvent{SourceType: "observer", SourceID: "observer"})
 	if s.tab != 2 || s.selectedObserver != "observer" || s.selectedRun != "" || s.selectedTask != "" {
 		t.Fatal("observer event did not open observation")
 	}
-	s.selectEvent(model.AttentionEvent{SourceType: "task", RunID: "run"})
+	s.selectEvent(common.AttentionEvent{SourceType: "task", RunID: "run"})
 	if s.tab != 1 || s.selectedRun != "run" || s.selectedObserver != "" {
 		t.Fatal("task event did not open run")
 	}
 }
 
 func TestMenuOffersDailyActionsWithoutMainWindow(t *testing.T) {
-	s := &windowState{tasks: []model.Task{{ID: "task", Name: "review", Enabled: true, Schedule: &model.Schedule{Enabled: true}}}, runs: []model.Run{{ID: "run", TaskID: "task", TaskName: "review", Status: "running"}}}
+	s := &windowState{tasks: []common.Task{{ID: "task", Name: "review", Enabled: true, Schedule: &common.Schedule{Enabled: true}}}, runs: []common.Run{{ID: "run", TaskID: "task", TaskName: "review", Status: "running"}}}
 	items := s.trayItems(map[string]any{"running_count": 1, "attention_count": 0})
 	found := map[string]*mygo.MenuItem{}
 	var walk func([]*mygo.MenuItem)
@@ -88,12 +89,12 @@ func TestMenuOffersDailyActionsWithoutMainWindow(t *testing.T) {
 }
 
 func TestAutomaticToggleEnablesDisabledPlanAndPreservesSecrets(t *testing.T) {
-	service, err := app.Open(t.TempDir())
+	service, err := server.OpenService(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer service.Close()
-	task, err := service.SaveTask("", model.TaskInput{Name: "review", Executable: "/bin/echo", Cwd: t.TempDir(), Enabled: false, TimeoutMS: 1000, EnvSet: map[string]string{"TOKEN": "private"}, Schedule: &model.Schedule{Type: "interval", Expression: "1h", Enabled: false}}, 0)
+	task, err := service.SaveTask("", common.TaskInput{Name: "review", Executable: "/bin/echo", Cwd: t.TempDir(), Enabled: false, TimeoutMS: 1000, EnvSet: map[string]string{"TOKEN": "private"}, Schedule: &common.Schedule{Type: "interval", Expression: "1h", Enabled: false}}, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
