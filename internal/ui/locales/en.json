@@ -135,5 +135,7 @@
   "invalidDefaultTimeout": "Invalid default timeout",
   "deleteTaskS": "Delete task “%s”?",
   "deleteObserverS": "Delete observer “%s”?",
-  "stopS": "Stop “%s”"
+  "stopS": "Stop “%s”",
+  "language": "Language",
+  "systemLanguage": "Follow System"
 }

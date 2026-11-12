@@ -204,6 +204,7 @@ func (s *windowState) showSettings() {
 		s.settingsWin.Show()
 		return
 	}
+	language := mygo.App.ChosenLocale()
 	loginSupported := supportsLoginItem()
 	loginEnabled := false
 	if loginSupported {
@@ -221,6 +222,7 @@ func (s *windowState) showSettings() {
 		ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 			ui.Scroll(c).Grow(1).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
+					languagePicker(c, &language, mygo.App.SetLocale)
 					ui.Field(c, tr("defaultTimeout"), func() { ui.TextInput(c, &timeout).FillWidth() })
 					ui.Field(c, tr("concurrentTasks"), func() { ui.TextInput(c, &max).FillWidth() })
 					ui.Field(c, tr("historyRetentionDays"), func() { ui.TextInput(c, &days).FillWidth() })

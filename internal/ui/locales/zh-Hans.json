@@ -135,5 +135,7 @@
   "invalidDefaultTimeout": "默认超时格式无效",
   "deleteTaskS": "删除任务「%s」？",
   "deleteObserverS": "删除观察器「%s」？",
-  "stopS": "停止「%s」"
+  "stopS": "停止「%s」",
+  "language": "语言",
+  "systemLanguage": "跟随系统"
 }

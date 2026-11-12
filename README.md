@@ -151,7 +151,7 @@ open build/darwin-arm64/Apilot.app
 ./bin/apilot status
 ```
 
-On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-0.0.2-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
+On Apple Silicon, `make app` produces the App and `build/darwin-arm64/apilot-0.0.3-arm64.dmg`. Local builds use ad-hoc signing. `make icons` deterministically exports the committed brand masters; normal builds require no image-generation service.
 
 ```sh
 make test               # Core, storage, IPC, CLI and UI tests
@@ -171,6 +171,6 @@ Verification commands use disposable data. The Go core is separate from MyGo UI:
 
 ### Interface language
 
-Apilot supports English and Simplified Chinese. It follows the preferred macOS app language, with English as the fallback. Change the app language in System Settings → General → Language & Region, then reopen Apilot. For a temporary local preview, launch the App executable with `MYGO_LOCALE=en` or `MYGO_LOCALE=zh-Hans`. Task names, commands, logs, stored event summaries and CLI JSON values remain unchanged.
+Apilot supports English and Simplified Chinese. It follows the preferred macOS app language, with English as the fallback. Choose Follow System, English, or 简体中文 in Apilot Settings → Language. Changes apply immediately and are remembered across launches. For a temporary local preview, launch the App executable with `MYGO_LOCALE=en` or `MYGO_LOCALE=zh-Hans`. Task names, commands, logs, stored event summaries and CLI JSON values remain unchanged.
 
 Translations live in `internal/ui/locales`; `tr` resolves interface messages using MyGo’s selected language. CLI commands and help remain English.

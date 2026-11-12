@@ -1429,3 +1429,23 @@ func StopS() string { return In(i18n.Locale()).StopS() }
 func (msgs Messages) StopS() string {
 	return Catalog.Format(msgs.locale, "stopS", nil)
 }
+
+// Language says "Language"
+// in the language the app shows.
+func Language() string { return In(i18n.Locale()).Language() }
+
+// Language says "Language"
+// in the language of msgs.
+func (msgs Messages) Language() string {
+	return Catalog.Format(msgs.locale, "language", nil)
+}
+
+// SystemLanguage says "Follow System"
+// in the language the app shows.
+func SystemLanguage() string { return In(i18n.Locale()).SystemLanguage() }
+
+// SystemLanguage says "Follow System"
+// in the language of msgs.
+func (msgs Messages) SystemLanguage() string {
+	return Catalog.Format(msgs.locale, "systemLanguage", nil)
+}

@@ -94,11 +94,22 @@ func Run(probe bool) error {
 	mygo.Power.OnResume(func() { service.Resume() })
 	appUI.WhenReady(func() {
 		displayLocale.Store(appUI.Locale())
-		appUI.OnLocaleChanged(func(locale string) { displayLocale.Store(locale); s.traySignature = ""; s.refresh() })
-		appUI.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-			{Label: "Apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: tr("settings2"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
-			{Role: mygo.RoleEditMenu}, {Label: tr("window"), Submenu: []*mygo.MenuItem{{Label: tr("openApilot"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
-		}))
+		appUI.OnLocaleChanged(func(locale string) {
+			displayLocale.Store(locale)
+			s.setAppMenu()
+			refreshTitle := func(win *mygo.Window, title string) {
+				if win != nil && !win.IsDestroyed() {
+					win.SetTitle(title)
+					win.Invalidate()
+				}
+			}
+			refreshTitle(s.settingsWin, tr("settings"))
+			refreshTitle(s.cliWin, tr("apilotCommandLineTool"))
+			refreshTitle(s.attentionWin, tr("attention"))
+			s.traySignature = ""
+			s.refresh()
+		})
+		s.setAppMenu()
 		s.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "apilot", Icon: menuBarIcon, IconIsTemplate: true, ToolTip: "Apilot"})
 		if err != nil {
 			allowQuit = true
@@ -608,4 +619,11 @@ func (s *windowState) setAutomatic(t model.Task) error {
 		Args: t.Args, Cwd: t.Cwd, TimeoutMS: t.TimeoutMS, Enabled: on, Schedule: &plan,
 	}, t.Revision)
 	return err
+}
+
+func (s *windowState) setAppMenu() {
+	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
+		{Label: "Apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: tr("settings2"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
+		{Role: mygo.RoleEditMenu}, {Label: tr("window"), Submenu: []*mygo.MenuItem{{Label: tr("openApilot"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
+	}))
 }

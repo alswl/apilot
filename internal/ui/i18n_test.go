@@ -100,3 +100,27 @@ func TestLocalizedUI(t *testing.T) {
 	}
 
 }
+
+func TestLanguagePicker(t *testing.T) {
+	defer displayLocale.Store("en")
+	for _, locale := range []string{"en", "zh-Hans"} {
+		t.Run(locale, func(t *testing.T) {
+			displayLocale.Store(locale)
+			selected, applied := "", "unchanged"
+			tt := ui.NewTester(func(c *ui.Context) {
+				languagePicker(c, &selected, func(tag string) { applied = tag })
+			}, 480, 160)
+			if !tt.HasText(translate(locale, "language")) {
+				t.Fatal(tt.Texts())
+			}
+			for _, option := range []struct{ label, tag string }{{"简体中文", "zh-Hans"}, {"English", "en"}, {translate(locale, "systemLanguage"), ""}} {
+				if err := tt.Click(option.label); err != nil {
+					t.Fatal(err)
+				}
+				if selected != option.tag || applied != option.tag {
+					t.Fatalf("%s: selected=%q applied=%q", option.label, selected, applied)
+				}
+			}
+		})
+	}
+}
