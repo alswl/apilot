@@ -1449,3 +1449,23 @@ func SystemLanguage() string { return In(i18n.Locale()).SystemLanguage() }
 func (msgs Messages) SystemLanguage() string {
 	return Catalog.Format(msgs.locale, "systemLanguage", nil)
 }
+
+// GeneralSettings says "General"
+// in the language the app shows.
+func GeneralSettings() string { return In(i18n.Locale()).GeneralSettings() }
+
+// GeneralSettings says "General"
+// in the language of msgs.
+func (msgs Messages) GeneralSettings() string {
+	return Catalog.Format(msgs.locale, "generalSettings", nil)
+}
+
+// CommandLineSettings says "Command Line"
+// in the language the app shows.
+func CommandLineSettings() string { return In(i18n.Locale()).CommandLineSettings() }
+
+// CommandLineSettings says "Command Line"
+// in the language of msgs.
+func (msgs Messages) CommandLineSettings() string {
+	return Catalog.Format(msgs.locale, "commandLineSettings", nil)
+}

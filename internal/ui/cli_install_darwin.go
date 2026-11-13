@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alswl/apilot/pkg/config"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -47,75 +46,57 @@ func installCLI(source, target string) error {
 	return os.Symlink(source, target)
 }
 
-func (s *windowState) offerCLI() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return
-	}
-	if _, err := os.Lstat(filepath.Join(home, ".local", "bin", "apilot")); err == nil {
-		return
-	}
-	if _, err := os.Stat(filepath.Join(config.DataDir(), "cli-introduction-seen")); err == nil {
-		return
-	}
-	s.showCLI()
+func (s *windowState) showCLI() {
+	s.settingsPage = 1
+	s.showSettings()
 }
 
-func (s *windowState) showCLI() {
-	if s.cliWin != nil && !s.cliWin.IsDestroyed() {
-		s.cliWin.Show()
-		return
-	}
+type cliSettings struct {
+	source, target, message string
+	installed               bool
+	sourceErr               error
+}
+
+func newCLISettings() *cliSettings {
 	home, _ := os.UserHomeDir()
-	target := filepath.Join(home, ".local", "bin", "apilot")
-	source, sourceErr := bundledCLI()
-	// App Translocation and mounted disk images are temporary installation paths.
-	installed := strings.HasPrefix(source, "/Applications/") || strings.HasPrefix(source, filepath.Join(home, "Applications")+"/")
-	message := ""
-	if sourceErr != nil {
-		message = sourceErr.Error()
+	source, err := bundledCLI()
+	panel := &cliSettings{
+		source: source, target: filepath.Join(home, ".local", "bin", "apilot"), sourceErr: err,
+		installed: strings.HasPrefix(source, "/Applications/") || strings.HasPrefix(source, filepath.Join(home, "Applications")+"/"),
 	}
+	if err != nil {
+		panel.message = err.Error()
+	}
+	return panel
+}
+
+func (panel *cliSettings) view(c *ui.Context) {
 	pathCommand := `export PATH="$HOME/.local/bin:$PATH"`
-	dismiss := func() {
-		_ = os.WriteFile(filepath.Join(config.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
-		s.cliWin.Close()
-	}
-	s.cliWin = mygo.NewWindow(mygo.WindowOptions{Title: tr("apilotCommandLineTool"), Width: 500, Height: 350, MinWidth: 440, MinHeight: 330, Content: ui.View(func(c *ui.Context) {
-		brandTheme(c)
-		ui.Column(c).Fill().Padding(20).Gap(14).Children(func() {
-			ui.Row(c).FillWidth().Gap(12).Children(func() {
-				ui.Image(c, appMark).Size(36, 36)
-				ui.Text(c, tr("installCommandLineTool")).Bold().FontSize(20)
-			})
-			ui.Text(c, tr("manageTasksFromATerminalOrAgent")).TextColor(c.Theme().TextMuted)
+	ui.Scroll(c).Grow(1).Children(func() {
+		ui.Column(c).FillWidth().Gap(14).Children(func() {
+			ui.Text(c, tr("installCommandLineTool")).Bold().FontSize(17)
+			ui.Text(c, tr("manageTasksFromATerminalOrAgent")).Wrap().TextColor(c.Theme().TextMuted)
 			ui.Text(c, tr("installToLocalBinApilot")).Selectable()
-			if !installed {
-				ui.Text(c, tr("dragApilotToApplicationsThenReopenIt")).TextColor(c.Theme().Danger)
+			if !panel.installed {
+				ui.Text(c, tr("dragApilotToApplicationsThenReopenIt")).Wrap().TextColor(c.Theme().Danger)
 			}
-			ui.Text(c, tr("ifApilotIsNotFoundAddThisLineToZshrc")).FontSize(12)
-			ui.Text(c, pathCommand).Font("monospace").FontSize(12).Selectable()
-			if message != "" {
-				ui.Text(c, message).FontSize(12)
+			ui.Text(c, tr("ifApilotIsNotFoundAddThisLineToZshrc")).Wrap().FontSize(12)
+			ui.Text(c, pathCommand).Wrap().Font("monospace").FontSize(12).Selectable()
+			if panel.message != "" {
+				ui.Text(c, panel.message).Wrap().FontSize(12)
 			}
-			ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Children(func() {
-				if ui.Button(c, tr("copyPath")).Clicked() {
-					mygo.Clipboard.WriteText(pathCommand)
-				}
-				if ui.Button(c, tr("later")).Clicked() {
-					dismiss()
-				}
-				if ui.PrimaryButton(c, tr("installCli")).Disabled(!installed || sourceErr != nil).Clicked() {
-					if err := installCLI(source, target); err != nil {
-						message = err.Error()
-					} else {
-						message = tr("installedRunApilotStatusToCheckTheConnection")
-						_ = os.WriteFile(filepath.Join(config.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
-					}
-				}
-			})
 		})
-	})})
-	s.cliWin.OnClosed(func() {
-		_ = os.WriteFile(filepath.Join(config.DataDir(), "cli-introduction-seen"), []byte("1\n"), 0600)
+	})
+	ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Children(func() {
+		if ui.Button(c, tr("copyPath")).Clicked() {
+			mygo.Clipboard.WriteText(pathCommand)
+		}
+		if ui.PrimaryButton(c, tr("installCli")).Disabled(!panel.installed || panel.sourceErr != nil).Clicked() {
+			if err := installCLI(panel.source, panel.target); err != nil {
+				panel.message = err.Error()
+			} else {
+				panel.message = tr("installedRunApilotStatusToCheckTheConnection")
+			}
+		}
 	})
 }

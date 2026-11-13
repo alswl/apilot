@@ -13,12 +13,18 @@ const quickTaskLimit = presentation.QuickTaskLimit
 func menuLabel(text string) string { return presentation.MenuLabel(text) }
 
 func (s *windowState) openTasks() {
+	if s.focusEditor() {
+		return
+	}
 	s.tab, s.query = 0, ""
 	s.selectedTask, s.selectedRun, s.selectedObserver = "", "", ""
 	s.show()
 }
 
 func (s *windowState) openHistory(runID string) {
+	if s.focusEditor() {
+		return
+	}
 	s.tab = 1
 	s.selectedTask, s.selectedObserver, s.selectedRun = "", "", runID
 	s.show()
@@ -97,32 +103,33 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 }
 
 func (s *windowState) showAttention() {
-	if s.attentionWin != nil && !s.attentionWin.IsDestroyed() {
-		s.attentionWin.Show()
+	if s.focusEditor() {
 		return
 	}
-	s.attentionWin = mygo.NewWindow(mygo.WindowOptions{Title: tr("attention"), Width: 480, Height: 360, MinWidth: 360, MinHeight: 260, Content: ui.View(func(c *ui.Context) {
-		brandTheme(c)
-		ui.Scroll(c).Fill().Children(func() {
-			ui.Column(c).FillWidth().Padding(16).Gap(12).Children(func() {
-				count := 0
-				for _, e := range s.events {
-					if e.AcknowledgedAt != nil {
-						continue
+	s.tab = 3
+	s.selectedTask, s.selectedRun, s.selectedObserver = "", "", ""
+	s.show()
+}
+
+func (s *windowState) attentionList(c *ui.Context) {
+	ui.Scroll(c).Grow(1).Children(func() {
+		ui.Column(c).FillWidth().Gap(12).Children(func() {
+			count := 0
+			for _, e := range s.events {
+				if e.AcknowledgedAt != nil {
+					continue
+				}
+				count++
+				ui.Column(c.Key(e.ID)).FillWidth().Gap(4).Children(func() {
+					ui.Text(c, e.Summary).Wrap()
+					if ui.Button(c, tr("viewSource")).Clicked() {
+						s.selectEvent(e)
 					}
-					count++
-					ui.Column(c).FillWidth().Gap(4).Children(func() {
-						ui.Text(c, e.Summary).Wrap()
-						if ui.Button(c, tr("viewSource")).Key(e.ID).Clicked() {
-							s.selectEvent(e)
-							s.show()
-						}
-					})
-				}
-				if count == 0 {
-					ui.Text(c, tr("noItemsNeedAttention"))
-				}
-			})
+				})
+			}
+			if count == 0 {
+				ui.Text(c, tr("noItemsNeedAttention"))
+			}
 		})
-	})})
+	})
 }

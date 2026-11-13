@@ -112,15 +112,19 @@ func (s *windowState) observerDetail(c *ui.Context) {
 		}
 	}
 	if ui.Button(c, tr("deleteObserver2")).Clicked() {
-		s.background(func() {
-			result, e := mygo.Dialog.Message(mygo.MessageOptions{Parent: s.win, Type: mygo.MessageWarning, Message: fmt.Sprintf(tr("deleteObserverS"), v.Name), Detail: tr("stopFutureChecksTheObservedToolIsLeftUnchanged"), Buttons: []string{tr("cancel"), tr("deleteObserver")}})
-			if e == nil && result.Button == 1 {
-				s.update(func() { s.action(func() error { return s.service.DeleteObserver(v.ID) }) })
-			}
-		})
+		s.confirmDelete(fmt.Sprintf(tr("deleteObserverS"), v.Name), tr("stopFutureChecksTheObservedToolIsLeftUnchanged"), tr("deleteObserver"), func() error { return s.service.DeleteObserver(v.ID) })
 	}
 }
 func (s *windowState) editObserver(v *common.Observer) {
+	if s.focusEditor() {
+		return
+	}
+	s.show()
+	s.tab = 2
+	s.selectedTask, s.selectedRun, s.selectedObserver = "", "", ""
+	if v != nil {
+		s.selectedObserver = v.ID
+	}
 	home, _ := os.UserHomeDir()
 	draft := presentation.NewObserverDraft(v, home)
 	title := tr("newObserver")
@@ -173,7 +177,7 @@ func (s *windowState) editObserver(v *common.Observer) {
 
 					busy = true
 					s.background(func() {
-						_, e := s.service.SaveObserver(ref, copy, revision)
+						saved, e := s.service.SaveObserver(ref, copy, revision)
 						win.Update(func() {
 							if s.stopping || !operation.Complete(token) {
 								return
@@ -182,6 +186,18 @@ func (s *windowState) editObserver(v *common.Observer) {
 							if e != nil {
 								message = e.Error()
 							} else {
+								found := false
+								for i := range s.observers {
+									if s.observers[i].ID == saved.ID {
+										s.observers[i] = saved
+										found = true
+										break
+									}
+								}
+								if !found {
+									s.observers = append(s.observers, saved)
+								}
+								s.selectedObserver = saved.ID
 								win.Close()
 								s.refresh()
 							}
@@ -192,5 +208,17 @@ func (s *windowState) editObserver(v *common.Observer) {
 		})
 	})})
 
-	win.OnClosed(func() { operation.Invalidate() })
+	s.observerEditor = win
+	win.OnClose(func(e *mygo.CloseEvent) {
+		if busy && !s.stopping {
+			e.PreventDefault()
+		}
+	})
+	win.OnClosed(func() {
+		operation.Invalidate()
+		s.observerEditor = nil
+		if !s.stopping && !s.win.IsDestroyed() {
+			s.win.Focus()
+		}
+	})
 }

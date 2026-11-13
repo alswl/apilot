@@ -119,3 +119,68 @@ func TestAutomaticToggleEnablesDisabledPlanAndPreservesSecrets(t *testing.T) {
 		t.Fatal("toggle off failed")
 	}
 }
+
+func TestAttentionLivesInManagementNavigation(t *testing.T) {
+	for _, size := range [][2]int{{640, 480}, {480, 360}} {
+		s := &windowState{events: []common.AttentionEvent{
+			{ID: "event", SourceType: "task", RunID: "run", Summary: "Needs review"},
+		}, runs: []common.Run{{ID: "run", TaskName: "demo", Status: "failed"}}}
+		tt := ui.NewTester(s.view, size[0], size[1])
+		if err := tt.Click(tr("attention")); err != nil {
+			t.Fatal(err)
+		}
+		if s.tab != 3 || !tt.HasText("Needs review") {
+			t.Fatal(tt.Texts())
+		}
+		if err := tt.Click(tr("viewSource")); err != nil {
+			t.Fatal(err)
+		}
+		if s.tab != 1 || s.selectedRun != "run" || !tt.HasText(tr("standardOutput")) {
+			t.Fatal("event did not navigate to run", tt.Texts())
+		}
+		if s.win != nil || s.settingsWin != nil {
+			t.Fatal("in-window navigation opened a native window")
+		}
+	}
+}
+
+func TestAttentionEmptyAndAcknowledged(t *testing.T) {
+	now := time.Now()
+	s := &windowState{tab: 3, events: []common.AttentionEvent{{ID: "seen", Summary: "Already seen", AcknowledgedAt: &now}}}
+	tt := ui.NewTester(s.view, 480, 360)
+	if !tt.HasText(tr("noItemsNeedAttention")) || tt.HasText("Already seen") {
+		t.Fatal(tt.Texts())
+	}
+}
+
+func TestCLISettingsAtMinimumSize(t *testing.T) {
+	defer displayLocale.Store("en")
+	for _, locale := range []string{"en", "zh-Hans"} {
+		displayLocale.Store(locale)
+		panel := &cliSettings{message: "Installation status"}
+		tt := ui.NewTester(func(c *ui.Context) {
+			ui.Column(c).Fill().Padding(16).Gap(12).Children(func() { panel.view(c) })
+		}, 420, 360)
+		if !tt.HasText(tr("installCli")) || !tt.HasText(tr("copyPath")) {
+			t.Fatal(tt.Texts())
+		}
+		if !tt.HasText("Installation status") {
+			t.Fatal(tt.Texts())
+		}
+	}
+}
+
+func TestConfirmationKeepsNavigationAndEditorsInPlace(t *testing.T) {
+	s := &windowState{confirming: true, tab: 2, selectedObserver: "observer"}
+	s.openTasks()
+	s.openHistory("run")
+	s.showAttention()
+	s.selectEvent(common.AttentionEvent{SourceType: "task", RunID: "run"})
+	if s.editTask(nil) != nil {
+		t.Fatal("opened editor over confirmation")
+	}
+	s.editObserver(nil)
+	if s.tab != 2 || s.selectedObserver != "observer" || s.selectedRun != "" {
+		t.Fatal("confirmation lost its context")
+	}
+}
