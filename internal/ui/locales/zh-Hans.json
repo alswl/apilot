@@ -137,5 +137,7 @@
   "deleteObserverS": "删除观察器「%s」？",
   "stopS": "停止「%s」",
   "language": "语言",
-  "systemLanguage": "跟随系统"
+  "systemLanguage": "跟随系统",
+  "generalSettings": "通用",
+  "commandLineSettings": "命令行工具"
 }

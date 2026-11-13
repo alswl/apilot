@@ -137,5 +137,7 @@
   "deleteObserverS": "Delete observer “%s”?",
   "stopS": "Stop “%s”",
   "language": "Language",
-  "systemLanguage": "Follow System"
+  "systemLanguage": "Follow System",
+  "generalSettings": "General",
+  "commandLineSettings": "Command Line"
 }

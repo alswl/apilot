@@ -26,6 +26,8 @@ Only macOS Apple Silicon has application acceptance. Shared domain, configuratio
 
 The entry point dispatches execution-helper mode before opening any App resources. Normal startup acquires the data lock, migrates and recovers records, then starts IPC. Failed startup releases acquired resources.
 
+Tasks, history, observers and attention events share one management window. Settings is a separate reusable window with CLI installation inside it. Task and observer editors share a single modal slot attached to the management window; repeated entry points focus the current draft. Saving selects the saved object; canceling returns to its context. Startup stays in the menu bar without opening an installer.
+
 Closing a window preserves the App. Quit prevents new mutations and scheduling and cancels managed work, closes IPC connections, joins UI/maintenance work, then closes storage. In-flight mutations finish under the Service lock or encounter the stopping gate; queued UI completions cannot revive closed windows. The UI thread remains available while shutdown finishes in the background.
 
 Each accepted trigger records a Run before execution. Task/global admission shares a lock, and SQLite enforces a single active Run per task. Terminal results cannot be overwritten. Task edits preserve active execution snapshots. Resume recalculates future schedules without replaying missed times.

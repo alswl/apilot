@@ -38,8 +38,10 @@ type windowState struct {
 	service          *services.Service
 	win              *mygo.Window
 	settingsWin      *mygo.Window
-	cliWin           *mygo.Window
-	attentionWin     *mygo.Window
+	settingsPage     int
+	taskEditor       *taskForm
+	observerEditor   *mygo.Window
+	confirming       bool
 	tray             *mygo.Tray
 	tab              int
 	tasks            []common.Task
@@ -118,8 +120,6 @@ func Run(runtime *server.Runtime, probe bool) error {
 				}
 			}
 			refreshTitle(s.settingsWin, tr("settings"))
-			refreshTitle(s.cliWin, tr("apilotCommandLineTool"))
-			refreshTitle(s.attentionWin, tr("attention"))
 			s.traySignature = ""
 			s.refresh()
 		})
@@ -131,9 +131,6 @@ func Run(runtime *server.Runtime, probe bool) error {
 			return
 		}
 		log.Print("tray created")
-		if !probe {
-			s.offerCLI()
-		}
 		if probe {
 			fmt.Printf("PROBE startup_main_window=%v\n", s.win != nil)
 			// Exercise the same management-window action used by the native menu.
@@ -161,10 +158,17 @@ func Run(runtime *server.Runtime, probe bool) error {
 						_ = os.WriteFile("tmp/"+name+".png", data, 0600)
 					}
 				}
-				mygo.RunOnMain(func() { s.showCLI() })
+				mygo.RunOnMain(func() {
+					s.showCLI()
+					settings := s.settingsWin
+					s.showSettings()
+					if s.settingsWin != settings {
+						panic("duplicate settings window")
+					}
+				})
 				time.Sleep(300 * time.Millisecond)
-				capture("cli-install", s.cliWin)
-				mygo.RunOnMain(func() { s.cliWin.Close(); mygo.Theme.SetSource(mygo.ThemeDark) })
+				capture("cli-install", s.settingsWin)
+				mygo.RunOnMain(func() { s.settingsWin.Close(); mygo.Theme.SetSource(mygo.ThemeDark) })
 				time.Sleep(300 * time.Millisecond)
 				capture("dark", s.win)
 				mygo.RunOnMain(func() { mygo.Theme.SetSource(mygo.ThemeSystem); s.win.SetSize(480, 360) })
@@ -181,14 +185,47 @@ func Run(runtime *server.Runtime, probe bool) error {
 				time.Sleep(1200 * time.Millisecond)
 				capture("run-detail", s.win)
 				var form *taskForm
-				mygo.RunOnMain(func() { s.tab = 0; s.selectedRun = ""; s.win.Invalidate(); form = s.editTask(nil) })
+				mygo.RunOnMain(func() {
+					s.tab = 0
+					s.selectedRun = ""
+					s.win.Invalidate()
+					form = s.editTask(nil)
+					if s.editTask(nil) != form {
+						panic("duplicate task editor")
+					}
+					s.editObserver(nil)
+					if s.observerEditor != nil {
+						panic("stacked observer editor")
+					}
+					s.openHistory("")
+					if s.tab != 0 {
+						panic("navigation replaced editor context")
+					}
+					s.win.Close()
+					if s.win.IsDestroyed() {
+						panic("parent closed with draft")
+					}
+					fmt.Println("PROBE editor_reused context_preserved parent_retained")
+				})
 				time.Sleep(300 * time.Millisecond)
 				capture("task-sheet", form.win)
-				mygo.RunOnMain(func() { form.win.Close(); s.win.Close(); fmt.Println("PROBE window_closed") })
+				mygo.RunOnMain(func() {
+					form.win.Close()
+					s.editObserver(nil)
+					observer := s.observerEditor
+					s.editObserver(nil)
+					if s.observerEditor != observer {
+						panic("duplicate observer editor")
+					}
+					observer.Close()
+					s.win.Close()
+					fmt.Println("PROBE window_closed")
+				})
 				time.Sleep(time.Second)
 				mygo.RunOnMain(func() { s.show(); fmt.Printf("PROBE reopened visible=%v\n", s.win.IsVisible()) })
 				time.Sleep(time.Second)
-				fmt.Println("PROBE quit_requested")
+				mygo.RunOnMain(func() { s.editTask(nil) })
+				fmt.Println("PROBE quit_requested_with_editor")
 				appUI.Quit()
 			}()
 		}
@@ -203,6 +240,11 @@ func mustEvents(s *services.Service) []common.AttentionEvent { v, _ := s.Events(
 func (s *windowState) show() {
 	if s.win == nil || s.win.IsDestroyed() {
 		s.win = mygo.NewWindow(mygo.WindowOptions{Title: "Apilot", Width: 640, Height: 480, MinWidth: 480, MinHeight: 360, StateKey: "main", Content: ui.View(s.view)})
+		s.win.OnClose(func(e *mygo.CloseEvent) {
+			if !s.stopping && s.focusEditor() {
+				e.PreventDefault()
+			}
+		})
 		s.win.OnClosed(func() {
 			s.operation.Invalidate()
 			s.busy = false
@@ -212,6 +254,8 @@ func (s *windowState) show() {
 		})
 	}
 	s.win.Show()
+	s.win.Focus()
+	s.focusEditor()
 }
 func (s *windowState) update(fn func()) {
 	mygo.RunOnMain(func() {
@@ -221,9 +265,6 @@ func (s *windowState) update(fn func()) {
 		fn()
 		if s.win != nil && !s.win.IsDestroyed() {
 			s.win.Invalidate()
-		}
-		if s.attentionWin != nil && !s.attentionWin.IsDestroyed() {
-			s.attentionWin.Invalidate()
 		}
 	})
 }
@@ -397,7 +438,7 @@ func (s *windowState) view(c *ui.Context) {
 	brandTheme(c)
 	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
-			if ui.Tabs(c, &s.tab, tr("tasks"), tr("history"), tr("observers")).Grow(1).Changed() {
+			if ui.Tabs(c, &s.tab, tr("tasks"), tr("history"), tr("observers"), tr("attention")).Grow(1).Changed() {
 				s.selectedTask = ""
 				s.selectedRun = ""
 				s.selectedObserver = ""
@@ -420,8 +461,10 @@ func (s *windowState) view(c *ui.Context) {
 			s.taskList(c)
 		} else if s.tab == 1 {
 			s.runList(c)
-		} else {
+		} else if s.tab == 2 {
 			s.observerList(c)
+		} else {
+			s.attentionList(c)
 		}
 	})
 }
@@ -539,12 +582,7 @@ func (s *windowState) taskDetail(c *ui.Context) {
 				}
 			}
 			if ui.Button(c, tr("deleteTask2")).Disabled(s.busy).Clicked() {
-				go func() {
-					result, e := mygo.Dialog.Message(mygo.MessageOptions{Parent: s.win, Type: mygo.MessageWarning, Message: fmt.Sprintf(tr("deleteTaskS"), t.Name), Detail: tr("executionHistoryAndWorkingDirectoriesAreKept"), Buttons: []string{tr("cancel"), tr("deleteTask")}})
-					if e == nil && result.Button == 1 {
-						s.win.Update(func() { s.action(func() error { return s.service.DeleteTask(t.ID) }) })
-					}
-				}()
+				s.confirmDelete(fmt.Sprintf(tr("deleteTaskS"), t.Name), tr("executionHistoryAndWorkingDirectoriesAreKept"), tr("deleteTask"), func() error { return s.service.DeleteTask(t.ID) })
 			}
 		})
 	})
@@ -653,6 +691,9 @@ func triggerText(v string) string {
 }
 
 func (s *windowState) selectEvent(e common.AttentionEvent) {
+	if s.focusEditor() {
+		return
+	}
 	target := presentation.EventTarget(e)
 	s.selectedTask = ""
 	s.selectedRun, s.selectedObserver, s.tab = target.RunID, target.ObserverID, target.Tab
