@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -31,13 +32,15 @@ func (m *mockup) connectionByID(id string) *connection {
 }
 
 func (m *mockup) connections(c *ui.Context) {
+	if m.framework {
+		components.Muted(c.Key("guidance"), tr("通过齿轮查看配置。同步尚未接入，配置只在本次运行中保留。"))
+	}
 	ui.Row(c.Key("actions")).FillWidth().Justify(ui.End).Children(func() {
 		ui.MenuButton(c.Key("add"), tr("添加连接"), func(menu *ui.Menu) {
-			if menu.Item("GitHub Issues").Chosen() {
-				m.addConnector(githubIssues)
-			}
-			if menu.Item("Obsidian Tasks").Chosen() {
-				m.addConnector(obsidianTasks)
+			for _, connector := range services.WorkbenchConnectors() {
+				if menu.Item(connector.Name).Chosen() {
+					m.addConnector(connector.Kind)
+				}
 			}
 		})
 	})
@@ -45,6 +48,15 @@ func (m *mockup) connections(c *ui.Context) {
 		m.connectorSummary(c.Key(m.connectionsData[i].ID), &m.connectionsData[i])
 		ui.Divider(c.Key("after-" + m.connectionsData[i].ID))
 	}
+}
+
+func (m *mockup) connectionGuidance(c *ui.Context, hint string) {
+	ui.Column(c).FillWidth().Gap(8).AlignItems(ui.Start).Children(func() {
+		components.Muted(c, hint)
+		if ui.Button(c.Key("connections"), tr("查看连接器")).Clicked() {
+			m.navigate(connectionsPage)
+		}
+	})
 }
 
 func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
@@ -65,7 +77,7 @@ func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
 			if conn.Status == "连接断开" {
 				label, icon = "重新连接", "bolt.horizontal"
 			}
-			if components.IconButton(c.Key("sync"), icon, tr(label)+" · "+tr(conn.Name), m.pendingSync[conn.ID]).Clicked() {
+			if components.IconButton(c.Key("sync"), icon, tr(label)+" · "+tr(conn.Name), m.framework || m.pendingSync[conn.ID]).Clicked() {
 				m.syncConnection(conn, m.after)
 			}
 		})
@@ -104,7 +116,7 @@ func (m *mockup) appendSyncEvent(id, message string) {
 
 func (m *mockup) syncConnection(conn *connection, after func(time.Duration, func())) {
 	id := conn.ID
-	if m.pendingSync[id] {
+	if m.framework || m.pendingSync[id] {
 		return
 	}
 	m.pendingSync[id] = true
@@ -161,18 +173,34 @@ func (m *mockup) syncLogDialog(c *ui.Context) {
 	}
 }
 
-func (m *mockup) addConnector(kind string) {
-	draft := connection{SourceKind: kind, Status: "等待首次同步", LastConfirmedAt: "—", Writable: true}
-	if kind == githubIssues {
-		draft.ConnectorID, draft.Capabilities, draft.SyncMode = "GitHub Issues", "Issues 写入 · Webhook", "定时拉取"
-		draft.SearchAliases = []string{"github", "issues"}
-		draft.SearchFields = []string{"repo", "assignee", "milestone", "state", "state_reason"}
-	} else {
-		draft.ConnectorID, draft.Capabilities, draft.SyncMode = "Obsidian Tasks", "文件变化 · 增量读取 · 回写", "文件变化"
-		draft.SearchAliases = []string{"obsidian"}
-		draft.SearchFields = []string{"path", "section", "start", "scheduled", "done", "checkbox"}
+func (m *mockup) connectorDraft(connector services.WorkbenchConnector) connection {
+	draft := connection{
+		SourceKind: connector.Kind, ConnectorID: connector.Name,
+		Status: "等待首次同步", LastConfirmedAt: "—", Writable: true,
+		Capabilities: connector.DemoCapabilities, SyncMode: connector.DemoSyncMode,
+		SearchAliases: connector.SearchAliases, SearchFields: connector.SearchFields,
 	}
-	m.editConnector(draft)
+	if m.framework {
+		draft.Status, draft.Capabilities, draft.Writable = "未接入", "未接入", false
+	}
+	return draft
+}
+
+func (m *mockup) seedConnectorScaffolds() {
+	for _, connector := range services.WorkbenchConnectors() {
+		draft := m.connectorDraft(connector)
+		draft.ID, draft.Name, draft.Scope, draft.Identity = connector.Kind, connector.Name, "—", "—"
+		m.connectionsData = append(m.connectionsData, draft)
+	}
+}
+
+func (m *mockup) addConnector(kind string) {
+	for _, connector := range services.WorkbenchConnectors() {
+		if connector.Kind == kind {
+			m.editConnector(m.connectorDraft(connector))
+			return
+		}
+	}
 }
 
 func (m *mockup) editConnector(conn connection) {
@@ -223,7 +251,7 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 						ui.Column(c).Grow(1).MinWidth(0).Children(func() {
 							choiceField(c.Key("sync-mode"), "同步方式", &edit.SyncMode, modes)
 						})
-						ui.Checkbox(c.Key("writable"), &edit.Writable, tr("允许回写"))
+						ui.Checkbox(c.Key("writable"), &edit.Writable, tr("允许回写")).Disabled(m.framework)
 					})
 					ui.Divider(c.Key("mapping-divider"))
 					components.Heading(c.Key("mapping-title"), tr("状态映射"))
@@ -256,7 +284,7 @@ func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
 		})
 		ui.Column(c.Key("repo")).Grow(1).MinWidth(0).Children(func() {
 			components.TextField(c, tr("仓库"), &edit.Repository).
-				Placeholder("owner/repository").Disabled(edit.ID != "")
+				Placeholder("owner/repository").Disabled(!m.framework && edit.ID != "")
 		})
 	})
 }
@@ -338,6 +366,9 @@ func (m *mockup) saveConnector(config connection) string {
 		if config.Identity == "" {
 			config.Identity = "本人（个人 vault）"
 		}
+	}
+	if m.framework {
+		config.Status, config.Capabilities, config.Writable = "未接入", "未接入", false
 	}
 	if existing := m.connectionByID(config.ID); existing != nil {
 		if m.sourceFilter == existing.Name {

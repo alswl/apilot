@@ -27,6 +27,7 @@ const (
 var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 
 type mockup struct {
+	framework                            bool
 	layout                               workbenchLayout
 	taskPageIndex, taskPageSize          int
 	taskPageSizeOverride                 int
@@ -99,7 +100,23 @@ type mockup struct {
 }
 
 func newMockup() *mockup {
-	data := loadFixture()
+	m := newWorkspace(loadFixture())
+	m.nowSessions = []nowSession{
+		{title: "每日简报", briefing: true},
+		{title: "发布检查", turns: []nowTurn{{prompt: "发布前还要核对什么？", reply: "先确认 GitHub 工单已更新，再核对 Obsidian 中的验收记录。", translated: true}}},
+	}
+	return m
+}
+
+func newFramework() *mockup {
+	m := newWorkspace(scenarioFixture{})
+	m.framework = true
+	m.nowSessions = []nowSession{{title: "新建会话"}}
+	m.seedConnectorScaffolds()
+	return m
+}
+
+func newWorkspace(data scenarioFixture) *mockup {
 	return &mockup{
 		statusFilter: "全部状态", sourceFilter: "全部来源", provider: "工作模型", refundConfirmedAt: "今天 09:42",
 		taskSort:          ui.SortOrder{Column: "title"},
@@ -119,12 +136,28 @@ func newMockup() *mockup {
 		syncLogs:         make(map[string][]syncEvent),
 		pendingTaskEdits: make(map[string]bool),
 		assistantThreads: make(map[string]*assistantThread),
-		nowSessions:      []nowSession{{title: "每日简报", briefing: true}, {title: "发布检查", turns: []nowTurn{{prompt: "发布前还要核对什么？", reply: "先确认 GitHub 工单已更新，再核对 Obsidian 中的验收记录。", translated: true}}}},
 		closedTips:       make(map[string]bool), hoveredTips: make(map[string]bool),
 	}
 }
 
+func RunFramework(keybindingsPath, language string) error {
+	return runWorkspace(newFramework(), "", keybindingsPath, language)
+}
+
 func RunMock(capture, keybindingsPath, language string) error {
+	m := newMockup()
+	m.objects = append(m.objects, loadExtendedTasks()...)
+	return runWorkspace(m, capture, keybindingsPath, language)
+}
+
+func (m *mockup) windowTitle() string {
+	if m.framework {
+		return "Apilot"
+	}
+	return tr("Apilot · 模拟模式")
+}
+
+func runWorkspace(m *mockup, capture, keybindingsPath, language string) error {
 	if _, err := resolveLanguage(language, "en"); err != nil {
 		return err
 	}
@@ -133,8 +166,6 @@ func RunMock(capture, keybindingsPath, language string) error {
 			return err
 		}
 	}
-	m := newMockup()
-	m.objects = append(m.objects, loadExtendedTasks()...)
 	if capture == "" {
 		m.useAdaptiveLayout()
 	}
@@ -147,7 +178,7 @@ func RunMock(capture, keybindingsPath, language string) error {
 		mygo.Theme.SetSource(mygo.ThemeLight)
 		m.setMenu()
 		m.win = mygo.NewWindow(mygo.WindowOptions{
-			Title: tr("Apilot · 模拟模式"), Width: 1190, Height: 730, MinWidth: 680, MinHeight: 580,
+			Title: m.windowTitle(), Width: 1190, Height: 730, MinWidth: 680, MinHeight: 580,
 			TitleBarStyle: mygo.TitleBarHiddenInset,
 			Content:       ui.View(m.view),
 		})
@@ -436,7 +467,9 @@ func (m *mockup) view(c *ui.Context) {
 			if components.IconButton(c.Key("assistant"), "sparkles", tr("问助理"), false).Clicked() {
 				m.openAssistant()
 			}
-			m.debugPane(c.Key("debug"))
+			if !m.framework {
+				m.debugPane(c.Key("debug"))
+			}
 			if m.unifiedTasks() {
 				m.detailToggle(c.Key("detail-toggle"))
 			}
@@ -557,6 +590,10 @@ func (m *mockup) pageContent(c *ui.Context) {
 				case connectionsPage:
 					m.connections(c)
 				case scheduledPage:
+					if m.framework {
+						components.Muted(c, tr("在 Apilot 默认模式中管理定时任务和运行历史。"))
+						return
+					}
 					m.automation.view(c, m.after)
 				case usagePage:
 					m.usage(c)
@@ -766,7 +803,12 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 		m.taskTables(c.Key("tables"), m.pagedTaskRows(rows))
 	}
 
-	if len(rows) == 0 {
+	if m.framework && len(m.objects) == 0 && problem == "" {
+		ui.Column(c.Key("empty-tasks")).FillWidth().Padding(0, 8).Gap(8).Children(func() {
+			components.Heading(c, tr("暂无任务"))
+			m.connectionGuidance(c.Key("guidance"), tr("任务会在来源同步后出现在这里。"))
+		})
+	} else if len(rows) == 0 {
 		ui.Row(c.Key("no-results")).Gap(8).AlignItems(ui.Center).Children(func() {
 			if problem == "" {
 				components.Muted(c, tr("没有符合条件的任务"))

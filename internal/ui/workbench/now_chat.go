@@ -30,7 +30,9 @@ func (m *mockup) nowConversation(c *ui.Context, scroll *ui.ScrollState, focusCom
 			})
 		})
 	})
-	m.nowComposer(c.Key("composer-region"), focusComposer)
+	if !m.framework {
+		m.nowComposer(c.Key("composer-region"), focusComposer)
+	}
 }
 
 func (m *mockup) nowChatContent(c *ui.Context) {
@@ -39,7 +41,17 @@ func (m *mockup) nowChatContent(c *ui.Context) {
 		m.nowBrief(c.Key("brief"))
 	} else if len(session.turns) == 0 {
 		components.ChatReply(c.Key("start"), "Apilot", "", func() {
-			components.Body(c, tr("想跟进哪项工作？"))
+			if m.framework {
+				if m.assistantOpen {
+					components.Body(c, tr("助理尚未接入"))
+					components.Muted(c, tr("接入推理服务后，可在这里提问。"))
+				} else {
+					components.Body(c, tr("暂无简报"))
+					m.connectionGuidance(c.Key("guidance"), tr("来源同步后，Now 会汇集值得关注的变化。"))
+				}
+			} else {
+				components.Body(c, tr("想跟进哪项工作？"))
+			}
 		})
 	}
 	for i, turn := range session.turns {
@@ -163,6 +175,9 @@ func (m *mockup) nowAcceptance(c *ui.Context) {
 }
 
 func (m *mockup) sendNowTurn() {
+	if m.framework {
+		return
+	}
 	prompt := strings.TrimSpace(m.nowSession().draft)
 	if prompt == "" {
 		return

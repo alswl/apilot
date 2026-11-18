@@ -26,7 +26,7 @@ Only the domain modeling principles from the information-page guide apply; Ant D
 
 Use the [Apilot macOS UI standard](apilot-macos-ui.md) for workbench structure, typography, colors, component states and design review. It applies the pinned macOS guide to the local app.
 
-For workbench changes, follow the [workbench design skill](../../.agents/skills/workbench-ui-design/SKILL.md) and run `make check-workbench`. CI checks fixture references, launch examples, literal translations, icon labels and the documented keybinding profiles. Use [the manual UI lint skill](../../.agents/skills/workbench-ui-lint/SKILL.md) for a scored desktop review.
+For workbench changes, follow the [workbench design skill](../../.agents/skills/workbench-ui-design/SKILL.md) and run `make check-workbench`. CI checks fixture references, launch examples, literal translations, icon labels, keybinding profiles and the framework's empty-state guidance. Use [the manual UI lint skill](../../.agents/skills/workbench-ui-lint/SKILL.md) for a scored desktop review.
 
 For user-facing instructions, follow the [software user manual guide](guides/software-user-manual-guide.md) or its [Chinese edition](guides/software-user-manual-guide.zh-CN.md), imported from the same guides commit.
 

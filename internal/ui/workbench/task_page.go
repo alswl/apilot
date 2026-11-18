@@ -8,19 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-type taskResource struct {
-	Kind   string `json:"kind"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-	TaskID string `json:"task_id"`
-}
-
-type taskEvent struct {
-	At   string    `json:"at"`
-	Time time.Time `json:"time"`
-	Text string    `json:"text"`
-}
-
 func (m *mockup) openCurrentTask() {
 	if index := m.currentTaskIndex(); index >= 0 {
 		m.openFullTask(index)

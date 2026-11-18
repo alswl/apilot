@@ -13,21 +13,9 @@ var fixtureJSON []byte
 //go:embed fixtures/tasks_extended.json
 var extendedTaskJSON []byte
 
-type sourceObject struct {
-	ID           string            `json:"source_object_id"`
-	ConnectionID string            `json:"connection_id"`
-	NativeID     string            `json:"native_id"`
-	Kind         string            `json:"kind"`
-	Title        string            `json:"title"`
-	Locator      string            `json:"locator"`
-	Assignees    []string          `json:"assignees"`
-	Labels       []string          `json:"labels"`
-	LabelValues  map[string]string `json:"label_values"`
-	Summary      string            `json:"summary"`
-	Related      []taskResource    `json:"related"`
-	Activity     []taskEvent       `json:"activity"`
-	NativeFields map[string]string `json:"native_fields"`
-}
+type sourceObject = common.WorkbenchTask
+type taskResource = common.WorkbenchTaskResource
+type taskEvent = common.WorkbenchTaskEvent
 
 type connection struct {
 	ID   string `json:"connection_id"`

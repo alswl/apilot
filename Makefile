@@ -20,9 +20,9 @@ check-architecture: ## Check logic and test dependencies contain no MyGo
 	scripts/check-architecture.sh
 check-docs: ## Check local documentation links and pinned standards
 	python3 scripts/check-docs.py
-check-workbench: ## Check workbench data, launch docs, UI literals and keybinding profiles
+check-workbench: ## Check workbench data, launch docs, UI literals, keybindings and empty-state guidance
 	python3 scripts/check-workbench.py
-	go test ./internal/ui/workbench -run 'Test(DocumentedKeybindingProfiles|WorkbenchUILiterals)$$'
+	go test ./internal/ui/workbench -run 'Test(DocumentedKeybindingProfiles|WorkbenchUILiterals|EmptyFrameworkNavigationAndConnectorScaffolds)$$'
 check-portable: ## Cross-compile shared packages for Linux and Windows
 	bash scripts/check-portable.sh
 

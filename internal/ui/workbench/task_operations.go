@@ -7,12 +7,14 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo/ui"
 )
 
 const (
-	obsidianTasks = "obsidian_tasks"
-	githubIssues  = "github_issues"
+	obsidianTasks = common.WorkbenchObsidianTasks
+	githubIssues  = common.WorkbenchGitHubIssues
 )
 
 type taskSourceEdit struct {
@@ -354,16 +356,7 @@ func (m *mockup) submitSourceEdit(edit taskSourceEdit, after func(time.Duration,
 		if !slices.Equal(assignees, o.Assignees) {
 			task.Assignees = assignees
 		}
-		for key, value := range fields {
-			if value != originalFields[key] {
-				task.NativeFields[key] = value
-			}
-		}
-		for key := range originalFields {
-			if _, exists := fields[key]; !exists {
-				delete(task.NativeFields, key)
-			}
-		}
+		services.ApplyWorkbenchTaskFields(task, originalFields, fields)
 		m.recordTaskEvent(edit.id, "来源确认了任务修改")
 	})
 	return ""

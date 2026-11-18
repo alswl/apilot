@@ -1,6 +1,13 @@
 # macOS 工作台使用指南
 
-在仓库根目录启动，或通过终端启动已安装的 Apilot。
+从仓库启动空工作台，或给已安装的 Apilot 传入同样的参数。
+
+```sh
+go run ./cmd/apilot-app --workbench
+open -n -a Apilot --args --workbench
+```
+
+空工作台提供导航和设置入口，以及 GitHub Issues 与 Obsidian Tasks 的配置骨架。两个连接器均显示未接入，配置只在本次运行中保留。要体验任务、简报、助理回复和同步演示，请启动样例模式。
 
 ```sh
 go run ./cmd/apilot-app --mock

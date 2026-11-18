@@ -42,6 +42,11 @@ type usageMetric struct {
 
 func (m *mockup) usage(c *ui.Context) {
 	ui.Tabs(c.Key("tabs"), &m.usageTab, tr("模型"), tr("会话"), tr("同步")).FillWidth()
+	if m.framework {
+		components.Muted(c.Key("period"), tr("暂无用量数据"))
+		components.Muted(c.Key("guidance"), tr("有模型请求或同步记录后，会在这里显示用量。"))
+		return
+	}
 	components.Muted(c.Key("period"), tr("最近 7 天 · 演示数据"))
 	ui.Divider(c)
 	switch m.usageTab {

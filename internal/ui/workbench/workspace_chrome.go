@@ -73,6 +73,8 @@ func (m *mockup) statusBar(c *ui.Context) {
 			continue
 		}
 		switch conn.Status {
+		case "未接入":
+			total--
 		case "等待首次同步":
 			awaiting++
 		case "同步正常":
@@ -106,7 +108,11 @@ func (m *mockup) statusBar(c *ui.Context) {
 		if activeRuns > 0 && statusCount(c.Key("runs"), "play.circle", fmt.Sprintf(tr("%d 项运行中"), activeRuns), activeRuns, c.Theme().TextMuted) {
 			m.navigate(scheduledPage)
 		}
-		ui.Box(c.Key("mode")).Tooltip(tr("本地模拟")).Label(tr("本地模拟")).Children(func() {
+		mode := "本地模拟"
+		if m.framework {
+			mode = "本地工作台"
+		}
+		ui.Box(c.Key("mode")).Tooltip(tr(mode)).Label(tr(mode)).Children(func() {
 			components.Symbol(c, "laptopcomputer", c.Theme().TextMuted)
 		})
 	})

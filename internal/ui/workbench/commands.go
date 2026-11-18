@@ -91,7 +91,7 @@ func (m *mockup) activeCommands() []command {
 	if len(m.writableConnections()) > 0 {
 		items = append(items, command{"task.new", tr("新建任务"), m.openNewTask})
 	}
-	if !m.inspector && (m.page == nowPage || (m.unifiedTasks() && m.taskSelection == "")) {
+	if len(m.objects) > 0 && !m.inspector && (m.page == nowPage || (m.unifiedTasks() && m.taskSelection == "")) {
 		if m.objects[0].NativeFields["status"] == "已完成" {
 			items = append(items, command{"now.reply", tr("查看客户答复任务"), func() { m.openNowTask(1) }})
 		} else if m.variant != 1 && !m.briefDismissed {

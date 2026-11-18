@@ -27,11 +27,16 @@ func (m *mockup) initLanguage(launchLanguage string) {
 	useEnglish, _ := resolveLanguage(launchLanguage, shown)
 	englishUI.Store(useEnglish)
 	m.applyLocale = func(tag string) {
-		mygo.App.SetLocale(tag)
-		useEnglish, _ := resolveLanguage("", mygo.App.Locale())
+		var useEnglish bool
+		if m.framework {
+			useEnglish, _ = resolveLanguage(tag, closestSystemLanguage())
+		} else {
+			mygo.App.SetLocale(tag)
+			useEnglish, _ = resolveLanguage("", mygo.App.Locale())
+		}
 		englishUI.Store(useEnglish)
 		m.setMenu()
-		m.win.SetTitle(tr("Apilot · 模拟模式"))
+		m.win.SetTitle(m.windowTitle())
 		m.win.Invalidate()
 		m.preferences.SetTitle(tr("Apilot 设置"))
 		m.preferences.Invalidate()
@@ -82,10 +87,14 @@ func (m *mockup) settings(c *ui.Context) {
 				})
 			case 1:
 				m.changeTag(c, "provider-settings", tr("推理配置与助理使用的资料集中管理。"))
-				ui.Field(c.Key("default-provider"), tr("默认模型"), func() {
-					localizedSelect(c, &m.provider, []string{"工作模型", "个人模型"}, 0)
-				})
-				components.Muted(c, tr("演示配置 · 无实际凭据"))
+				if m.framework {
+					components.Muted(c, tr("助理尚未接入"))
+				} else {
+					ui.Field(c.Key("default-provider"), tr("默认模型"), func() {
+						localizedSelect(c, &m.provider, []string{"工作模型", "个人模型"}, 0)
+					})
+					components.Muted(c, tr("演示配置 · 无实际凭据"))
+				}
 				ui.Divider(c)
 				for _, name := range []string{"助手库", "知识库", "写作库", "记忆"} {
 					ui.Row(c.Key(name)).FillWidth().Gap(16).Children(func() {
@@ -99,7 +108,11 @@ func (m *mockup) settings(c *ui.Context) {
 					ui.Row(c.Key(conn.ID)).FillWidth().Gap(12).Children(func() {
 						components.DataText(c, tr(conn.ConnectorID))
 						ui.Spacer(c).Grow(1)
-						components.Muted(c, tr("演示连接"))
+						if m.framework {
+							components.Muted(c, tr("未接入"))
+						} else {
+							components.Muted(c, tr("演示连接"))
+						}
 					})
 				}
 			case 3:

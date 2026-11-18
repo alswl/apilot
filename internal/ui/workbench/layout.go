@@ -65,6 +65,8 @@ func (m *mockup) sidebarToggle(c *ui.Context) {
 func (m *mockup) layoutBrief(c *ui.Context) {
 	target, summary, action := 0, "周五答复客户前，退款验收仍在进行", "查看验收依据"
 	switch {
+	case len(m.objects) == 0:
+		summary, action = "暂无需要处理的新变化", ""
 	case taskClosed(m.objects[0]):
 		target, summary, action = 1, "退款验收通过，客户答复待处理", "查看客户答复任务"
 	case m.variant == 1:
