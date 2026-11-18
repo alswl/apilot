@@ -7,7 +7,7 @@ go run ./cmd/apilot-app --mock
 open -n -a Apilot --args --mock
 ```
 
-在「设置 → 常规」可选跟随系统、简体中文或 English。选择会立即生效，并保存到下次启动。启动时也可加 `--language zh-Hans` 或 `--language en` 覆盖本次显示。助理模型和资料、扩展、快捷键各有设置标签。自定义按键见[快捷键与任务查询](keyboard-first.md)。
+模拟模式启动时默认跟随系统。在「设置 → 常规」可选跟随系统、简体中文或 English，选择立即生效。启动时也可加 `--language zh-Hans` 或 `--language en` 指定本次显示。助理模型和资料、扩展、快捷键各有设置标签。自定义按键见[快捷键与任务查询](keyboard-first.md)。
 
 ## 调整工作区布局
 
