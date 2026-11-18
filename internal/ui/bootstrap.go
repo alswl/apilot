@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/internal/presentation"
+	"github.com/alswl/apilot/internal/ui/components"
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/server"
 	"github.com/alswl/apilot/pkg/services"
@@ -435,7 +436,7 @@ func statusText(v string) string {
 	return v
 }
 func (s *windowState) view(c *ui.Context) {
-	brandTheme(c)
+	components.ApplyTheme(c)
 	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 			if ui.Tabs(c, &s.tab, tr("tasks"), tr("history"), tr("observers"), tr("attention")).Grow(1).Changed() {
@@ -506,25 +507,14 @@ func (s *windowState) taskList(c *ui.Context) {
 					continue
 				}
 				ui.Row(c.Key(t.ID)).FillWidth().Gap(8).Children(func() {
-					entry := ui.ButtonBase(c.Key("open")).Label(t.Name).Tooltip(t.Name).Grow(1).Padding(8).Radius(6).Justify(ui.Start)
-					if entry.Hovered() {
-						entry.Background(c.Theme().SurfaceHover)
+					item := components.ListItem{Title: t.Name, Subtitle: planLabel(t), Selected: s.selectedTask == t.ID}
+					if t.LastRun != nil {
+						item.Status = components.Status{Text: statusText(t.LastRun.Status), Color: resultColor(c, t.LastRun.Status)}
 					}
-					entry.Children(func() {
-						ui.Column(c).FillWidth().Gap(4).Children(func() {
-							ui.Row(c).FillWidth().Gap(8).Children(func() {
-								ui.Text(c, t.Name).Grow(1)
-								if t.LastRun != nil {
-									ui.Text(c, statusText(t.LastRun.Status)).FontSize(12).TextColor(resultColor(c, t.LastRun.Status))
-								}
-							})
-							ui.Text(c, planLabel(t)).FontSize(12).TextColor(c.Theme().TextMuted)
-						})
-					})
-					if entry.Clicked() {
+					if components.ListRow(c.Key("open"), item) {
 						s.selectedTask = t.ID
 					}
-					if ui.Button(c.Key("run"), "▶").Label(tr("runTask")).Tooltip(tr("runTask")).Disabled(s.busy).Clicked() {
+					if components.IconButton(c.Key("run"), "play.fill", tr("runTask")+" — "+t.Name, s.busy).Clicked() {
 						s.action(func() error { _, e := s.service.RunTask(t.ID, "manual"); return e })
 					}
 				})

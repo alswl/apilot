@@ -22,6 +22,14 @@ The copies preserve upstream wording and attribution. Links to editions or demos
 
 Only the domain modeling principles from the information-page guide apply; Ant Design/Web/TUI stacks and demos are outside this project.
 
+## Product design and user documentation
+
+Use the [Apilot macOS UI standard](apilot-macos-ui.md) for workbench structure, typography, colors, component states and design review. It applies the pinned macOS guide to the local app.
+
+For workbench changes, follow the [workbench design skill](../../.agents/skills/workbench-ui-design/SKILL.md) and run `make check-workbench`. CI checks fixture references, launch examples, literal translations, icon labels, keybinding profiles and the framework's empty-state guidance. Use [the manual UI lint skill](../../.agents/skills/workbench-ui-lint/SKILL.md) for a scored desktop review.
+
+For user-facing instructions, follow the [software user manual guide](guides/software-user-manual-guide.md) or its [Chinese edition](guides/software-user-manual-guide.zh-CN.md), imported from the same guides commit.
+
 ## Shared Makefile toolkit
 
 `hack/makefile-go/` is an unchanged copy of [alswl/makefile-go](https://github.com/alswl/makefile-go) at `79641c287e33c87873c839145763f74d262dd5e1` (no standalone license file in that source). `hack/build.mk` delegates build/download/clean to its build module; the root Makefile uses its help module. Project variables and desktop packaging remain in the project adapter. The upstream mutating lint, test layout, install, version bump, generation and container targets are not exposed as project commands. Compare the full copied directory when updating; keep project adaptations outside it.

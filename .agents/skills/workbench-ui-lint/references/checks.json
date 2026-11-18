@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "pass_score": 90,
+  "checks": {
+    "navigation-return": {"weight": 20, "critical": true},
+    "keyboard-focus": {"weight": 15, "critical": true},
+    "layout-reachability": {"weight": 15, "critical": true},
+    "source-actions": {"weight": 15, "critical": true, "optional": true},
+    "sessions-and-feedback": {"weight": 10, "critical": false},
+    "visual-hierarchy": {"weight": 15, "critical": false},
+    "language-and-names": {"weight": 10, "critical": false}
+  }
+}

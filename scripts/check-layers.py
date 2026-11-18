@@ -42,7 +42,11 @@ def main():
             for dependency in package.get('Imports', []):
                 if dependency.startswith(PREFIX) and dependency.removeprefix(PREFIX) not in {'pkg/common', 'pkg/config', 'pkg/services'}:
                     errors.append(f'Command bypasses services: {dependency}')
-        elif path.startswith('internal/') and path not in {'internal/ui', 'internal/ui/locales', 'internal/presentation'}:
+        elif path == 'internal/ui/components':
+            for dependency in package.get('Imports', []):
+                if dependency.startswith(PREFIX):
+                    errors.append(f'Shared UI components must stay independent: {dependency}')
+        elif path.startswith('internal/') and path not in {'internal/ui', 'internal/ui/locales', 'internal/ui/workbench', 'internal/presentation'}:
             errors.append(f'Unexpected internal package: {path}')
     for executable in ('apilot', 'apilot-app'):
         text = (ROOT / 'cmd' / executable / 'main.go').read_text()

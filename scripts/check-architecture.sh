@@ -7,7 +7,7 @@ core=()
 ui=()
 while IFS= read -r package; do
   case "$package" in
-    github.com/alswl/apilot/internal/ui|github.com/alswl/apilot/internal/ui/*|github.com/alswl/apilot/cmd/apilot-app) ui+=("$package") ;;
+    github.com/alswl/apilot/internal/ui|github.com/alswl/apilot/internal/ui/*|github.com/alswl/apilot/cmd/apilot-app|github.com/alswl/apilot/cmd/apilot-mockup) ui+=("$package") ;;
     *) core+=("$package") ;;
   esac
 done <<< "$all"

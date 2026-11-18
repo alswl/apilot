@@ -1,0 +1,565 @@
+[
+  {
+    "source_object_id": "DEMO-101",
+    "native_id": "101",
+    "connection_id": "team",
+    "title": "核对支付回调",
+    "kind": "task",
+    "locator": "example/payments#101",
+    "labels": [
+      "refund",
+      "bug"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "repo": "example/payments",
+      "state": "open",
+      "milestone": "November release"
+    },
+    "activity": [
+      {
+        "at": "今天 08:12",
+        "time": "2026-11-18T08:12:00+08:00",
+        "text": "lin 从预发布日志提取了两次回调的事件编号"
+      },
+      {
+        "at": "今天 10:08",
+        "time": "2026-11-18T10:08:00+08:00",
+        "text": "已补复现步骤，等待退款流水核对"
+      }
+    ],
+    "assignees": [
+      "lin"
+    ],
+    "summary": "网关偶尔收到两次相同的退款通知。对比两笔重复回调的 event_id，确认幂等键覆盖退款渠道。",
+    "related": [
+      {
+        "kind": "前置任务",
+        "task_id": "refund",
+        "title": "验证老订单退款"
+      },
+      {
+        "kind": "Agent 会话",
+        "title": "预发布回调比对",
+        "body": "两条通知使用同一个事件编号，相隔 23 秒。另一个渠道的回放未复现。"
+      },
+      {
+        "kind": "后续任务",
+        "task_id": "DEMO-108",
+        "title": "验证重复通知处理"
+      }
+    ]
+  },
+  {
+    "source_object_id": "DEMO-102",
+    "native_id": "DEMO-102",
+    "connection_id": "vault",
+    "title": "整理客服退款模板",
+    "kind": "task",
+    "locator": "Payments/Support.md › Refund templates",
+    "labels": [
+      "payments/ops"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "priority": "高",
+      "due": "2026-11-20",
+      "path": "Payments/Support.md",
+      "section": "Refund templates",
+      "checkbox": " "
+    },
+    "activity": [
+      {
+        "at": "今天 08:03",
+        "time": "2026-11-18T08:03:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "把退款已提交、已到账和银行退回分成三段话术。提交给客服前，先对照 #40 的状态命名。",
+    "related": [
+      {
+        "kind": "交付记录",
+        "task_id": "deploy",
+        "title": "#40 · 退款状态说明"
+      }
+    ]
+  },
+  {
+    "source_object_id": "DEMO-103",
+    "native_id": "103",
+    "connection_id": "team",
+    "title": "复核银行对账差异",
+    "kind": "task",
+    "locator": "example/payments#103",
+    "labels": [
+      "ops",
+      "bug"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "repo": "example/payments",
+      "state": "open",
+      "milestone": "November release"
+    },
+    "activity": [
+      {
+        "at": "今天 08:06",
+        "time": "2026-11-18T08:06:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "assignees": [
+      "chen"
+    ],
+    "summary": "对账报表里有两笔跨日到账。复核银行原始流水和批次号，确认是时区差异还是漏记。"
+  },
+  {
+    "source_object_id": "DEMO-104",
+    "native_id": "DEMO-104",
+    "connection_id": "vault",
+    "title": "补充异常订单回滚说明",
+    "kind": "task",
+    "locator": "Payments/Release.md › Rollback",
+    "labels": [
+      "payments/ops",
+      "release"
+    ],
+    "native_fields": {
+      "status": "已完成",
+      "priority": "普通",
+      "due": "2026-11-20",
+      "path": "Payments/Release.md",
+      "section": "Rollback",
+      "checkbox": "x",
+      "scheduled": "2026-11-19"
+    },
+    "activity": [
+      {
+        "at": "今天 08:09",
+        "time": "2026-11-18T08:09:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "补上退款队列暂停、恢复以及回滚后重放的顺序。附上预发布环境的执行记录。",
+    "related": [
+      {
+        "kind": "文档章节",
+        "title": "支付发布 › 回滚窗口",
+        "body": "灰度后的前 30 分钟由值班工程师监控，出现重复退款时先暂停队列。"
+      },
+      {
+        "kind": "前置任务",
+        "task_id": "DEMO-105",
+        "title": "确认灰度发布范围"
+      }
+    ]
+  },
+  {
+    "source_object_id": "DEMO-105",
+    "native_id": "105",
+    "connection_id": "team",
+    "title": "确认灰度发布范围",
+    "kind": "task",
+    "locator": "example/payments#105",
+    "labels": [
+      "refund",
+      "enhancement"
+    ],
+    "native_fields": {
+      "status": "已完成",
+      "repo": "example/payments",
+      "state": "closed",
+      "milestone": "November release",
+      "state_reason": "completed"
+    },
+    "activity": [
+      {
+        "at": "今天 08:36",
+        "time": "2026-11-18T08:36:00+08:00",
+        "text": "chen 添加了灰度商户清单"
+      },
+      {
+        "at": "今天 10:16",
+        "time": "2026-11-18T10:16:00+08:00",
+        "text": "灰度范围已确认，工单以已完成关闭"
+      }
+    ],
+    "assignees": [
+      "lin"
+    ],
+    "summary": "首批灰度只给两家测试商户开放。上线前检查老订单和新订单都能走通。"
+  },
+  {
+    "source_object_id": "DEMO-106",
+    "native_id": "DEMO-106",
+    "connection_id": "vault",
+    "title": "归档退款验收凭证",
+    "kind": "task",
+    "locator": "Payments/Refunds.md › Acceptance evidence",
+    "labels": [
+      "payments/refund",
+      "release"
+    ],
+    "native_fields": {
+      "status": "已完成",
+      "priority": "低",
+      "due": "",
+      "path": "Payments/Refunds.md",
+      "section": "Acceptance evidence",
+      "checkbox": "x",
+      "done": "2026-11-18"
+    },
+    "activity": [
+      {
+        "at": "今天 08:15",
+        "time": "2026-11-18T08:15:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "归档原支付渠道流水、验收截图和会议确认记录。链接回本周的退款验收任务。"
+  },
+  {
+    "source_object_id": "DEMO-107",
+    "native_id": "107",
+    "connection_id": "team",
+    "title": "准备财务周报",
+    "kind": "task",
+    "locator": "example/payments#107",
+    "labels": [
+      "ops",
+      "documentation"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "repo": "example/payments",
+      "state": "open",
+      "milestone": "November release"
+    },
+    "activity": [
+      {
+        "at": "今天 08:18",
+        "time": "2026-11-18T08:18:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "assignees": [],
+    "summary": "汇总退款成功率、失败重试次数和当天的对账差异。周四下午交给财务复核。"
+  },
+  {
+    "source_object_id": "DEMO-108",
+    "native_id": "DEMO-108",
+    "connection_id": "vault",
+    "title": "验证重复通知处理",
+    "kind": "task",
+    "locator": "Payments/Operations.md › Duplicate notifications",
+    "labels": [
+      "payments/ops"
+    ],
+    "native_fields": {
+      "status": "进行中",
+      "priority": "高",
+      "due": "",
+      "path": "Payments/Operations.md",
+      "section": "Duplicate notifications",
+      "checkbox": "/",
+      "start": "2026-11-18"
+    },
+    "activity": [
+      {
+        "at": "今天 08:21",
+        "time": "2026-11-18T08:21:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "对同一笔订单重放三次支付通知，确认客户只收到一次提醒。",
+    "related": [
+      {
+        "kind": "前置任务",
+        "task_id": "DEMO-101",
+        "title": "核对支付回调"
+      }
+    ]
+  },
+  {
+    "source_object_id": "DEMO-109",
+    "native_id": "109",
+    "connection_id": "team",
+    "title": "追踪退款失败重试",
+    "kind": "task",
+    "locator": "example/payments#109",
+    "labels": [
+      "refund",
+      "bug"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "repo": "example/payments",
+      "state": "open"
+    },
+    "activity": [
+      {
+        "at": "今天 11:03",
+        "time": "2026-11-18T11:03:00+08:00",
+        "text": "补充三次失败后的处理规则，等待分派"
+      }
+    ],
+    "assignees": [],
+    "summary": "连续失败三次后要停止自动重试，并保留人工处理入口。先核对失败码，再回看原始任务。"
+  },
+  {
+    "source_object_id": "DEMO-110",
+    "native_id": "DEMO-110",
+    "connection_id": "vault",
+    "title": "检查生效中的监控规则",
+    "kind": "task",
+    "locator": "Payments/Operations.md › Monitoring",
+    "labels": [
+      "payments/ops"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "priority": "普通",
+      "due": "",
+      "path": "Payments/Operations.md",
+      "section": "Monitoring",
+      "checkbox": " "
+    },
+    "activity": [
+      {
+        "at": "今天 08:27",
+        "time": "2026-11-18T08:27:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "确认退款失败和对账延迟的告警都指向值班人，移除已停用渠道的规则。"
+  },
+  {
+    "source_object_id": "DEMO-111",
+    "native_id": "111",
+    "connection_id": "team",
+    "title": "核对退款到账时效",
+    "kind": "task",
+    "locator": "example/payments#111",
+    "labels": [
+      "refund"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "repo": "example/payments",
+      "state": "open",
+      "milestone": "November release"
+    },
+    "activity": [
+      {
+        "at": "今天 08:30",
+        "time": "2026-11-18T08:30:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "assignees": [
+      "chen"
+    ],
+    "summary": "用两种退款金额和两个渠道各验证一笔，记录提交时间和用户看到到账的时间。"
+  },
+  {
+    "source_object_id": "DEMO-112",
+    "native_id": "DEMO-112",
+    "connection_id": "vault",
+    "title": "归档风险评审会议",
+    "kind": "task",
+    "locator": "Payments/Meetings.md › Risk review",
+    "labels": [
+      "payments/ops"
+    ],
+    "native_fields": {
+      "status": "已完成",
+      "priority": "低",
+      "due": "",
+      "path": "Payments/Meetings.md",
+      "section": "Risk review",
+      "checkbox": "x",
+      "done": "2026-11-18"
+    },
+    "activity": [
+      {
+        "at": "今天 08:33",
+        "time": "2026-11-18T08:33:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "归档本次风险评审的结论，补记发布窗口内的回滚负责人和响应时间。"
+  },
+  {
+    "source_object_id": "DEMO-113",
+    "native_id": "113",
+    "connection_id": "team",
+    "title": "复核退款渠道配置",
+    "kind": "task",
+    "locator": "example/payments#113",
+    "labels": [
+      "ops"
+    ],
+    "native_fields": {
+      "status": "不计划处理",
+      "repo": "example/payments",
+      "state": "closed",
+      "milestone": "November release",
+      "state_reason": "not_planned"
+    },
+    "activity": [
+      {
+        "at": "今天 10:25",
+        "time": "2026-11-18T10:25:00+08:00",
+        "text": "渠道将在本版本下线，工单以不计划处理关闭"
+      }
+    ],
+    "assignees": [
+      "lin"
+    ],
+    "summary": "这条渠道配置跟随供应商下线，当前版本无需继续调整。保留现状供后续查询。"
+  },
+  {
+    "source_object_id": "DEMO-114",
+    "native_id": "DEMO-114",
+    "connection_id": "vault",
+    "title": "补全上线检查清单",
+    "kind": "task",
+    "locator": "Payments/Release.md › Checklist",
+    "labels": [
+      "payments/ops",
+      "release"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "priority": "高",
+      "due": "2026-11-20",
+      "path": "Payments/Release.md",
+      "section": "Checklist",
+      "checkbox": " ",
+      "scheduled": "2026-11-19"
+    },
+    "activity": [
+      {
+        "at": "今天 08:39",
+        "time": "2026-11-18T08:39:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "把对账和告警检查补进发布清单，明确上线前后分别由谁确认。",
+    "related": [
+      {
+        "kind": "前置任务",
+        "task_id": "DEMO-104",
+        "title": "补充异常订单回滚说明"
+      }
+    ]
+  },
+  {
+    "source_object_id": "DEMO-115",
+    "native_id": "115",
+    "connection_id": "team",
+    "title": "整理支付异常案例",
+    "kind": "task",
+    "locator": "example/payments#115",
+    "labels": [
+      "ops",
+      "documentation"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "repo": "example/payments",
+      "state": "open"
+    },
+    "activity": [
+      {
+        "at": "今天 08:42",
+        "time": "2026-11-18T08:42:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "assignees": [],
+    "summary": "整理最近遇到的超时、可重试和重复回调案例，方便回归测试复用。"
+  },
+  {
+    "source_object_id": "DEMO-116",
+    "native_id": "DEMO-116",
+    "connection_id": "vault",
+    "title": "核对周末值班安排",
+    "kind": "task",
+    "locator": "Operations/OnCall.md › Weekend coverage",
+    "labels": [
+      "payments/ops"
+    ],
+    "native_fields": {
+      "status": "已完成",
+      "priority": "普通",
+      "due": "",
+      "path": "Operations/OnCall.md",
+      "section": "Weekend coverage",
+      "checkbox": "x"
+    },
+    "activity": [
+      {
+        "at": "今天 08:45",
+        "time": "2026-11-18T08:45:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "核对周六和周日的覆盖范围，并给未确认的班次标记下一次跟进时间。"
+  },
+  {
+    "source_object_id": "DEMO-117",
+    "native_id": "117",
+    "connection_id": "team",
+    "title": "更新支付接口文档",
+    "kind": "task",
+    "locator": "example/payments#117",
+    "labels": [
+      "documentation"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "repo": "example/payments",
+      "state": "open"
+    },
+    "activity": [
+      {
+        "at": "今天 08:48",
+        "time": "2026-11-18T08:48:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "assignees": [
+      "lin"
+    ],
+    "summary": "说明退款查询接口返回的三种主要状态，补充旧版本字段的兼容说明。"
+  },
+  {
+    "source_object_id": "DEMO-118",
+    "native_id": "DEMO-118",
+    "connection_id": "vault",
+    "title": "验证升级后对账任务",
+    "kind": "task",
+    "locator": "Payments/Reconciliation.md › Post-upgrade verification",
+    "labels": [
+      "payments/ops",
+      "release"
+    ],
+    "native_fields": {
+      "status": "待处理",
+      "priority": "低",
+      "due": "2026-11-20",
+      "path": "Payments/Reconciliation.md",
+      "section": "Post-upgrade verification",
+      "checkbox": " "
+    },
+    "activity": [
+      {
+        "at": "今天 08:51",
+        "time": "2026-11-18T08:51:00+08:00",
+        "text": "来源更新了任务"
+      }
+    ],
+    "summary": "升级后从空环境跑一次对账计划，确认首批记录没有延迟或重复。"
+  }
+]

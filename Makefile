@@ -2,11 +2,11 @@ include hack/project.mk
 .DEFAULT_GOAL := build
 include hack/makefile-go/general.mk
 
-.PHONY: build cli download clean check check-format fmt vet check-version check-architecture check-docs check-portable check-app-platform lint test test-core race race-core race-ui app icons verify-ui verify-lifecycle verify verify-app-path
+.PHONY: build cli download clean check check-format fmt vet check-version check-architecture check-docs check-workbench check-portable check-app-platform lint test test-core race race-core race-ui app icons verify-ui verify-lifecycle verify verify-app-path
 .NOTPARALLEL: verify race
 
 ##@ Checks
-check: check-format vet check-version check-architecture check-docs check-portable ## Run read-only checks
+check: check-format vet check-version check-architecture check-docs check-workbench check-portable ## Run read-only checks
 lint: check ## Run read-only checks
 check-format: ## Check first-party Go formatting
 	python3 scripts/check-source.py format
@@ -20,6 +20,9 @@ check-architecture: ## Check logic and test dependencies contain no MyGo
 	scripts/check-architecture.sh
 check-docs: ## Check local documentation links and pinned standards
 	python3 scripts/check-docs.py
+check-workbench: ## Check workbench data, launch docs, UI literals, keybindings and empty-state guidance
+	python3 scripts/check-workbench.py
+	go test ./internal/ui/workbench -run 'Test(DocumentedKeybindingProfiles|WorkbenchUILiterals|EmptyFrameworkNavigationAndConnectorScaffolds)$$'
 check-portable: ## Cross-compile shared packages for Linux and Windows
 	bash scripts/check-portable.sh
 

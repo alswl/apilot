@@ -1,0 +1,5 @@
+interface:
+  display_name: "Workbench UI lint"
+  short_description: "Manually review and score the Apilot macOS workbench"
+policy:
+  allow_implicit_invocation: false

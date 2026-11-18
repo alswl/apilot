@@ -12,3 +12,7 @@
 - History is held in memory for the retention period and refreshed in UI snapshots. Large histories beyond the tested 1,000 records require further profiling.
 - Output beyond each stream's configured limit is drained and discarded. stdout/stderr are independent streams; their relative order is not reconstructed.
 - Environment definitions are stored locally in plaintext under current-user permissions. User commands and command arguments can contain or print secrets; automatic metadata hiding cannot redact arbitrary command output.
+
+## Workbench mock mode
+
+The [Workbench guide](workbench.md) describes the fixture mode. Source edits, sync results, assistant replies and scheduled runs are simulated. Task edits, saved views and conversations reset on relaunch. Live vault and repository access, assistant inference and cross-session persistence are pending.

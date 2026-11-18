@@ -46,6 +46,8 @@ jobs:
         run: |
           make check-docs
           python3 scripts/classify_changes_test.py
+      - name: Lint workbench fixtures and launch examples
+        run: python3 scripts/check-workbench.py
       - name: Documentation-only summary
         if: steps.changes.outputs.full != 'true'
         run: echo 'Documentation checks passed. Native tests and packaging were not required.' >> "$GITHUB_STEP_SUMMARY"
@@ -97,7 +99,9 @@ jobs:
         run: make check-architecture check-version check-portable
       - name: Test complete suite with race detector
         if: steps.changes.outputs.full == 'true'
-        run: make race
+        run: |
+          make race
+          go test -tags apilot_mockup ./cmd/apilot-mockup
       - name: Build development App and DMG
         if: steps.changes.outputs.full == 'true' && steps.signing.outputs.enabled != 'true'
         run: make app
