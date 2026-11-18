@@ -18,7 +18,12 @@ type command struct {
 }
 
 func (m *mockup) navigate(page int) {
+	if page == nowPage {
+		m.nowLibraryOpen = false
+	}
 	if m.page != page {
+		m.layout.detailExpanded, m.layout.detailReturnHidden = false, false
+		m.taskBackStack = nil
 		m.page, m.inspector, m.editingDue, m.fullTask = page, false, false, false
 	}
 	if page == tasksPage && !m.inspector {
@@ -27,6 +32,8 @@ func (m *mockup) navigate(page int) {
 }
 
 func (m *mockup) closeInspector() {
+	m.layout.detailReturnHidden = false
+	m.taskBackStack = nil
 	m.inspector, m.editingDue, m.fullTask = false, false, false
 	m.restoreTaskFocus = m.page == tasksPage
 }
@@ -60,6 +67,7 @@ func (m *mockup) moveSelection(delta int) {
 }
 
 func (m *mockup) selectTask(index int) {
+	m.taskBackStack = nil
 	m.locateTaskPage(m.taskRows(), index)
 	m.taskSelection = m.objects[index].ID
 	if m.inspector {
@@ -162,7 +170,8 @@ func (m *mockup) activeCommands() []command {
 
 func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 	k := &m.keyboard
-	if k.palette || m.assistantOpen || m.connectorEditor != nil || m.syncLogID != "" || m.newTaskOpen || m.debugOpen || m.saveTaskViewOpen || m.taskResourceOpen || m.sourceEditor != nil || m.labelEditor != nil {
+	if k.palette || m.assistantOpen || m.connectorEditor != nil || m.syncLogID != "" || m.newTaskOpen || m.debugOpen || m.saveTaskViewOpen || m.taskResourceOpen || m.sourceEditor != nil || m.labelEditor != nil ||
+		(m.compactTaskList() && (m.taskDisplayOpen || m.searchExpanded)) {
 		k.prefix = keystroke{}
 		return
 	}
@@ -180,14 +189,19 @@ func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 			}
 		}
 	}
-	if (m.inspector || k.editingText) && c.Shortcut(0, ui.KeyEscape) {
+	if (m.inspector || m.layout.detailExpanded || k.editingText) && c.Shortcut(0, ui.KeyEscape) {
 		if k.editingText {
 			m.restoreTaskFocus = m.page == tasksPage && len(m.taskRows()) > 0
 			k.focusNavigation = !m.restoreTaskFocus
 		} else if m.editingDue {
 			m.editingDue = false
+		} else if len(m.taskBackStack) > 0 {
+			m.returnRelatedPending = true
+		} else if m.layout.detailExpanded {
+			m.layout.detailExpanded = false
+			m.layout.focusDetail = true
 		} else {
-			m.closeInspector()
+			m.leaveTaskDetail()
 		}
 		c.Invalidate()
 		return

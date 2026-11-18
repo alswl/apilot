@@ -3,7 +3,9 @@ package workbench
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/alswl/apilot/internal/ui/components"
 	"github.com/egoist/mygo/ui"
@@ -180,6 +182,7 @@ func (m *mockup) sendNowTurn() {
 		session.title = string(title[:min(len(title), 26)])
 	}
 	session.turns = append(session.turns, nowTurn{prompt: prompt, reply: reply})
+	session.lastUsed = time.Now()
 	m.nowSession().draft = ""
 	m.scrollNowToEnd()
 }
@@ -207,6 +210,7 @@ type nowSession struct {
 	briefing bool
 	draft    string
 	turns    []nowTurn
+	lastUsed time.Time
 	scroll   ui.ScrollState
 }
 
@@ -215,11 +219,20 @@ func (m *mockup) nowSession() *nowSession {
 }
 
 func (m *mockup) newNowSession() {
+	for _, i := range m.nowSessionOrder() {
+		session := &m.nowSessions[i]
+		if !session.briefing && len(session.turns) == 0 && strings.TrimSpace(session.draft) == "" {
+			m.openNowSession(i)
+			m.layout.focusAssistant = true
+			return
+		}
+	}
 	m.nowSessions = append(m.nowSessions, nowSession{title: "新会话"})
-	m.nowSessionIndex = len(m.nowSessions) - 1
-	m.nowSessionsHidden = false
+	if len(m.nowSessions) == nowRecentLimit {
+		m.nowSessionsHidden = true
+	}
+	m.openNowSession(len(m.nowSessions) - 1)
 	m.layout.focusAssistant = true
-	m.navigate(nowPage)
 }
 
 func (m *mockup) nowSidebar(c *ui.Context) {
@@ -244,16 +257,71 @@ func (m *mockup) nowSidebar(c *ui.Context) {
 			m.newNowSession()
 		}
 	})
-	if m.nowSessionsHidden {
-		return
-	}
-	ui.Column(c.Key("sessions")).FillWidth().Padding(0, 0, 4, 18).Gap(4).Children(func() {
-		for i, session := range m.nowSessions {
-			if m.nowSidebarLink(c.Key(i), tr(session.title), "bubble", m.page == nowPage && m.nowSessionIndex == i) {
-				m.nowSessionIndex = i
-				m.navigate(nowPage)
+	if !m.nowSessionsHidden {
+		ui.Column(c.Key("sessions")).FillWidth().Padding(0, 0, 4, 18).Gap(4).Children(func() {
+			order := m.nowSessionOrder()
+			for _, index := range order[:min(len(order), nowRecentLimit)] {
+				session := m.nowSessions[index]
+				if m.nowSidebarLink(c.Key(index), tr(session.title), "bubble", m.page == nowPage && !m.nowLibraryOpen && m.nowSessionIndex == index) {
+					m.openNowSession(index)
+				}
 			}
-		}
+		})
+	}
+	if len(m.nowSessions) >= nowRecentLimit && m.nowSidebarLink(c.Key("all"), tr("所有会话"), "square.stack", m.page == nowPage && m.nowLibraryOpen) {
+		m.openNowLibrary()
+	}
+}
+
+const nowRecentLimit = 10
+
+func (m *mockup) openNowLibrary() {
+	m.navigate(nowPage)
+	m.nowLibraryOpen = true
+}
+
+func (m *mockup) openNowSession(index int) {
+	m.nowSessionIndex = index
+	m.nowSession().lastUsed = time.Now()
+	m.navigate(nowPage)
+}
+
+func (m *mockup) nowSessionOrder() []int {
+	order := make([]int, len(m.nowSessions))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int {
+		return m.nowSessions[b].lastUsed.Compare(m.nowSessions[a].lastUsed)
+	})
+	return order
+}
+
+func (m *mockup) nowLibrary(c *ui.Context) {
+	search := ui.SearchField(c.Key("query"), &m.nowQuery).Label(tr("搜索会话")).Placeholder(tr("搜索会话")).FillWidth()
+	m.keyboard.editingText = search.Focused()
+	query := strings.ToLower(strings.TrimSpace(m.nowQuery))
+	ui.Scroll(c.Key("results")).Grow(1).FillWidth().Children(func() {
+		ui.Column(c).FillWidth().Gap(4).Children(func() {
+			found := false
+			for _, i := range m.nowSessionOrder() {
+				session := &m.nowSessions[i]
+				title := tr(session.title)
+				if query != "" && !strings.Contains(strings.ToLower(title), query) &&
+					!slices.ContainsFunc(session.turns, func(turn nowTurn) bool {
+						return strings.Contains(strings.ToLower(tr(turn.prompt)), query) || strings.Contains(strings.ToLower(tr(turn.reply)), query)
+					}) {
+					continue
+				}
+				found = true
+				if m.nowSidebarLink(c.Key(i), title, "bubble", i == m.nowSessionIndex) {
+					m.openNowSession(i)
+				}
+			}
+			if !found {
+				components.Muted(c.Key("empty"), tr("没有匹配的会话"))
+			}
+		})
 	})
 }
 

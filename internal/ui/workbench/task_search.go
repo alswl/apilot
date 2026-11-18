@@ -228,6 +228,9 @@ func (m *mockup) searchFieldButtons(c *ui.Context, fields []string) {
 
 func (m *mockup) appendSearch(c *ui.Context, term string) {
 	m.search = strings.TrimSpace(m.search + " " + term)
+	if m.compactTaskList() {
+		m.searchExpanded = false
+	}
 	m.keyboard.focusSearch = true
 	c.Invalidate()
 }

@@ -25,13 +25,15 @@ type taskViewportGeometry struct {
 }
 
 type workbenchLayout struct {
-	adaptive, sidebarHidden     bool
-	detailHidden                bool
-	sideShare, stackShare       float32
-	listWidth, detailWidth      float32
-	focusDetail, focusAssistant bool
-	stacked, revealSelection    bool
-	taskViewport                taskViewportGeometry
+	adaptive, sidebarHidden      bool
+	detailHidden, detailExpanded bool
+	detailReturnHidden           bool
+	sideShare, stackShare        float32
+	listWidth, detailWidth       float32
+	listHeight                   float32
+	focusDetail, focusAssistant  bool
+	stacked, revealSelection     bool
+	taskViewport                 taskViewportGeometry
 }
 
 func (m *mockup) adaptiveLayout() bool { return m.layout.adaptive }
@@ -87,14 +89,20 @@ func (m *mockup) layoutWorkspace(c *ui.Context, width float32) {
 			m.pageContent(c)
 			return
 		}
+		if m.layout.detailExpanded && !m.layout.detailHidden && m.currentTaskIndex() >= 0 {
+			m.layoutTaskDetail(c.Key("expanded-detail"))
+			return
+		}
 		m.layoutBrief(c.Key("brief"))
 		ui.Divider(c)
+		_, height := c.Size()
+		availableHeight := height - 51 - layoutBriefSize - 1 - statusBarHeight - 1
+		m.layout.listHeight = availableHeight
 		if m.layout.detailHidden {
 			m.layout.listWidth = width
 			m.layoutTaskList(c.Key("list-only"))
 			return
 		}
-		_, height := c.Size()
 		firstMin, secondMin := float32(layoutListMin), float32(layoutDetailMin)
 		stacked := width < firstMin+secondMin+1
 		if stacked != m.layout.stacked {
@@ -105,8 +113,9 @@ func (m *mockup) layoutWorkspace(c *ui.Context, width float32) {
 		m.layout.listWidth = width
 		m.layout.detailWidth = width
 		if stacked {
-			share, size = &m.layout.stackShare, height-51-layoutBriefSize-1-statusBarHeight-1
+			share, size = &m.layout.stackShare, availableHeight
 			firstMin, secondMin, reset = 220, 160, 52
+			m.layout.listHeight = (size - 1) * components.SplitShare(*share, size, firstMin, secondMin) / 100
 		} else {
 			m.layout.listWidth = (width - 1) * components.SplitShare(*share, size, firstMin, secondMin) / 100
 			m.layout.detailWidth = width - 1 - m.layout.listWidth
@@ -127,6 +136,7 @@ func (m *mockup) detailToggle(c *ui.Context) {
 	if components.IconToggle(c, "sidebar.right", tr(label), !m.layout.detailHidden).Clicked() {
 		m.layout.detailHidden = !m.layout.detailHidden
 		if m.layout.detailHidden {
+			m.layout.detailExpanded = false
 			m.closeInspector()
 		}
 		c.Invalidate()
@@ -171,11 +181,16 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 		}
 
 		object := &m.objects[index]
-		title := ui.Text(c.Key("title"), tr(object.Title)).FontSize(18).FontWeight(600).SingleLine().Ellipsis("…").Tooltip(tr(object.Title)).Focusable()
-		if m.layout.focusDetail {
-			title.Focus()
-			m.layout.focusDetail = false
-		}
+		m.taskBackLink(c.Key("return-to-source"))
+		ui.Row(c.Key("title-row")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			title := ui.Text(c.Key("title"), tr(object.Title)).FontSize(18).FontWeight(600).SingleLine().Ellipsis("…").
+				Tooltip(tr(object.Title)).Focusable().Grow(1).MinWidth(0)
+			if m.layout.focusDetail {
+				title.Focus()
+				m.layout.focusDetail = false
+			}
+			m.detailSizeButton(c.Key("detail-size"))
+		})
 		ui.Row(c.Key("actions")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 			ui.Text(c, displayTaskID(*object)+" · "+m.taskStateLabel(*object)).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…").MinWidth(0).Grow(1)
 			m.taskWatchButton(c.Key("watch"), object)
@@ -183,18 +198,22 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 		})
 		ui.Divider(c)
 		thread := m.assistantThreadFor(index)
+		detail := m.taskDetailUI(object.ID)
 		scrollKey := c.Key(object.ID)
 		ui.Scroll(scrollKey).Grow(1).MinHeight(0).FillWidth().TrackScroll(&thread.scroll).Children(func() {
-			ui.Column(c).FillWidth().Gap(12).Children(func() {
-				m.taskDescription(c.Key("description"), object)
-				m.taskPageProperties(c.Key("properties"), object)
-				m.taskPageBody(c.Key("body"), object)
-				for i, turn := range thread.turns {
-					components.ConversationTurn(c.Key(i), turn.question, turn.reply, nil)
-				}
+			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
+				ui.Column(c).FillWidth().MaxWidth(760).Gap(12).Children(func() {
+					m.taskDescription(c.Key("description"), object)
+					m.taskPageProperties(c.Key("properties"), object)
+					m.taskDetailTabs(c.Key("body"), object, detail, thread)
+				})
 			})
 		})
-		m.taskAssistantComposer(c.Key("composer"), object, thread, true)
+		if detail.tab == taskCommentsTab {
+			m.taskCommentComposer(c.Key("comment"), detail, &thread.scroll)
+		} else {
+			m.taskAssistantComposer(c.Key("composer"), object, thread, true)
+		}
 	})
 }
 
@@ -212,4 +231,17 @@ func (m *mockup) layoutShowsTaskColumn(id string) bool {
 	default:
 		return true
 	}
+}
+
+func (m *mockup) compactTaskList() bool {
+	return m.unifiedTasks() && (m.layout.listWidth < 560 || m.layout.listHeight < 350)
+}
+
+func (m *mockup) taskControlsPopover(c *ui.Context, anchor ui.Element, open *bool, content func()) {
+	width, height := c.Size()
+	ui.Popover(c, anchor, open, func() {
+		ui.Scroll(c).Width(min(width-68, 350)).MaxHeight(min(height*0.42, 260)).Children(func() {
+			ui.Column(c).FillWidth().Gap(8).Children(content)
+		})
+	})
 }

@@ -30,6 +30,8 @@ type mockup struct {
 	layout                               workbenchLayout
 	taskPageIndex, taskPageSize          int
 	taskPageSizeOverride                 int
+	taskBackStack                        []taskReturnPoint
+	returnRelatedPending                 bool
 	taskPageCriteria                     taskPageCriteria
 	sourceEditor                         *taskSourceEdit
 	labelEditor                          *labelEdit
@@ -62,7 +64,8 @@ type mockup struct {
 	refundConfirmedAt                    string
 	nowSessions                          []nowSession
 	nowSessionIndex                      int
-	nowSessionsHidden                    bool
+	nowSessionsHidden, nowLibraryOpen    bool
+	nowQuery                             string
 	briefDismissed                       bool
 	debugOpen, showChangeTags            bool
 	dueDraft                             string
@@ -76,6 +79,7 @@ type mockup struct {
 	taskSort                             ui.SortOrder
 	inspector                            bool
 	assistantThreads                     map[string]*assistantThread
+	taskDetails                          map[string]*taskDetailUI
 	provider                             string
 	objects                              []sourceObject
 	feedback                             feedback
@@ -203,7 +207,7 @@ func (m *mockup) paletteMenuItem(id string, help bool) *mygo.MenuItem {
 }
 
 func (m *mockup) capture(dir string) error {
-	for i, file := range []string{"workbench", "tasks", "connections", "scheduled-tasks", "settings", "assistant", "debug", "now-follow-up", "tasks-narrow", "now-narrow", "now-follow-up-narrow", "tasks-editing", "tasks-conflict", "tasks-unknown", "task-search", "tasks-full", "tasks-full-narrow", "tasks-grouped", "obsidian-edit", "github-edit", "github-scenario", "github-labels", "obsidian-labels", "now-after-acceptance", "component-gallery", "component-gallery-table", "component-gallery-writeback", "command-palette", "keyboard-help", "tasks-page-2", "layout-wide", "layout-narrow", "layout-sidebar-hidden", "layout-now", "layout-now-session", "layout-connections", "layout-connector-config", "layout-sync-log", "layout-usage", "layout-assistant"} {
+	for i, file := range []string{"workbench", "tasks", "connections", "scheduled-tasks", "settings", "assistant", "debug", "now-follow-up", "tasks-narrow", "now-narrow", "now-follow-up-narrow", "tasks-editing", "tasks-conflict", "tasks-unknown", "task-search", "tasks-full", "tasks-full-narrow", "tasks-grouped", "obsidian-edit", "github-edit", "github-scenario", "github-labels", "obsidian-labels", "now-after-acceptance", "component-gallery", "component-gallery-table", "component-gallery-writeback", "command-palette", "keyboard-help", "tasks-page-2", "layout-wide", "layout-narrow", "layout-sidebar-hidden", "layout-now", "layout-now-session", "layout-connections", "layout-connector-config", "layout-sync-log", "layout-usage", "layout-assistant", "layout-expanded-detail", "layout-now-library"} {
 		var win *mygo.Window
 		ready := make(chan struct{})
 		mygo.RunOnMain(func() {
@@ -310,6 +314,19 @@ func (m *mockup) capture(dir string) error {
 					m.navigate(usagePage)
 				case "layout-assistant":
 					m.openAssistant()
+				case "layout-expanded-detail":
+					m.openFullTask(0)
+					m.layout.detailExpanded = true
+					detail := m.taskDetailUI("refund")
+					detail.tab = taskCommentsTab
+					detail.comments = []taskComment{{text: tr("复核原支付渠道的退款记录。"), at: "10:30"}}
+				case "layout-now-library":
+					for len(m.nowSessions) < nowRecentLimit {
+						m.newNowSession()
+						m.nowSession().title = fmt.Sprintf(tr("会话 %d"), len(m.nowSessions))
+						m.nowSession().turns = []nowTurn{{prompt: m.nowSession().title}}
+					}
+					m.nowLibraryOpen = true
 				}
 				win.Invalidate()
 			} else if file == "tasks-page-2" {
@@ -385,6 +402,10 @@ func (m *mockup) capture(dir string) error {
 }
 
 func (m *mockup) view(c *ui.Context) {
+	if m.returnRelatedPending {
+		m.returnRelatedPending = false
+		m.returnToRelatedSource()
+	}
 	components.ApplyTheme(c)
 	t := c.Theme()
 	m.keyboard.editingText = false
@@ -396,9 +417,6 @@ func (m *mockup) view(c *ui.Context) {
 				m.sidebarToggle(c.Key("sidebar-toggle"))
 			}
 			m.workspaceBreadcrumb(c.Key("breadcrumb"))
-			if m.unifiedTasks() {
-				m.detailToggle(c.Key("detail-toggle"))
-			}
 			hint := tr("命令面板")
 			if keys := m.keyboard.display("command.palette"); keys != "" {
 				hint += " · " + keys
@@ -419,6 +437,9 @@ func (m *mockup) view(c *ui.Context) {
 				m.openAssistant()
 			}
 			m.debugPane(c.Key("debug"))
+			if m.unifiedTasks() {
+				m.detailToggle(c.Key("detail-toggle"))
+			}
 		})
 		ui.Divider(c)
 		ui.Row(c.Key("workspace")).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
@@ -518,7 +539,11 @@ func (m *mockup) sidebar(c *ui.Context) {
 func (m *mockup) pageContent(c *ui.Context) {
 	ui.Column(c).Grow(1).MinWidth(0).FillHeight().Padding(16).Gap(12).Background(c.Theme().Surface).Children(func() {
 		if m.page == nowPage {
-			m.nowChat(c)
+			if m.nowLibraryOpen {
+				m.nowLibrary(c.Key("library"))
+			} else {
+				m.nowChat(c)
+			}
 			return
 		}
 		if !m.adaptiveLayout() && m.page == tasksPage {
@@ -671,6 +696,7 @@ func (m *mockup) tasks(c *ui.Context) {
 }
 
 func (m *mockup) taskListControls(c *ui.Context) {
+	compact := m.compactTaskList()
 	m.taskViewBar(c.Key("task-views"))
 	m.changeTag(c, "task-search", tr("按来源和状态组合筛选，点击表头排序。"))
 	ui.Row(c.Key("filters")).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
@@ -681,24 +707,39 @@ func (m *mockup) taskListControls(c *ui.Context) {
 			m.keyboard.focusSearch = false
 		}
 		m.keyboard.editingText = search.Focused()
-		localizedSelect(c.Key("status"), &m.statusFilter, []string{"全部状态", "未完成", "已完成"}, 110)
-		sources := []string{"全部来源"}
-		for _, connection := range m.connectionsData {
-			sources = append(sources, connection.Name)
+		if !compact {
+			m.taskFilterSelects(c.Key("selects"))
 		}
-		localizedSelect(c.Key("source"), &m.sourceFilter, sources, 128)
 		if m.unifiedTasks() {
 			m.openTaskButton(c.Key("open-task"))
 		}
-		if components.IconToggle(c.Key("search-fields"), "line.3.horizontal.decrease.circle", tr("搜索字段"), m.searchExpanded).Clicked() {
+		filtered := m.statusFilter != "全部状态" || m.sourceFilter != "全部来源"
+		fields := components.IconToggle(c.Key("search-fields"), "line.3.horizontal.decrease.circle", tr("搜索字段"), m.searchExpanded || (compact && filtered))
+		if fields.Clicked() {
 			m.searchExpanded = !m.searchExpanded
+		}
+		if compact {
+			m.taskControlsPopover(c.Key("filter-panel"), fields, &m.searchExpanded, func() {
+				ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() { m.taskFilterSelects(c.Key("selects")) })
+				m.sourceQuickFilters(c.Key("source-quick-filters"))
+				m.searchHelp(c.Key("search-help"))
+			})
 		}
 	})
 }
 
+func (m *mockup) taskFilterSelects(c *ui.Context) {
+	localizedSelect(c.Key("status"), &m.statusFilter, []string{"全部状态", "未完成", "已完成"}, 110)
+	sources := []string{"全部来源"}
+	for _, connection := range m.connectionsData {
+		sources = append(sources, connection.Name)
+	}
+	localizedSelect(c.Key("source"), &m.sourceFilter, sources, 128)
+}
+
 func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 	autoFit := viewportHeight > 0 && m.unifiedTasks() && m.taskPageSizeOverride == 0
-	if m.sourceFilter != "全部来源" || m.searchExpanded {
+	if !m.compactTaskList() && (m.sourceFilter != "全部来源" || m.searchExpanded) {
 		accessories := ui.Column(c.Key("result-filters")).FillWidth().Gap(taskResultsGap)
 		accessories.Children(func() {
 			m.sourceQuickFilters(c.Key("source-quick-filters"))
@@ -772,10 +813,15 @@ func (m *mockup) taskProperties(c *ui.Context, o *sourceObject) {
 	} else if due := o.NativeFields["due"]; due != "" {
 		components.PropertyGrid(c.Key("due"), []components.Property{{ID: "due", Title: tr("截止日"), Value: tr(due)}}, 2)
 	}
+	m.taskDateProperties(c.Key("dates"), o)
 	m.taskLabelProperty(c.Key("labels"), o)
 	if conn := m.taskConnection(*o); conn != nil {
 		var properties []components.Property
 		for _, field := range conn.SearchFields {
+			switch field {
+			case "start", "scheduled", "done", "created_at", "updated_at", "closed_at":
+				continue
+			}
 			if value := strings.Join(m.searchValues(*o, field), ", "); strings.TrimSpace(value) != "" && field != "checkbox" {
 				wide := field == "path" || field == "repo"
 				properties = append(properties, components.Property{ID: field, Title: tr(searchFieldTitle(field)), Value: value, Wide: wide})
@@ -783,6 +829,36 @@ func (m *mockup) taskProperties(c *ui.Context, o *sourceObject) {
 		}
 		components.PropertyGrid(c.Key("fields"), properties, 2)
 	}
+}
+
+func (m *mockup) taskDateProperties(c *ui.Context, o *sourceObject) {
+	fields := o.NativeFields
+	updated := fields["updated_at"]
+	if len(o.Activity) > 0 {
+		latest := o.Activity[len(o.Activity)-1]
+		nativeTime, _ := time.Parse(time.RFC3339, updated)
+		if updated == "" || latest.Time.After(nativeTime) {
+			updated = tr(latest.At)
+		}
+	}
+	var dates []components.Property
+	for _, item := range [][3]string{
+		{"created", "创建时间", fields["created_at"]},
+		{"updated", "更新时间", updated},
+		{"start", "开始日期", fields["start"]},
+		{"scheduled", "计划日期", fields["scheduled"]},
+		{"done", "完成日期", fields["done"]},
+		{"closed", "关闭时间", fields["closed_at"]},
+	} {
+		if item[2] != "" {
+			value := tr(item[2])
+			if stamp, err := time.Parse(time.RFC3339, value); err == nil {
+				value = stamp.Format("2006-01-02 15:04")
+			}
+			dates = append(dates, components.Property{ID: item[0], Title: tr(item[1]), Value: value})
+		}
+	}
+	components.PropertyGrid(c, dates, 2)
 }
 
 func (m *mockup) writeback(c *ui.Context, o *sourceObject) {
@@ -1024,6 +1100,9 @@ func (m *mockup) taskAssistantComposer(c *ui.Context, object *sourceObject, thre
 		}); question != "" {
 			reply := fmt.Sprintf(tr("当前状态为「%s」。"), tr(object.NativeFields["status"]))
 			thread.turns = append(thread.turns, assistantTurn{question: question, reply: reply})
+			if inline {
+				m.taskDetailUI(object.ID).tab = taskAssistantTab
+			}
 			thread.draft = ""
 			scroll := &thread.scroll
 			if !inline && m.adaptiveLayout() {

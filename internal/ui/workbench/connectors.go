@@ -47,17 +47,10 @@ func (m *mockup) connections(c *ui.Context) {
 	}
 }
 
-func connectorIcon(kind string) string {
-	if kind == githubIssues {
-		return "point.3.connected.trianglepath.dotted"
-	}
-	return "doc.text"
-}
-
 func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
 	ui.Column(c).FillWidth().Padding(8).Gap(10).Children(func() {
 		ui.Row(c.Key("header")).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
-			components.Symbol(c, connectorIcon(conn.SourceKind), c.Theme().TextMuted)
+			connectorLogo(c, conn.SourceKind, 22)
 			ui.Column(c).Grow(1).MinWidth(160).Gap(4).Children(func() {
 				components.Heading(c, tr(conn.Name))
 				components.Muted(c, tr(conn.ConnectorID)+" · "+tr(conn.Scope))
@@ -196,19 +189,45 @@ func (m *mockup) editConnector(conn connection) {
 
 func (m *mockup) connectorDialog(c *ui.Context) {
 	open := m.connectorEditor != nil
+	_, height := c.Size()
 	ui.Modal(c, &open, func() {
 		edit := m.connectorEditor
 		ui.Column(c).Width(500).Gap(12).Children(func() {
-			components.Title(c, tr(edit.ConnectorID)+" · "+tr("连接配置"))
-			ui.Scroll(c.Key("fields")).FillWidth().MaxHeight(395).Children(func() {
+			ui.Row(c.Key("heading")).FillWidth().AlignItems(ui.Center).Gap(10).Children(func() {
+				connectorLogo(c, edit.SourceKind, 24)
+				ui.Column(c).Gap(4).Children(func() {
+					title := "连接配置"
+					if edit.ID == "" {
+						title = "添加连接"
+					}
+					components.Title(c, tr(title))
+					components.Muted(c, edit.ConnectorID)
+				})
+			})
+			ui.Scroll(c.Key("fields")).FillWidth().MaxHeight(min(460, height-150)).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
-					components.TextField(c.Key("name"), tr("连接名称"), &edit.Name).AutoFocus()
+					components.Heading(c.Key("basic-heading"), tr("基本信息"))
 					if edit.SourceKind == githubIssues {
+						components.TextField(c.Key("name"), tr("连接名称"), &edit.Name).AutoFocus()
 						m.githubConnectorFields(c.Key("github"), edit)
 					} else {
 						m.obsidianConnectorFields(c.Key("obsidian"), edit)
 					}
-					ui.Checkbox(c.Key("writable"), &edit.Writable, tr("允许回写"))
+					ui.Divider(c.Key("sync-divider"))
+					components.Heading(c.Key("sync-heading"), tr("同步与权限"))
+					modes := []string{"文件变化", "定时拉取"}
+					if edit.SourceKind == githubIssues {
+						modes = []string{"定时拉取", "Webhook"}
+					}
+					ui.Row(c.Key("sync-options")).FillWidth().AlignItems(ui.End).Gap(16).Children(func() {
+						ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+							choiceField(c.Key("sync-mode"), "同步方式", &edit.SyncMode, modes)
+						})
+						ui.Checkbox(c.Key("writable"), &edit.Writable, tr("允许回写"))
+					})
+					ui.Divider(c.Key("mapping-divider"))
+					components.Heading(c.Key("mapping-title"), tr("状态映射"))
+					m.connectorMappingFields(c.Key("mapping"), edit)
 				})
 			})
 			if edit.problem != "" {
@@ -231,36 +250,51 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 }
 
 func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
-	components.TextField(c.Key("account"), tr("GitHub 账号"), &edit.Identity)
-	components.TextField(c.Key("repository"), tr("仓库"), &edit.Repository).
-		Placeholder("owner/repository").Disabled(edit.ID != "")
-	choiceField(c.Key("sync-mode"), "同步方式", &edit.SyncMode, []string{"定时拉取", "Webhook"})
-	components.Heading(c, tr("状态映射"))
-	for _, mapping := range edit.stateMappings() {
-		label := edit.StatusLabels[mapping.label]
-		input := components.TextField(c.Key(mapping.label), mapping.native, &label).
-			Label(tr("状态显示名") + " · " + mapping.native).Placeholder(tr(mapping.label))
-		if input.Changed() {
-			edit.StatusLabels[mapping.label] = strings.TrimSpace(label)
-		}
-	}
+	ui.Row(c).FillWidth().Gap(12).Children(func() {
+		ui.Column(c.Key("account")).Grow(1).MinWidth(0).Children(func() {
+			components.TextField(c, tr("GitHub 账号"), &edit.Identity)
+		})
+		ui.Column(c.Key("repo")).Grow(1).MinWidth(0).Children(func() {
+			components.TextField(c, tr("仓库"), &edit.Repository).
+				Placeholder("owner/repository").Disabled(edit.ID != "")
+		})
+	})
 }
 
 func (m *mockup) obsidianConnectorFields(c *ui.Context, edit *connectorEdit) {
+	ui.Row(c.Key("identity")).FillWidth().Gap(12).Children(func() {
+		ui.Column(c.Key("name")).Grow(1).MinWidth(0).Children(func() {
+			components.TextField(c, tr("连接名称"), &edit.Name).AutoFocus()
+		})
+		ui.Column(c.Key("scope")).Grow(1).MinWidth(0).Children(func() {
+			components.TextField(c, tr("同步范围"), &edit.Scope)
+		})
+	})
 	components.TextField(c.Key("vault"), tr("Vault 路径"), &edit.VaultPath)
-	components.TextField(c.Key("scope"), tr("同步范围"), &edit.Scope)
-	choiceField(c.Key("sync-mode"), "同步方式", &edit.SyncMode, []string{"文件变化", "定时拉取"})
-	components.Heading(c, tr("状态映射"))
+}
+
+func (m *mockup) connectorMappingFields(c *ui.Context, edit *connectorEdit) {
 	for _, mapping := range edit.stateMappings() {
-		value := mapping.native
-		if value == " " {
-			value = ""
-		}
-		input := components.TextField(c.Key(mapping.label), tr(mapping.label), &value).
-			Label(tr("复选框字符") + " · " + tr(mapping.label)).Placeholder(tr("空格"))
-		if input.Changed() {
-			edit.CheckboxMapping[mapping.label] = value
-		}
+		ui.Row(c.Key(mapping.label)).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
+			if edit.SourceKind == githubIssues {
+				components.DataText(c, mapping.native).Width(132)
+				label := edit.StatusLabels[mapping.label]
+				input := ui.TextInput(c, &label).Grow(1).Label(tr("状态显示名") + " · " + mapping.native).Placeholder(tr(mapping.label))
+				if input.Changed() {
+					edit.StatusLabels[mapping.label] = strings.TrimSpace(label)
+				}
+			} else {
+				components.DataText(c, tr(mapping.label)).Width(132)
+				value := mapping.native
+				if value == " " {
+					value = ""
+				}
+				input := ui.TextInput(c, &value).Width(92).Label(tr("复选框字符") + " · " + tr(mapping.label)).Placeholder(tr("空格"))
+				if input.Changed() {
+					edit.CheckboxMapping[mapping.label] = value
+				}
+			}
+		})
 	}
 }
 

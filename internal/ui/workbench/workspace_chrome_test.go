@@ -113,3 +113,43 @@ func TestWorkspaceAssistantModalAndSyncStatus(t *testing.T) {
 		t.Fatal("Escape should close the conversation dialog and preserve the current page")
 	}
 }
+
+func TestNowConversationThresholdAndLibrary(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	for len(m.nowSessions) < nowRecentLimit {
+		m.newNowSession()
+		m.nowSession().turns = []nowTurn{{prompt: "示例会话"}}
+	}
+	p := ui.NewTester(m.view, 1190, 730)
+	if !m.nowSessionsHidden || !p.HasText("所有会话") {
+		t.Fatal("ten conversations should collapse the recent group and expose the library")
+	}
+	m.newNowSession()
+	p.Frame()
+	click(t, p, "展开 Now 会话")
+	if p.HasText("发布检查") {
+		t.Fatal("older conversations should be outside the ten recent sidebar entries")
+	}
+	click(t, p, "所有会话", "搜索会话")
+	p.Type("GitHub 工单")
+	click(t, p, "发布检查")
+	if m.nowLibraryOpen || m.nowSessionIndex != 1 || len(m.nowSession().turns) != 1 {
+		t.Fatal("the library should find and reopen the original conversation by message text")
+	}
+}
+
+func TestNewConversationReusesEmptyDraft(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	p := ui.NewTester(m.view, 1190, 730)
+	click(t, p, "新建会话", "新建会话")
+	if len(m.nowSessions) != 3 || m.nowSessionIndex != 2 {
+		t.Fatal("repeated New Conversation should reuse the empty session")
+	}
+	p.Type("尚未发送的草稿")
+	click(t, p, "新建会话")
+	if len(m.nowSessions) != 4 || m.nowSessions[2].draft != "尚未发送的草稿" {
+		t.Fatal("New Conversation should retain a non-empty draft")
+	}
+}

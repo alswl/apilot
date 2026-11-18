@@ -63,6 +63,7 @@ func (m *mockup) selectTaskView(id string) {
 }
 
 func (m *mockup) taskViewBar(c *ui.Context) {
+	compact := m.compactTaskList()
 	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 		ui.Column(c.Key("view-list")).Grow(1).MinWidth(0).Children(func() {
 			items := []components.ViewItem{{ID: "all", Title: tr("全部任务")}, {ID: "watching", Title: tr("关注中")}}
@@ -80,8 +81,14 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 				m.selectTaskView(chosen)
 			}
 		})
-		if components.IconToggle(c.Key("display"), "slider.horizontal.3", tr("显示选项"), m.taskDisplayOpen).Clicked() {
+		display := components.IconToggle(c.Key("display"), "slider.horizontal.3", tr("显示选项"), m.taskDisplayOpen)
+		if display.Clicked() {
 			m.taskDisplayOpen = !m.taskDisplayOpen
+		}
+		if compact {
+			m.taskControlsPopover(c.Key("display-panel"), display, &m.taskDisplayOpen, func() {
+				m.taskDisplayOptions(c.Key("display-options"))
+			})
 		}
 		save := components.IconButton(c.Key("save"), "bookmark", tr("保存视图"), false)
 		if shortcut := m.keyboard.display("view.save"); shortcut != "" {
@@ -92,20 +99,24 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 		}
 	})
 	ui.Divider(c)
-	if m.taskDisplayOpen {
-		ui.Row(c.Key("display-options")).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
-			localizedSelect(c.Key("group"), &m.taskGrouping, []string{"不分组", "按状态分组", "按来源分组"}, 132)
-			for _, column := range taskColumns[1:] {
-				shown := !m.taskColumnsHidden[column.ID]
-				if ui.Checkbox(c.Key(column.ID), &shown, tr(column.Title)).Changed() {
-					if m.taskColumnsHidden == nil {
-						m.taskColumnsHidden = make(map[string]bool)
-					}
-					m.taskColumnsHidden[column.ID] = !shown
-				}
-			}
-		})
+	if m.taskDisplayOpen && !compact {
+		m.taskDisplayOptions(c.Key("display-options"))
 	}
+}
+
+func (m *mockup) taskDisplayOptions(c *ui.Context) {
+	ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
+		localizedSelect(c.Key("group"), &m.taskGrouping, []string{"不分组", "按状态分组", "按来源分组"}, 132)
+		for _, column := range taskColumns[1:] {
+			shown := !m.taskColumnsHidden[column.ID]
+			if ui.Checkbox(c.Key(column.ID), &shown, tr(column.Title)).Changed() {
+				if m.taskColumnsHidden == nil {
+					m.taskColumnsHidden = make(map[string]bool)
+				}
+				m.taskColumnsHidden[column.ID] = !shown
+			}
+		}
+	})
 }
 
 func (m *mockup) openSaveTaskView() {

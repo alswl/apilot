@@ -32,6 +32,13 @@ func (m *mockup) openCurrentTask() {
 }
 
 func (m *mockup) openFullTask(index int) {
+	if m.currentTaskIndex() != index {
+		m.taskBackStack = nil
+	}
+	m.showTaskDetail(index)
+}
+
+func (m *mockup) showTaskDetail(index int) {
 	previous := m.taskSelection
 	m.openTask(index)
 	m.fullTask = true
@@ -39,6 +46,7 @@ func (m *mockup) openFullTask(index int) {
 		m.taskSelection = previous
 	}
 	if m.unifiedTasks() {
+		m.layout.detailReturnHidden = m.layout.detailReturnHidden || m.layout.detailHidden
 		m.layout.detailHidden = false
 		m.restoreTaskFocus = false
 		m.layout.focusDetail = true
@@ -80,6 +88,7 @@ func (m *mockup) taskPage(c *ui.Context) {
 	o := &m.objects[m.selected]
 	width, _ := c.Size()
 	ui.Column(c).Grow(1).FillHeight().MinWidth(0).Background(c.Theme().Surface).Padding(16).Gap(12).Children(func() {
+		m.taskBackLink(c.Key("return-to-source"))
 		ui.Row(c.Key("header")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 			if components.IconButton(c.Key("back"), "chevron.left", tr("返回")+tr("任务"), false).KeyShortcuts(0, ui.KeyEscape).Clicked() {
 				m.closeInspector()
@@ -141,32 +150,38 @@ func (m *mockup) taskPageBody(c *ui.Context, o *sourceObject) {
 				components.Body(c, tr(excerpt))
 			})
 		}
-		if len(o.Related) > 0 {
-			components.ContentSection(c.Key("related"), tr("相关资料与产出"), func() {
-				for i, ref := range o.Related {
-					ui.Row(c.Key(i)).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
-						components.Muted(c, tr(ref.Kind))
-						if components.TextAction(c.Key("open"), tr(ref.Title)) {
-							index := slices.IndexFunc(m.objects, func(item sourceObject) bool { return item.ID == ref.TaskID })
-							if index >= 0 {
-								m.openFullTask(index)
-							} else {
-								m.taskResource, m.taskResourceOpen = ref, true
-							}
-						}
-					})
-				}
-			})
-		}
+		m.taskLinks(c.Key("links"), o)
 		if len(o.Activity) > 0 {
-			components.ContentSection(c.Key("activity"), tr("活动"), func() {
-				for i := len(o.Activity) - 1; i >= 0; i-- {
-					event := o.Activity[i]
-					components.ActivityRow(c.Key(i), tr(event.At), tr(event.Text))
-				}
-			})
+			components.ContentSection(c.Key("events"), tr("活动"), func() { m.taskActivity(c, o) })
 		}
 	})
+}
+
+func (m *mockup) taskLinks(c *ui.Context, o *sourceObject) {
+	if len(o.Related) > 0 {
+		components.ContentSection(c.Key("related"), tr("相关资料与产出"), func() {
+			for i, ref := range o.Related {
+				ui.Row(c.Key(i)).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
+					components.Muted(c, tr(ref.Kind))
+					if components.TextAction(c.Key("open"), tr(ref.Title)) {
+						index := slices.IndexFunc(m.objects, func(item sourceObject) bool { return item.ID == ref.TaskID })
+						if index >= 0 {
+							m.followRelatedTask(index)
+						} else {
+							m.taskResource, m.taskResourceOpen = ref, true
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func (m *mockup) taskActivity(c *ui.Context, o *sourceObject) {
+	for i := len(o.Activity) - 1; i >= 0; i-- {
+		event := o.Activity[i]
+		components.ActivityRow(c.Key(i), tr(event.At), tr(event.Text))
+	}
 }
 
 func (m *mockup) taskPageProperties(c *ui.Context, o *sourceObject) {

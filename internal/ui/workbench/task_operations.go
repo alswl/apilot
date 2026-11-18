@@ -282,7 +282,13 @@ func (m *mockup) submitSourceEdit(edit taskSourceEdit, after func(time.Duration,
 		if edit.state != confirmed.state {
 			fields["state"], fields["status"] = "open", "待处理"
 			delete(fields, "state_reason")
+			delete(fields, "closed_at")
 			if edit.state != "开放" {
+				if o.NativeFields["closed_at"] == "" {
+					fields["closed_at"] = time.Now().Format(time.RFC3339)
+				} else {
+					fields["closed_at"] = o.NativeFields["closed_at"]
+				}
 				fields["state"], fields["state_reason"], fields["status"] = "closed", "completed", "已完成"
 				if edit.state == "不计划处理" {
 					fields["state_reason"], fields["status"] = "not_planned", "不计划处理"

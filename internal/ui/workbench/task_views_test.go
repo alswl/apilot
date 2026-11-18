@@ -33,8 +33,31 @@ func TestFullTaskOpensFromPreviewAndReturnsToView(t *testing.T) {
 		t.Fatal("opening a linked task excluded by the view should preserve the underlying selection")
 	}
 	p.Key(0, ui.KeyEscape)
+	if !m.fullTask || m.objects[m.selected].ID != "refund" || m.taskSelection != "refund" {
+		t.Fatal("Escape should return to the task that opened the related task")
+	}
+	p.Key(0, ui.KeyEscape)
 	if m.fullTask || m.inspector || m.taskSelection != "refund" || m.search != "#refund -#customer" {
-		t.Fatal("Escape should return to the underlying view and selection")
+		t.Fatal("a second Escape should return to the underlying view and selection")
+	}
+}
+
+func TestRelatedTaskBackLinkRestoresSourcePage(t *testing.T) {
+	m := newMockup()
+	m.objects = append(m.objects, loadExtendedTasks()...)
+	m.useAdaptiveLayout()
+	m.openFullTask(0)
+	p := ui.NewTester(m.view, 1190, 730)
+	page := m.taskPageIndex
+	p.Scroll(1100, 480, 0, 360)
+	scrolled := m.assistantThreadFor(0).scroll.Y
+	click(t, p, "回复客户退款结论")
+	if m.taskPageIndex == page || m.taskSelection != "reply" {
+		t.Fatal("the related task should be on a different page")
+	}
+	click(t, p, "返回 验证老订单退款")
+	if m.taskSelection != "refund" || m.taskPageIndex != page || m.currentTaskIndex() != 0 || m.assistantThreadFor(0).scroll.Y != scrolled {
+		t.Fatalf("back link restored selection=%q page=%d task=%d scroll=%.1f, want refund page=%d task=0 scroll=%.1f", m.taskSelection, m.taskPageIndex, m.currentTaskIndex(), m.assistantThreadFor(0).scroll.Y, page, scrolled)
 	}
 }
 

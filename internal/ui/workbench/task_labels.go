@@ -28,6 +28,7 @@ func (m *mockup) openLabels(o sourceObject) {
 }
 
 func (m *mockup) taskLabelProperty(c *ui.Context, o *sourceObject) {
+	editable := m.unifiedTasks() && m.editableSource(*o) && !m.sourceWritePending(o.ID)
 	ui.Column(c).FillWidth().Gap(4).Children(func() {
 		ui.Row(c.Key("heading")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 			components.Muted(c, tr("标签"))
@@ -47,14 +48,101 @@ func (m *mockup) taskLabelProperty(c *ui.Context, o *sourceObject) {
 		} else {
 			ui.Row(c.Key("tags")).FillWidth().Wrap().Gap(6).Children(func() {
 				for _, label := range o.Labels {
-					components.Tag(c.Key(label), label)
+					m.taskLabelChip(c.Key(label), o.ID, label, label, false, editable, func() {
+						components.Tag(c, label)
+					})
 				}
 				for _, key := range slices.Sorted(maps.Keys(o.LabelValues)) {
-					components.KeyValueTag(c.Key("pair-"+key), key, o.LabelValues[key])
+					value := o.LabelValues[key]
+					m.taskLabelChip(c.Key("pair-"+key), o.ID, key, key+":"+value, true, editable, func() {
+						components.KeyValueTag(c, key, value)
+					})
 				}
 			})
 		}
+		if editable {
+			m.inlineTaskLabel(c.Key("input"), *o)
+		}
 	})
+}
+
+func (m *mockup) taskLabelChip(c *ui.Context, id, key, text string, pair, editable bool, content func()) {
+	if !editable {
+		content()
+		return
+	}
+	button := ui.ButtonBase(c).Label(tr("修改标签 ") + text).Tooltip(tr("修改标签 ") + text).Padding(0)
+	button.Children(content)
+	if button.Clicked() {
+		detail := m.taskDetailUI(id)
+		detail.labelOriginal, detail.labelInput, detail.labelProblem = key, text, ""
+		detail.labelPair, detail.focusLabel = pair, true
+	}
+}
+
+func (m *mockup) inlineTaskLabel(c *ui.Context, o sourceObject) {
+	detail := m.taskDetailUI(o.ID)
+	ui.Row(c).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
+		input := ui.TextInput(c.Key("value"), &detail.labelInput).Grow(1).MinWidth(0).
+			Label(tr("编辑标签")).Placeholder(tr("添加标签或键:值"))
+		if detail.focusLabel {
+			input.Focus()
+			detail.focusLabel = false
+		}
+		m.keyboard.editingText = m.keyboard.editingText || input.Focused()
+		value := strings.TrimPrefix(strings.TrimSpace(detail.labelInput), "#")
+		if detail.labelInput != "" || detail.labelOriginal != "" {
+			cancel := components.IconButton(c.Key("cancel"), "xmark", tr("取消标签编辑"), false)
+			if cancel.Clicked() || (input.Focused() && input.Shortcut(0, ui.KeyEscape)) {
+				detail.labelInput, detail.labelOriginal, detail.labelProblem, detail.labelPair = "", "", "", false
+				m.layout.focusDetail = true
+				c.Invalidate()
+				return
+			}
+		}
+		add := components.IconButton(c.Key("apply"), "plus", tr("应用标签"), value == "")
+		if (input.Submitted() || add.Clicked()) && value != "" {
+			detail.labelProblem = m.applyInlineLabel(o, value, detail.labelOriginal, detail.labelPair)
+			if detail.labelProblem == "" {
+				detail.labelInput, detail.labelOriginal, detail.labelPair = "", "", false
+			}
+			c.Invalidate()
+		}
+	})
+	if detail.labelProblem != "" {
+		components.Muted(c.Key("error"), detail.labelProblem)
+	}
+}
+
+func (m *mockup) applyInlineLabel(o sourceObject, input, original string, editingPair bool) string {
+	conn := m.taskConnection(o)
+	native := slices.Contains(conn.IssueLabels, input)
+	if key, value, pair := strings.Cut(input, ":"); editingPair || (original == "" && pair && !native) {
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		if !pair || key == "" || value == "" || strings.ContainsRune(key, '=') {
+			return tr("请输入有效的键和值")
+		}
+		for i := range m.objects {
+			if m.objects[i].ID == o.ID {
+				if m.objects[i].LabelValues == nil {
+					m.objects[i].LabelValues = make(map[string]string)
+				}
+				if editingPair && original != key {
+					delete(m.objects[i].LabelValues, original)
+				}
+				m.objects[i].LabelValues[key] = value
+				return ""
+			}
+		}
+	}
+	draft := sourceDraft(o, conn.SourceKind)
+	if original != "" {
+		draft.labels = slices.DeleteFunc(draft.labels, func(label string) bool { return label == original })
+	}
+	if !containsLabelFold(draft.labels, input) {
+		draft.labels = append(draft.labels, input)
+	}
+	return m.submitSourceEdit(draft, m.after)
 }
 
 func (m *mockup) labelOptions(conn *connection) []string {
