@@ -166,6 +166,16 @@ Verification commands use disposable data. The [contributor guide](CONTRIBUTING.
 
 The Go core is separate from MyGo UI: `pkg/services` owns application behavior, `pkg/dal` owns SQLite, `pkg/integrations` executes commands, and `pkg/server` serves the CLI over a private Unix Socket.
 
+### Workbench mock mode
+
+Run the desktop app with bundled fixture data in an isolated session.
+
+```sh
+go run ./cmd/apilot-app --mock
+```
+
+The [Workbench guide](docs/workbench.md) covers task search, pagination, source actions and screenshots.
+
 ## Agent skill
 
 The [apilot skill](skills/apilot/SKILL.md) provides task operations, a

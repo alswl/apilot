@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "enableSingleKeys": true,
+  "bindings": {
+    "command.palette": ["Cmd+K", "Cmd+Shift+P"],
+    "navigation.now": ["g n"],
+    "navigation.tasks": ["g t", "Cmd+2"],
+    "tasks.next": ["j"],
+    "tasks.previous": ["k"],
+    "tasks.search": ["Cmd+F", "/"],
+    "shortcuts.help": ["Cmd+/", "?"],
+    "navigation.scheduled": []
+  }
+}

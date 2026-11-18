@@ -1,0 +1,264 @@
+{
+  "objects": [
+    {
+      "source_object_id": "refund",
+      "connection_id": "vault",
+      "native_id": "refund-check",
+      "kind": "task",
+      "title": "验证老订单退款",
+      "locator": "支付改造.md › 验收标准",
+      "labels": [
+        "refund",
+        "acceptance"
+      ],
+      "label_values": {"risk": "high"},
+      "native_fields": {
+        "path": "Payments/Refunds.md",
+        "section": "Acceptance",
+        "status": "进行中",
+        "priority": "高",
+        "due": "11 月 20 日",
+        "excerpt": "验收标准：老订单退款成功后，原支付渠道可查到退款记录。",
+        "checkbox": "/",
+        "scheduled": "2026-11-18"
+      },
+      "summary": "核对老订单退款在原支付渠道的记录。验收通过后，再回复客户。",
+      "related": [
+        {
+          "kind": "文档章节",
+          "title": "支付改造 › 验收标准",
+          "body": "核对退款编号、原支付渠道的退款流水及金额。"
+        },
+        {
+          "kind": "Agent 会话",
+          "title": "退款流水核对",
+          "body": "Agent 已比对验收清单，仍需人工确认原支付渠道的记录。"
+        },
+        {
+          "kind": "后续任务",
+          "title": "回复客户退款结论",
+          "task_id": "reply"
+        },
+        {
+          "kind": "交付记录",
+          "title": "#40 · 退款状态说明",
+          "task_id": "deploy"
+        }
+      ],
+      "activity": [
+        {
+          "at": "昨天 17:20",
+          "time": "2026-11-17T17:20:00+08:00",
+          "text": "支付发布更新了退款状态说明"
+        },
+        {
+          "at": "今天 09:42",
+          "time": "2026-11-18T09:42:00+08:00",
+          "text": "从 Obsidian 确认验收仍在进行"
+        }
+      ]
+    },
+    {
+      "source_object_id": "reply",
+      "connection_id": "vault",
+      "native_id": "customer-reply",
+      "kind": "task",
+      "title": "回复客户退款结论",
+      "locator": "客户会议.md › 跟进事项",
+      "labels": [
+        "refund",
+        "customer"
+      ],
+      "native_fields": {
+        "path": "Customers/Meetings.md",
+        "section": "Follow-up",
+        "status": "等待验收",
+        "priority": "普通",
+        "due": "11 月 20 日",
+        "excerpt": "等老订单退款验收通过，再给客户确认退款结论。",
+        "checkbox": " "
+      },
+      "summary": "验收通过后，向客户确认退款结论。",
+      "related": [
+        {
+          "kind": "前置任务",
+          "title": "验证老订单退款",
+          "task_id": "refund"
+        }
+      ],
+      "activity": [
+        {
+          "at": "今天 09:30",
+          "time": "2026-11-18T09:30:00+08:00",
+          "text": "客户会议确认答复时间"
+        }
+      ]
+    },
+    {
+      "source_object_id": "deploy",
+      "connection_id": "team",
+      "native_id": "40",
+      "kind": "task",
+      "title": "更新退款状态说明",
+      "locator": "example/payments#40",
+      "labels": [
+        "refund",
+        "documentation"
+      ],
+      "native_fields": {
+        "status": "已完成",
+        "repo": "example/payments",
+        "state": "closed",
+        "state_reason": "completed",
+        "milestone": "Refund rollout"
+      },
+      "summary": "更新工单里的退款进度与客服说明。",
+      "activity": [
+        {
+          "at": "昨天 17:20",
+          "time": "2026-11-17T17:20:00+08:00",
+          "text": "支付发布更新了退款状态说明"
+        }
+      ],
+      "assignees": [
+        "lin"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "connection_id": "vault",
+      "name": "工作 vault",
+      "connector_id": "Obsidian Tasks",
+      "writable": true,
+      "search_aliases": [
+        "obsidian"
+      ],
+      "search_fields": [
+        "path",
+        "section",
+        "start",
+        "scheduled",
+        "done",
+        "checkbox"
+      ],
+      "scope": "支付项目",
+      "identity": "本人（个人 vault）",
+      "capabilities": "文件变化 · 增量读取 · 回写",
+      "status": "同步正常",
+      "last_confirmed_at": "今天 09:42",
+      "vault_path": "~/Documents/Obsidian/Work",
+      "sync_mode": "文件变化",
+      "source_kind": "obsidian_tasks"
+    },
+    {
+      "connection_id": "team",
+      "name": "支付发布",
+      "connector_id": "GitHub Issues",
+      "search_aliases": [
+        "github",
+        "github-issues",
+        "issues"
+      ],
+      "search_fields": [
+        "repo",
+        "assignee",
+        "milestone",
+        "state",
+        "state_reason"
+      ],
+      "scope": "example/payments",
+      "identity": "演示账号",
+      "capabilities": "Issues 写入 · Webhook",
+      "status": "同步正常",
+      "last_confirmed_at": "昨天 17:20",
+      "sync_mode": "Webhook",
+      "source_kind": "github_issues",
+      "repository": "example/payments",
+      "writable": true,
+      "issue_labels": [
+        "refund",
+        "documentation",
+        "ops",
+        "bug",
+        "enhancement"
+      ],
+      "issue_assignees": [
+        "lin",
+        "chen"
+      ],
+      "issue_milestones": [
+        "Refund rollout",
+        "November release"
+      ]
+    }
+  ],
+  "feedback": {
+    "feedback_id": "feedback-1",
+    "evidence_refs": [
+      "refund",
+      "reply"
+    ],
+    "subject_ids": [
+      "reply"
+    ],
+    "proposed_actions": [
+      "关注退款验收"
+    ],
+    "status": "open"
+  },
+  "mutation": {
+    "mutation_id": "mutation-1",
+    "source_object_id": "refund",
+    "base_fields": {
+      "due": "11 月 20 日"
+    },
+    "desired_fields": {
+      "due": "11 月 19 日"
+    },
+    "status": "confirmed"
+  },
+  "automation": [
+    {
+      "id": "daily-notes",
+      "name": "整理每日笔记",
+      "executable": "./scripts/daily-notes",
+      "enabled": true,
+      "schedule": {
+        "type": "cron",
+        "expression": "0 9 * * *",
+        "enabled": true,
+        "timezone": "Asia/Shanghai"
+      },
+      "last_run": {
+        "trigger": "schedule",
+        "status": "succeeded"
+      }
+    },
+    {
+      "id": "repo-check",
+      "name": "检查项目状态",
+      "executable": "./scripts/repo-check",
+      "enabled": false,
+      "schedule": {
+        "type": "interval",
+        "expression": "30m",
+        "enabled": false
+      },
+      "last_run": {
+        "trigger": "schedule",
+        "status": "failed",
+        "error": "工作目录暂不可用"
+      }
+    }
+  ],
+  "run_outcomes": {
+    "daily-notes": [
+      "succeeded"
+    ],
+    "repo-check": [
+      "failed",
+      "succeeded"
+    ]
+  }
+}

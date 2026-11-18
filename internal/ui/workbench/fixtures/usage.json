@@ -1,0 +1,15 @@
+{
+  "models": [
+    {"name": "工作模型", "requests": 37, "input": 48600, "output": 12300, "estimated_usd": 0.24},
+    {"name": "个人模型", "requests": 14, "input": 18900, "output": 5100, "estimated_usd": 0.09}
+  ],
+  "sessions": [
+    {"name": "每日简报", "requests": 29, "tokens": 49700},
+    {"name": "发布检查", "requests": 17, "tokens": 28200},
+    {"name": "问助理", "requests": 5, "tokens": 7000}
+  ],
+  "syncs": [
+    {"connection_id": "vault", "attempts": 16, "failures": 1},
+    {"connection_id": "team", "attempts": 12, "failures": 2}
+  ]
+}
