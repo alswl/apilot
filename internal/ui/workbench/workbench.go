@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -27,6 +29,12 @@ const (
 var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 
 type mockup struct {
+	hosted                               bool
+	hostPanels                           HostPanels
+	liveConnections                      []common.WorkbenchSnapshot
+	live                                 *services.Remote
+	liveBusy, liveError                  bool
+	liveGeneration                       uint64
 	framework                            bool
 	layout                               workbenchLayout
 	taskPageIndex, taskPageSize          int
@@ -140,10 +148,6 @@ func newWorkspace(data scenarioFixture) *mockup {
 	}
 }
 
-func RunFramework(keybindingsPath, language string) error {
-	return runWorkspace(newFramework(), "", keybindingsPath, language)
-}
-
 func RunMock(capture, keybindingsPath, language string) error {
 	m := newMockup()
 	m.objects = append(m.objects, loadExtendedTasks()...)
@@ -185,6 +189,7 @@ func runWorkspace(m *mockup, capture, keybindingsPath, language string) error {
 		m.win.OnClosed(func() { mygo.App.Quit() })
 		m.win.OnBlur(func() { m.keyboard.prefix = keystroke{} })
 		m.win.Show()
+		m.pollLive()
 		if capture != "" {
 			go func() {
 				done <- m.capture(capture)
@@ -209,6 +214,7 @@ func runWorkspace(m *mockup, capture, keybindingsPath, language string) error {
 func (m *mockup) setMenu() {
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "Apilot", Submenu: []*mygo.MenuItem{
+			{Role: mygo.RoleAbout},
 			{Label: tr("设置"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { m.openSettings() }},
 			mygo.Separator(), {Role: mygo.RoleQuit},
 		}},
@@ -571,6 +577,10 @@ func (m *mockup) sidebar(c *ui.Context) {
 
 func (m *mockup) pageContent(c *ui.Context) {
 	ui.Column(c).Grow(1).MinWidth(0).FillHeight().Padding(16).Gap(12).Background(c.Theme().Surface).Children(func() {
+		if m.page == scheduledPage && m.hostPanels.Automation != nil {
+			m.hostPanels.Automation(c.Key("automation"))
+			return
+		}
 		if m.page == nowPage {
 			if m.nowLibraryOpen {
 				m.nowLibrary(c.Key("library"))
@@ -648,7 +658,10 @@ func (m *mockup) connectionName(id string) string {
 }
 
 func (m *mockup) taskValues(o sourceObject) []string {
-	source := tr(m.connectionName(o.ConnectionID))
+	source := m.sourceText(m.connectionName(o.ConnectionID))
+	if o.Mode == "mock" {
+		source += " · " + tr("模拟数据")
+	}
 	due := tr(o.NativeFields["due"])
 	if due == "" {
 		due = "—"
@@ -668,7 +681,14 @@ func (m *mockup) taskValues(o sourceObject) []string {
 	if len(o.Activity) > 0 {
 		updated = tr(o.Activity[len(o.Activity)-1].At)
 	}
-	return []string{tr(o.Title), status, tr(o.NativeFields["priority"]), displayTaskID(o) + " · " + source, due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", ")}
+	return []string{m.sourceText(o.Title), status, tr(o.NativeFields["priority"]), displayTaskID(o) + " · " + source, due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", ")}
+}
+
+func (m *mockup) matchesStatusFilter(task sourceObject) bool {
+	if m.live != nil {
+		return m.statusFilter == "全部状态" || m.statusFilter == workbenchStateLabel(task.State)
+	}
+	return (m.statusFilter != "未完成" || !taskClosed(task)) && (m.statusFilter != "已完成" || taskClosed(task))
 }
 
 func (m *mockup) taskRows() []int {
@@ -681,8 +701,7 @@ func (m *mockup) taskRows() []int {
 		if m.taskWatchOnly && !m.isWatched(o.ID) {
 			continue
 		}
-		if m.statusFilter == "未完成" && taskClosed(o) ||
-			m.statusFilter == "已完成" && !taskClosed(o) ||
+		if !m.matchesStatusFilter(o) ||
 			m.sourceFilter != "全部来源" && m.sourceFilter != m.connectionName(o.ConnectionID) {
 			continue
 		}
@@ -766,7 +785,11 @@ func (m *mockup) taskListControls(c *ui.Context) {
 }
 
 func (m *mockup) taskFilterSelects(c *ui.Context) {
-	localizedSelect(c.Key("status"), &m.statusFilter, []string{"全部状态", "未完成", "已完成"}, 110)
+	states := []string{"全部状态", "未完成", "已完成"}
+	if m.live != nil {
+		states = []string{"全部状态", "待处理", "进行中", "已完成", "不计划处理", "未知"}
+	}
+	localizedSelect(c.Key("status"), &m.statusFilter, states, 110)
 	sources := []string{"全部来源"}
 	for _, connection := range m.connectionsData {
 		sources = append(sources, connection.Name)
@@ -789,6 +812,9 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 	_, problem := m.parseSearch()
 	if problem != "" {
 		components.StatusLabel(c.Key("query-error"), components.Status{Text: problem, Icon: "exclamationmark.circle", Color: c.Theme().Warning})
+	}
+	if m.liveError {
+		components.Muted(c.Key("live-error"), tr("无法读取工作台数据"))
 	}
 	rows := m.taskRows()
 	if !m.unifiedTasks() && m.inspector && !slices.Contains(rows, m.selected) {
@@ -831,8 +857,8 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 }
 
 func (m *mockup) taskDetail(c *ui.Context, o *sourceObject) {
-	components.Title(c, tr(o.Title))
-	components.Muted(c, tr(o.Locator))
+	components.Title(c, m.sourceText(o.Title))
+	components.Muted(c, m.sourceText(o.Locator))
 	ui.Row(c.Key("facts")).Gap(8).AlignItems(ui.Center).Children(func() {
 		components.DataText(c, tr(o.NativeFields["status"]))
 		components.Muted(c, tr("优先级 ")+tr(o.NativeFields["priority"]))
@@ -1109,7 +1135,7 @@ func (m *mockup) assistantView(c *ui.Context) {
 		content.Fill().Padding(20)
 	}
 	content.Children(func() {
-		components.Title(c.Key("assistant-title"), tr(object.Title))
+		components.Title(c.Key("assistant-title"), m.sourceText(object.Title))
 		components.Muted(c, tr(m.provider)+tr(" · 模拟回复"))
 		m.changeTag(c, "dialog", tr("对话保留上下文和来源引用。"))
 		ui.Divider(c)
@@ -1134,6 +1160,9 @@ func (m *mockup) assistantView(c *ui.Context) {
 }
 
 func (m *mockup) taskAssistantComposer(c *ui.Context, object *sourceObject, thread *assistantThread, inline bool) {
+	if m.live != nil {
+		return
+	}
 	group := ui.Column(c).FillWidth()
 	group.Children(func() {
 		if question := components.Composer(c.Key("input"), &thread.draft, components.ComposerLabels{

@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -42,7 +43,7 @@ func (m *mockup) workspaceBreadcrumb(c *ui.Context) {
 			}
 		case tasksPage:
 			if index := m.currentTaskIndex(); index >= 0 && !m.layout.detailHidden {
-				current, back = tr(m.objects[index].Title), m.showTaskList
+				current, back = m.sourceText(m.objects[index].Title), m.showTaskList
 			}
 		}
 		if back != nil {
@@ -69,6 +70,10 @@ func breadcrumbButton(c *ui.Context, title, label string) bool {
 func (m *mockup) statusBar(c *ui.Context) {
 	total, pending, unhealthy, awaiting := len(m.connectionsData), len(m.pendingSync), 0, 0
 	for _, conn := range m.connectionsData {
+		if conn.SourceKind == common.WorkbenchLocal {
+			total--
+			continue
+		}
 		if m.pendingSync[conn.ID] {
 			continue
 		}
@@ -87,6 +92,9 @@ func (m *mockup) statusBar(c *ui.Context) {
 		if task.LastRun != nil && task.LastRun.Active() {
 			activeRuns++
 		}
+	}
+	if m.hostPanels.RunningAutomation != nil {
+		activeRuns = m.hostPanels.RunningAutomation()
 	}
 	ui.Row(c).FillWidth().Height(statusBarHeight).Shrink(0).Padding(0, 12).Gap(12).AlignItems(ui.Center).
 		Background(c.Theme().Background).Children(func() {

@@ -14,15 +14,13 @@ macOS arm64. Linux/Windows application builds are not yet supported.
 ## Install and first launch
 
 Open the DMG, drag apilot to Applications, eject the image, and open the installed
-App. It resides in the menu bar; the management window opens on demand. The first
-launch offers to link the bundled CLI to `~/.local/bin/apilot`. It requires no
+App. It resides in the menu bar; the Workbench window opens on demand. Settings → Command Line offers to link the bundled CLI to `~/.local/bin/apilot`. It requires no
 administrator password and never overwrites an existing file or a different
 symlink. Launching from a DMG or an App Translocation path disables installation;
 move the App to `/Applications` or `~/Applications` first.
 
 If needed, copy `export PATH="$HOME/.local/bin:$PATH"` into `~/.zshrc` and open a
-new terminal. Verify with `apilot status --json`. The App must be running. Install
-can be reopened from the menu bar. Remove the link to uninstall the CLI. Moving
+new terminal. Verify with `apilot status --json`. The App must be running. Settings can be opened from the menu bar. Remove the link to uninstall the CLI. Moving
 or deleting the App also breaks the link; reinstall after relocating the bundle.
 There is no daemon and no automatic shell configuration change.
 

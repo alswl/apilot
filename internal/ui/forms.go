@@ -46,7 +46,7 @@ func (s *windowState) editTask(t *common.Task) *taskForm {
 		s.selectedTask = t.ID
 	}
 	home, _ := os.UserHomeDir()
-	f := &taskForm{TaskDraft: presentation.NewTaskDraft(t, s.service.Settings(), home)}
+	f := &taskForm{TaskDraft: presentation.NewTaskDraft(t, s.settings, home)}
 	title := tr("newTask")
 	if t != nil {
 		title = tr("editTask")
@@ -175,108 +175,4 @@ func (s *windowState) editTask(t *common.Task) *taskForm {
 		}
 	})
 	return f
-}
-func (s *windowState) showSettings() {
-	if s.settingsWin != nil && !s.settingsWin.IsDestroyed() {
-		s.settingsWin.Show()
-		s.settingsWin.Focus()
-		s.settingsWin.Invalidate()
-		return
-	}
-	language := mygo.App.ChosenLocale()
-	loginSupported := supportsLoginItem()
-	loginEnabled := false
-	if loginSupported {
-		loginEnabled = mygo.App.OpenAtLogin()
-	}
-	draft := presentation.NewSettingsDraft(s.service.Settings())
-	cli := newCLISettings()
-	var operation presentation.OperationState
-	message := ""
-	busy := false
-	var win *mygo.Window
-	win = mygo.NewWindow(mygo.WindowOptions{Title: tr("settings"), Width: 480, Height: 460, MinWidth: 420, MinHeight: 360, StateKey: "settings", Content: ui.View(func(c *ui.Context) {
-		components.ApplyTheme(c)
-		ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
-			ui.Tabs(c, &s.settingsPage, tr("generalSettings"), tr("commandLineSettings"))
-			if s.settingsPage == 1 {
-				cli.view(c)
-				return
-			}
-			ui.Scroll(c).Grow(1).Children(func() {
-				ui.Column(c).FillWidth().Gap(12).Children(func() {
-					languagePicker(c, &language, mygo.App.SetLocale)
-					ui.Field(c, tr("defaultTimeout"), func() { ui.TextInput(c, &draft.Timeout).FillWidth() })
-					ui.Field(c, tr("concurrentTasks"), func() { ui.TextInput(c, &draft.Max).FillWidth() })
-					ui.Field(c, tr("historyRetentionDays"), func() { ui.TextInput(c, &draft.Days).FillWidth() })
-					ui.Field(c, tr("logLimitPerStreamMib"), func() { ui.TextInput(c, &draft.Limit).FillWidth() })
-					ui.Checkbox(c, &draft.Values.NotifyFailure, tr("notifyOnTaskFailure"))
-					ui.Checkbox(c, &draft.Values.NotifySuccess, tr("notifyOnTaskSuccess"))
-					ui.Checkbox(c, &draft.Values.NotifyObserver, tr("notifyOnObserverStateChanges"))
-					if loginSupported {
-						if ui.Checkbox(c, &loginEnabled, tr("openApilotAtLogin")).Changed() {
-							wanted := loginEnabled
-							s.background(func() {
-								err := mygo.App.SetOpenAtLogin(wanted)
-								win.Update(func() {
-									if s.stopping || win.IsDestroyed() {
-										return
-									}
-									if err != nil {
-										message = err.Error()
-										loginEnabled = mygo.App.OpenAtLogin()
-									}
-								})
-							})
-						}
-					}
-
-				})
-			})
-			if message != "" {
-				ui.Text(c, message)
-			}
-			ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
-				if ui.PrimaryButton(c, tr("save")).Disabled(busy).Clicked() {
-					copy, fieldErr := draft.Settings()
-					if fieldErr != nil {
-						message = presentationMessage(fieldErr.Code)
-						return
-					}
-					token, ok := operation.Begin()
-					if !ok {
-						return
-					}
-
-					busy = true
-					s.background(func() {
-						saved, e := s.service.SaveSettings(copy)
-						win.Update(func() {
-							if s.stopping || win.IsDestroyed() {
-								return
-							}
-							if !operation.Complete(token) {
-								return
-							}
-							busy = false
-							if e != nil {
-								message = e.Error()
-							} else {
-								draft = presentation.NewSettingsDraft(saved)
-								message = tr("saved")
-							}
-						})
-					})
-				}
-			})
-		})
-	})})
-
-	s.settingsWin = win
-	win.OnClose(func(e *mygo.CloseEvent) {
-		if busy && !s.stopping {
-			e.PreventDefault()
-		}
-	})
-	win.OnClosed(func() { operation.Invalidate() })
 }

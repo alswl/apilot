@@ -13,6 +13,7 @@ import (
 
 	"github.com/alswl/apilot/internal/presentation"
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/internal/ui/workbench"
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/server"
 	"github.com/alswl/apilot/pkg/services"
@@ -20,7 +21,29 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
+type automationBackend interface {
+	AutomationSnapshot() (services.AutomationSnapshot, error)
+	SaveTask(string, common.TaskInput, int64) (common.Task, error)
+	DeleteTask(string) error
+	SetAutomatic(string, bool, int64) (common.Task, error)
+	RunTask(string, string) (common.Run, error)
+	StopRun(string) (common.Run, error)
+	Logs(string, string, int64, int) (common.LogChunk, error)
+	SaveObserver(string, common.ObserverInput, int64) (common.Observer, error)
+	DeleteObserver(string) error
+	SetObserverEnabled(string, bool) (common.Observer, error)
+	AckEvent(string) (common.AttentionEvent, error)
+	SaveSettings(common.Settings) (common.Settings, error)
+	AllowNotification(string) (bool, error)
+	Suspend()
+	Resume()
+}
+
 type windowState struct {
+	workspace        *workbench.HostedWorkspace
+	settings         common.Settings
+	cliPanelWindow   *mygo.Window
+	cliPanel         *cliSettings
 	traySignature    string
 	stopping         bool
 	workers          sync.WaitGroup
@@ -36,10 +59,9 @@ type windowState struct {
 	followLogs       bool
 	observers        []common.Observer
 	selectedObserver string
-	service          *services.Service
+	service          automationBackend
 	win              *mygo.Window
 	settingsWin      *mygo.Window
-	settingsPage     int
 	taskEditor       *taskForm
 	observerEditor   *mygo.Window
 	confirming       bool
@@ -59,11 +81,17 @@ type windowState struct {
 	busy             bool
 }
 
-func Run(runtime *server.Runtime, probe bool) error {
+func Run(runtime *server.Runtime, remote *services.Remote, reveal, probe bool, keybindingsPath, language string) error {
 	mygo.App.SetLanguages("en", "zh-Hans")
-	service := runtime.Service
-	var err error
-	s := &windowState{service: service, followLogs: true, seen: presentation.InitialSeen(service.Runs(""), mustEvents(service))}
+	var service automationBackend = services.AutomationRemote{Remote: remote}
+	if runtime != nil {
+		service = runtime.Service
+	}
+	first, err := service.AutomationSnapshot()
+	if err != nil {
+		return err
+	}
+	s := &windowState{service: service, settings: first.Settings, followLogs: true, seen: presentation.InitialSeen(first.Runs, first.Events)}
 	appUI := mygo.App
 	appUI.SetName("Apilot")
 	appUI.SetActivationPolicy(mygo.ActivationPolicyAccessory)
@@ -78,7 +106,9 @@ func Run(runtime *server.Runtime, probe bool) error {
 		if e.SessionEnding {
 			cancel()
 			s.stopping = true
-			go runtime.StopAdmission()
+			if runtime != nil {
+				go runtime.StopAdmission()
+			}
 			return
 		}
 		e.PreventDefault()
@@ -93,10 +123,14 @@ func Run(runtime *server.Runtime, probe bool) error {
 		s.busy = true
 		cancel()
 		go func() {
-			runtime.StopAdmission()
-			runtime.StopIPC()
+			if runtime != nil {
+				runtime.StopAdmission()
+				runtime.StopIPC()
+			}
 			s.workers.Wait()
-			_ = runtime.Close()
+			if runtime != nil {
+				_ = runtime.Close()
+			}
 			mygo.RunOnMain(func() { allowQuit = true; appUI.Quit() })
 		}()
 	})
@@ -113,18 +147,28 @@ func Run(runtime *server.Runtime, probe bool) error {
 		displayLocale.Store(appUI.Locale())
 		appUI.OnLocaleChanged(func(locale string) {
 			displayLocale.Store(locale)
-			s.setAppMenu()
-			refreshTitle := func(win *mygo.Window, title string) {
-				if win != nil && !win.IsDestroyed() {
-					win.SetTitle(title)
-					win.Invalidate()
-				}
+			if s.workspace != nil {
+				s.workspace.UpdateLocale(locale)
+				s.workspace.InstallMenu()
 			}
-			refreshTitle(s.settingsWin, tr("settings"))
 			s.traySignature = ""
 			s.refresh()
 		})
-		s.setAppMenu()
+		s.workspace, err = workbench.NewHostedWorkspace(remote, keybindingsPath, language, workbench.HostPanels{
+			Automation:        s.view,
+			RunningAutomation: s.runningAutomation,
+			PreferencePanels: []workbench.PreferencePanel{
+				{Title: func() string { return tr("automationSettings") }, View: s.automationPreferences()},
+				{Title: func() string { return tr("commandLineSettings") }, View: func(c *ui.Context, w *mygo.Window) { s.cliPreferences(c, w) }},
+			},
+		})
+		if err != nil {
+			allowQuit = true
+			appUI.Quit()
+			return
+		}
+		displayLocale.Store(s.workspace.EffectiveLocale())
+		s.workspace.InstallMenu()
 		s.tray, err = mygo.NewTray(mygo.TrayOptions{ID: "apilot", Icon: menuBarIcon, IconIsTemplate: true, ToolTip: "Apilot"})
 		if err != nil {
 			allowQuit = true
@@ -132,10 +176,13 @@ func Run(runtime *server.Runtime, probe bool) error {
 			return
 		}
 		log.Print("tray created")
+		if reveal {
+			s.show()
+		}
 		if probe {
 			fmt.Printf("PROBE startup_main_window=%v\n", s.win != nil)
 			// Exercise the same management-window action used by the native menu.
-			for _, item := range s.trayItems(s.service.Status()) {
+			for _, item := range s.trayItems(first.Status) {
 				if item.ID == "manage" {
 					item.Click(item, nil)
 				}
@@ -237,10 +284,12 @@ func Run(runtime *server.Runtime, probe bool) error {
 	cancel()
 	return err
 }
-func mustEvents(s *services.Service) []common.AttentionEvent { v, _ := s.Events(); return v }
 func (s *windowState) show() {
+	if s.workspace == nil {
+		return
+	}
 	if s.win == nil || s.win.IsDestroyed() {
-		s.win = mygo.NewWindow(mygo.WindowOptions{Title: "Apilot", Width: 640, Height: 480, MinWidth: 480, MinHeight: 360, StateKey: "main", Content: ui.View(s.view)})
+		s.win = s.workspace.Open()
 		s.win.OnClose(func(e *mygo.CloseEvent) {
 			if !s.stopping && s.focusEditor() {
 				e.PreventDefault()
@@ -253,11 +302,19 @@ func (s *windowState) show() {
 			s.logOperation.Invalidate()
 			s.logState.Generation++
 		})
+	} else {
+		s.workspace.Open()
 	}
-	s.win.Show()
-	s.win.Focus()
 	s.focusEditor()
 }
+
+func (s *windowState) showAutomation() {
+	if s.workspace != nil {
+		s.workspace.ShowAutomation()
+	}
+	s.show()
+}
+
 func (s *windowState) update(fn func()) {
 	mygo.RunOnMain(func() {
 		if s.stopping {
@@ -314,10 +371,7 @@ func (s *windowState) refresh() {
 		s.workers.Add(1)
 		go func() {
 			defer s.workers.Done()
-			tasks, runs, observers := s.service.Tasks(), s.service.Runs(""), s.service.Observers()
-			events, err := s.service.Events()
-			status := s.service.Status()
-			settings := s.service.Settings()
+			snapshot, err := s.service.AutomationSnapshot()
 			s.update(func() {
 				if !s.refreshState.Complete(token) {
 					return
@@ -325,11 +379,11 @@ func (s *windowState) refresh() {
 				if err != nil {
 					s.err = err.Error()
 				} else {
-					s.tasks, s.runs, s.observers, s.events = tasks, runs, observers, events
+					s.tasks, s.runs, s.observers, s.events, s.settings = snapshot.Tasks, snapshot.Runs, snapshot.Observers, snapshot.Events, snapshot.Settings
 					if s.tray != nil {
-						s.updateTray(status)
+						s.updateTray(snapshot.Status)
 					}
-					for _, candidate := range presentation.Notifications(settings, runs, events, s.seen) {
+					for _, candidate := range presentation.Notifications(snapshot.Settings, snapshot.Runs, snapshot.Events, s.seen) {
 						s.sendNotification(candidate)
 					}
 				}
@@ -436,8 +490,7 @@ func statusText(v string) string {
 	return v
 }
 func (s *windowState) view(c *ui.Context) {
-	components.ApplyTheme(c)
-	ui.Column(c).Fill().Padding(16).Gap(12).Children(func() {
+	ui.Column(c).Fill().Gap(12).Children(func() {
 		ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
 			if ui.Tabs(c, &s.tab, tr("tasks"), tr("history"), tr("observers"), tr("attention")).Grow(1).Changed() {
 				s.selectedTask = ""
@@ -698,9 +751,12 @@ func (s *windowState) setAutomatic(t common.Task) error {
 	return err
 }
 
-func (s *windowState) setAppMenu() {
-	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "Apilot", Submenu: []*mygo.MenuItem{{Role: mygo.RoleAbout}, {Label: tr("settings2"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }}, mygo.Separator(), {Role: mygo.RoleQuit}}},
-		{Role: mygo.RoleEditMenu}, {Label: tr("window"), Submenu: []*mygo.MenuItem{{Label: tr("openApilot"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }}}},
-	}))
+func (s *windowState) runningAutomation() int {
+	running := 0
+	for _, item := range s.runs {
+		if item.Active() {
+			running++
+		}
+	}
+	return running
 }

@@ -15,4 +15,4 @@
 
 ## Workbench mock mode
 
-The [Workbench guide](workbench.md) describes the fixture mode. Source edits, sync results, assistant replies and scheduled runs are simulated. Task edits, saved views and conversations reset on relaunch. Live vault and repository access, assistant inference and cross-session persistence are pending.
+The [Workbench guide](workbench.md) describes the fixture mode. Source edits, sync results, assistant replies and scheduled runs are simulated. Task edits, saved views and conversations reset on relaunch. Production workbench mode reads local Obsidian Tasks and an opt-in GitHub Issues fixture. Live GitHub access, assistant inference, source writeback and persistence of saved views and conversations are pending. Obsidian sync covers Markdown list checkboxes and supported Tasks emoji fields. Ambiguous duplicates or anonymous task text edits can appear as removals and additions.

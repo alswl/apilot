@@ -59,7 +59,7 @@ func (m *mockup) taskDetailTabs(c *ui.Context, object *sourceObject, detail *tas
 	case taskLinksTab:
 		if excerpt := object.NativeFields["excerpt"]; excerpt != "" {
 			components.ContentSection(c.Key("source"), tr("来源摘录"), func() {
-				components.Muted(c, tr(object.Locator))
+				components.Muted(c, m.sourceText(object.Locator))
 				components.Body(c, tr(excerpt))
 			})
 		}
@@ -87,6 +87,9 @@ func (m *mockup) taskDetailTabs(c *ui.Context, object *sourceObject, detail *tas
 }
 
 func (m *mockup) taskCommentComposer(c *ui.Context, detail *taskDetailUI, scroll *ui.ScrollState) {
+	if m.live != nil {
+		return
+	}
 	group := ui.Column(c).FillWidth()
 	group.Children(func() {
 		if comment := components.Composer(c.Key("input"), &detail.draft, components.ComposerLabels{

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/alswl/apilot/internal/ui/workbench"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -47,8 +48,9 @@ func installCLI(source, target string) error {
 }
 
 func (s *windowState) showCLI() {
-	s.settingsPage = 1
-	s.showSettings()
+	if s.workspace != nil {
+		s.settingsWin = s.workspace.Settings(workbench.CLISettingsTab)
+	}
 }
 
 type cliSettings struct {

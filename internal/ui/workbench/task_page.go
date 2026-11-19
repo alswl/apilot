@@ -56,7 +56,7 @@ func (m *mockup) taskPreview(c *ui.Context) {
 			}
 		},
 	}, func() { m.taskSelection = ""; m.restoreTaskFocus = true }, func() {
-		components.Title(c, tr(o.Title))
+		components.Title(c, m.sourceText(o.Title))
 		components.Muted(c, displayTaskID(o)+" · "+tr(m.connectionName(o.ConnectionID)))
 		components.PropertyRow(c.Key("state"), tr("状态"), m.taskStateLabel(o))
 		if due := o.NativeFields["due"]; due != "" {
@@ -113,7 +113,10 @@ func (m *mockup) taskPage(c *ui.Context) {
 
 func (m *mockup) taskPageTitle(c *ui.Context, o *sourceObject) {
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
-		components.DocumentTitle(c.Key("title"), tr(o.Title))
+		components.DocumentTitle(c.Key("title"), m.sourceText(o.Title))
+		if o.Mode == "mock" {
+			components.Muted(c.Key("source-mode"), tr("模拟数据"))
+		}
 		ui.Column(c.Key("overview")).FillWidth().MaxWidth(360).Children(func() {
 			components.PropertyGrid(c, []components.Property{
 				{ID: "status", Title: tr("状态"), Value: m.taskStateLabel(*o)},
@@ -125,7 +128,7 @@ func (m *mockup) taskPageTitle(c *ui.Context, o *sourceObject) {
 
 func (m *mockup) taskDescription(c *ui.Context, o *sourceObject) {
 	if o.Summary != "" {
-		components.Body(c, tr(o.Summary))
+		components.Body(c, m.sourceText(o.Summary))
 	}
 }
 
@@ -133,7 +136,7 @@ func (m *mockup) taskPageBody(c *ui.Context, o *sourceObject) {
 	ui.Column(c).FillWidth().Gap(16).Children(func() {
 		if excerpt := o.NativeFields["excerpt"]; excerpt != "" {
 			components.ContentSection(c.Key("source"), tr("来源摘录"), func() {
-				components.Muted(c, tr(o.Locator))
+				components.Muted(c, m.sourceText(o.Locator))
 				components.Body(c, tr(excerpt))
 			})
 		}

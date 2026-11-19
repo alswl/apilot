@@ -41,3 +41,7 @@ func SocketPath(dir string) string {
 	hash := sha256.Sum256([]byte(dir))
 	return filepath.Join(cache, "apilot", hex.EncodeToString(hash[:5]), "ipc.sock")
 }
+
+func HTTPSocketPath(dir string) string {
+	return filepath.Join(filepath.Dir(SocketPath(dir)), "http.sock")
+}

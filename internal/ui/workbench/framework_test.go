@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/services"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -92,5 +95,62 @@ func TestEmptyFrameworkNavigationAndConnectorScaffolds(t *testing.T) {
 		if m.page != connectionsPage {
 			t.Fatalf("English guidance did not open the connector list at %v", size)
 		}
+	}
+}
+
+func TestLiveWorkbenchProjectsReadOnlyTasks(t *testing.T) {
+	m := newFramework()
+	m.live = services.NewRemote("")
+	m.useAdaptiveLayout()
+	local := common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: "local", Name: "Vault", Kind: obsidianTasks, Mode: "local"}}
+	mock := common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: "mock", Name: "Example", Kind: githubIssues, Mode: "mock", Repository: "alswl/issues"}}
+	task := sourceObject{ID: "note", ConnectionID: "local", Kind: obsidianTasks, Mode: "local", State: "open", Title: "本地任务", Locator: "Work/Notes.md:2"}
+	issue := sourceObject{ID: "issue", ConnectionID: "mock", Kind: githubIssues, Mode: "mock", State: "done", Title: "Fixture issue", NativeID: "101"}
+	m.applyLive([]common.WorkbenchSnapshot{local, mock}, []sourceObject{task, issue})
+	preview := ui.NewTester(m.view, 1190, 730)
+	click(t, preview, "任务")
+	if !preview.HasText(task.Title) || !preview.HasText(issue.Title) || !preview.HasText("模拟数据") {
+		t.Fatal("tasks or source marker missing from production list")
+	}
+	if m.editableSource(task) || m.editableSource(issue) {
+		t.Fatal("synced objects must be read-only")
+	}
+	m.taskSelection = task.ID
+	m.search = "本地"
+	m.applyLive([]common.WorkbenchSnapshot{local, mock}, []sourceObject{task, issue})
+	if m.taskSelection != task.ID || m.search != "本地" {
+		t.Fatal("refresh lost task context")
+	}
+	m.applyLive([]common.WorkbenchSnapshot{local, mock}, []sourceObject{issue})
+	if m.taskSelection != "" || m.search != "本地" {
+		t.Fatal("removed task should clear selection and retain filter")
+	}
+}
+
+func TestHostedWorkbenchUsesAutomationAndSettingsPanels(t *testing.T) {
+	m := newFramework()
+	m.useAdaptiveLayout()
+	m.hostPanels = HostPanels{
+		Automation: func(c *ui.Context) { ui.Text(c, "Live automation panel") },
+		PreferencePanels: []PreferencePanel{
+			{Title: func() string { return "Automation" }, View: func(c *ui.Context, _ *mygo.Window) { ui.Text(c, "Automation preferences") }},
+			{Title: func() string { return "Command Line" }, View: func(c *ui.Context, _ *mygo.Window) { ui.Text(c, "CLI installer") }},
+		},
+	}
+	for _, size := range [][2]int{{680, 580}, {1190, 730}} {
+		view := ui.NewTester(m.view, size[0], size[1])
+		click(t, view, tr("定时任务"))
+		if !view.HasText("Live automation panel") {
+			t.Fatal(view.Texts())
+		}
+	}
+	preferences := ui.NewTester(m.settings, 620, 480)
+	click(t, preferences, "Automation")
+	if !preferences.HasText("Automation preferences") {
+		t.Fatal(preferences.Texts())
+	}
+	click(t, preferences, "Command Line")
+	if !preferences.HasText("CLI installer") {
+		t.Fatal(preferences.Texts())
 	}
 }

@@ -18,7 +18,7 @@ func (s *windowState) openTasks() {
 	}
 	s.tab, s.query = 0, ""
 	s.selectedTask, s.selectedRun, s.selectedObserver = "", "", ""
-	s.show()
+	s.showAutomation()
 }
 
 func (s *windowState) openHistory(runID string) {
@@ -27,7 +27,7 @@ func (s *windowState) openHistory(runID string) {
 	}
 	s.tab = 1
 	s.selectedTask, s.selectedObserver, s.selectedRun = "", "", runID
-	s.show()
+	s.showAutomation()
 }
 
 func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
@@ -44,7 +44,7 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 	unread := projected.UnreadCount
 	attention := []*mygo.MenuItem{}
 	for _, e := range projected.Attention {
-		attention = append(attention, &mygo.MenuItem{ID: "event-" + e.ID, Label: menuLabel(e.Summary), ToolTip: e.Summary, Click: func(*mygo.MenuItem, *mygo.Window) { s.selectEvent(e); s.show() }})
+		attention = append(attention, &mygo.MenuItem{ID: "event-" + e.ID, Label: menuLabel(e.Summary), ToolTip: e.Summary, Click: func(*mygo.MenuItem, *mygo.Window) { s.selectEvent(e); s.showAutomation() }})
 	}
 	if unread > 0 {
 		attention = append(attention, mygo.Separator(), &mygo.MenuItem{Label: tr("allAlerts"), Click: func(*mygo.MenuItem, *mygo.Window) { s.showAttention() }})
@@ -64,7 +64,7 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 		menu = append(menu, &mygo.MenuItem{ID: "active", Label: fmt.Sprintf(tr("runningD"), activeCount), Submenu: active})
 	}
 	if s.err != "" && !(s.busy && s.err == tr("quitting")) {
-		menu = append(menu, &mygo.MenuItem{ID: "last-error", Label: tr("actionFailedViewDetails"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }})
+		menu = append(menu, &mygo.MenuItem{ID: "last-error", Label: tr("actionFailedViewDetails"), Click: func(*mygo.MenuItem, *mygo.Window) { s.showAutomation() }})
 	}
 
 	menu = append(menu, mygo.Separator(), &mygo.MenuItem{Label: tr("quickTasks"), Disabled: true})
@@ -84,6 +84,7 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 		menu = append(menu, &mygo.MenuItem{Label: tr("noTasks"), Disabled: true})
 	}
 	menu = append(menu,
+		&mygo.MenuItem{ID: "workbench", Label: tr("openApilot"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }},
 		&mygo.MenuItem{ID: "new-task", Label: tr("newTask2"), Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) { s.editTask(nil) }},
 		&mygo.MenuItem{ID: "manage", Label: tr("allTasks"), Click: func(*mygo.MenuItem, *mygo.Window) { s.openTasks() }}, mygo.Separator())
 
@@ -108,7 +109,7 @@ func (s *windowState) showAttention() {
 	}
 	s.tab = 3
 	s.selectedTask, s.selectedRun, s.selectedObserver = "", "", ""
-	s.show()
+	s.showAutomation()
 }
 
 func (s *windowState) attentionList(c *ui.Context) {

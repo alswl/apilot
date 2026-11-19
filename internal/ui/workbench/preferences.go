@@ -28,7 +28,7 @@ func (m *mockup) initLanguage(launchLanguage string) {
 	englishUI.Store(useEnglish)
 	m.applyLocale = func(tag string) {
 		var useEnglish bool
-		if m.framework {
+		if m.framework && !m.hosted {
 			useEnglish, _ = resolveLanguage(tag, closestSystemLanguage())
 		} else {
 			mygo.App.SetLocale(tag)
@@ -36,8 +36,16 @@ func (m *mockup) initLanguage(launchLanguage string) {
 		}
 		englishUI.Store(useEnglish)
 		m.setMenu()
+		m.invalidateWindows()
+	}
+}
+
+func (m *mockup) invalidateWindows() {
+	if m.win != nil && !m.win.IsDestroyed() {
 		m.win.SetTitle(m.windowTitle())
 		m.win.Invalidate()
+	}
+	if m.preferences != nil && !m.preferences.IsDestroyed() {
 		m.preferences.SetTitle(tr("Apilot 设置"))
 		m.preferences.Invalidate()
 	}
@@ -54,11 +62,12 @@ func closestSystemLanguage() string {
 
 func (m *mockup) openSettings() {
 	if m.preferences != nil && !m.preferences.IsDestroyed() {
+		m.preferences.Show()
 		m.preferences.Focus()
 		return
 	}
 	m.preferences = mygo.NewWindow(mygo.WindowOptions{
-		Title: tr("Apilot 设置"), Width: 580, Height: 470,
+		Title: tr("Apilot 设置"), Width: 620, Height: 480, MinWidth: 520, MinHeight: 420,
 		Content: ui.View(func(c *ui.Context) {
 			components.ApplyTheme(c)
 			ui.Column(c).Fill().Padding(16).Gap(16).Background(c.Theme().Surface).Children(func() { m.settings(c) })
@@ -68,7 +77,18 @@ func (m *mockup) openSettings() {
 }
 
 func (m *mockup) settings(c *ui.Context) {
-	ui.Tabs(c.Key("settings-tabs"), &m.settingsTab, tr("常规"), tr("助理"), tr("扩展"), tr("快捷键")).FillWidth()
+	tabs := []string{tr("常规"), tr("助理"), tr("扩展"), tr("快捷键")}
+	for _, panel := range m.hostPanels.PreferencePanels {
+		tabs = append(tabs, panel.Title())
+	}
+	ui.Tabs(c.Key("settings-tabs"), &m.settingsTab, tabs...).FillWidth()
+	if m.settingsTab >= builtinPreferenceTabs {
+		index := m.settingsTab - builtinPreferenceTabs
+		if index < len(m.hostPanels.PreferencePanels) {
+			m.hostPanels.PreferencePanels[index].View(c.Key(index), m.preferences)
+		}
+		return
+	}
 	ui.Scroll(c.Key(m.settingsTab)).Grow(1).FillWidth().Children(func() {
 		ui.Column(c).FillWidth().Gap(12).Children(func() {
 			switch m.settingsTab {
