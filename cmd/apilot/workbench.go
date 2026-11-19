@@ -3,12 +3,14 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/spf13/cobra"
 )
 
-var workbenchCmd = &cobra.Command{Use: "workbench", Short: "Read synced workbench data"}
+var workbenchCmd = &cobra.Command{Use: "workbench", Short: "Manage and query local workbench data"}
 
 func init() { rootCmd.AddCommand(workbenchCmd) }
 
@@ -55,4 +57,22 @@ func showWorkbench(method string, params any) error {
 		_, err = fmt.Fprintln(commandClient.out, string(b))
 		return err
 	}
+}
+
+func workbenchJSONFile(cmd *cobra.Command, method, path string) error {
+	reader := cmd.InOrStdin()
+	if path != "-" {
+		file, err := os.Open(path)
+		if err != nil {
+			return common.Err("INVALID_ARGUMENT", "Could not open JSON input")
+		}
+		defer file.Close()
+		reader = file
+	}
+	const maxInput = 1024*1024 - 4096
+	data, err := io.ReadAll(io.LimitReader(reader, maxInput+1))
+	if err != nil || len(data) > maxInput || !json.Valid(data) {
+		return common.Err("INVALID_ARGUMENT", "Expected valid JSON below the IPC request limit")
+	}
+	return showWorkbench(method, json.RawMessage(data))
 }

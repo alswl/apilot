@@ -69,6 +69,28 @@ func (s *Store) RecordWorkbench(c common.WorkbenchConnection, attempts []common.
 		return err
 	}
 	defer tx.Rollback()
+	if err := recordWorkbench(tx, c, attempts, before, after, success); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) CommitWorkbenchImport(c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, success *time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec("INSERT INTO workbench_connections(id,config,version) VALUES(?,?,?) ON CONFLICT(id) DO NOTHING", c.ID, encode(c), c.Version); err != nil {
+		return err
+	}
+	if err := recordWorkbench(tx, c, attempts, before, after, success); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func recordWorkbench(tx *sql.Tx, c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, success *time.Time) error {
 	result, err := tx.Exec("UPDATE workbench_connections SET attempts=?,last_success=COALESCE(?,last_success) WHERE id=? AND version=?", encode(attempts), formatWorkbenchTime(success), c.ID, c.Version)
 	if err != nil {
 		return err
@@ -117,7 +139,7 @@ func (s *Store) RecordWorkbench(c common.WorkbenchConnection, attempts []common.
 			}
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 func formatWorkbenchTime(t *time.Time) any {
@@ -194,4 +216,27 @@ func (s *Store) WorkbenchObjects(connection string) ([]common.WorkbenchTask, err
 		tasks = append(tasks, task)
 	}
 	return tasks, rows.Err()
+}
+
+func (s *Store) DeleteWorkbench(id string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec("DELETE FROM workbench_connections WHERE id=?", id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return common.Err("NOT_FOUND", "Unknown workbench connection")
+	}
+	if _, err := tx.Exec("UPDATE workbench_revision SET revision=revision+1"); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

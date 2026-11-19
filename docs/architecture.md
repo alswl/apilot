@@ -1,6 +1,6 @@
 # Architecture
 
-The App is the only long-lived owner of SQLite, scheduling, task execution and the current-user Unix Socket. CLI requests and UI actions use the same Application Service. There is no network listener or independent daemon.
+A single local runtime owns SQLite, scheduling, task execution and the current-user Unix socket for each data directory. Run it in the foreground with `apilot-app --serve` or let the app host it. The workbench UI and CLI use the same socket API. The legacy automation UI uses the same Application Service through the app-hosted runtime. IPC is local to the current user.
 
 | Location | Responsibility |
 | --- | --- |

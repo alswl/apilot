@@ -1,15 +1,20 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/alswl/apilot/internal/ui"
 	"github.com/alswl/apilot/internal/ui/workbench"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/config"
 	"github.com/alswl/apilot/pkg/integrations"
 	"github.com/alswl/apilot/pkg/server"
+	"github.com/alswl/apilot/pkg/services"
 )
 
 func Execute() int {
@@ -22,6 +27,7 @@ func Execute() int {
 	capture := flags.String("capture", "", "save workbench screenshots in mock mode")
 	keybindings := flags.String("keybindings", "", "load workbench keyboard bindings from this JSON file")
 	language := flags.String("language", "system", "workbench language: system, en, or zh-Hans")
+	serve := flags.Bool("serve", false, "run the local server without a window")
 	verify := flags.Bool("verify-lifecycle", false, "run the lifecycle verification app")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		if err == flag.ErrHelp {
@@ -32,20 +38,28 @@ func Execute() int {
 	workbenchMode := *mock || *framework
 	if flags.NArg() != 0 || (*capture != "" && !*mock) ||
 		((*keybindings != "" || *language != "system") && !workbenchMode) ||
-		(*mock && *framework) || (workbenchMode && *verify) {
-		log.Print("usage: apilot-app [--workbench | --mock [--capture DIR] | --verify-lifecycle] [--keybindings FILE] [--language LANG]")
+		(*mock && *framework) || (workbenchMode && *verify) || (*serve && (workbenchMode || *verify)) {
+		log.Print("usage: apilot-app [--serve | --workbench | --mock [--capture DIR] | --verify-lifecycle] [--keybindings FILE] [--language LANG]")
 		return 2
 	}
 	if workbenchMode {
 		var err error
 		if *framework {
-			runtime, openErr := server.Open(config.DataDir())
-			if openErr != nil {
-				log.Print(openErr)
-				return 1
+			dir := config.DataDir()
+			remote := services.NewRemote(config.SocketPath(dir))
+			if _, statusErr := remote.Call("status", nil); statusErr != nil {
+				if common.ProtocolError(statusErr).Code != "APP_NOT_RUNNING" {
+					log.Print(statusErr)
+					return 1
+				}
+				runtime, openErr := server.Open(dir)
+				if openErr != nil {
+					log.Print(openErr)
+					return 1
+				}
+				defer runtime.Close()
 			}
-			defer runtime.Close()
-			err = workbench.RunLive(runtime.Service, *keybindings, *language)
+			err = workbench.RunLive(remote, *keybindings, *language)
 		} else {
 			err = workbench.RunMock(*capture, *keybindings, *language)
 		}
@@ -61,6 +75,12 @@ func Execute() int {
 		return 1
 	}
 	defer runtime.Close()
+	if *serve {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		<-ctx.Done()
+		return 0
+	}
 	if err := ui.Run(runtime, *verify); err != nil {
 		log.Print(err)
 		return 1

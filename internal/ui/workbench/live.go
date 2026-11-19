@@ -11,7 +11,7 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func RunLive(service *services.Service, keybindingsPath, language string) error {
+func RunLive(service *services.Remote, keybindingsPath, language string) error {
 	m := newFramework()
 	m.connectionsData = nil
 	m.live = service
@@ -80,8 +80,9 @@ func (m *mockup) refreshLive() {
 
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
 	var connections []connection
+	kinds := append(services.WorkbenchConnectors(), services.WorkbenchConnector{Kind: common.WorkbenchLocalImport, Name: tr("本地导入"), SearchAliases: []string{"import"}})
 	for _, snapshot := range snapshots {
-		for _, kind := range services.WorkbenchConnectors() {
+		for _, kind := range kinds {
 			if kind.Kind != snapshot.Kind {
 				continue
 			}
@@ -164,14 +165,13 @@ func (m *mockup) saveLiveConnection(config connection) string {
 			c.Statuses[state.native] = normalized
 		}
 	}
-	id, err := m.live.SaveWorkbench(c)
+	snapshot, err := m.live.SaveWorkbench(c)
 	if err != nil {
 		return common.ProtocolError(err).Message
 	}
 	m.liveGeneration++
-	snapshot, err := m.live.WorkbenchSnapshot(id)
-	if err != nil || snapshot.LastSuccess == nil || (config.ID != "" && snapshot.Version != config.Version) {
-		visible := slices.DeleteFunc(slices.Clone(m.objects), func(task sourceObject) bool { return task.ConnectionID == id })
+	if snapshot.LastSuccess == nil || (config.ID != "" && snapshot.Version != config.Version) {
+		visible := slices.DeleteFunc(slices.Clone(m.objects), func(task sourceObject) bool { return task.ConnectionID == snapshot.ID })
 		m.replaceLiveTasks(visible)
 	}
 	m.refreshLive()

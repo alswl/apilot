@@ -7,20 +7,42 @@ go run ./cmd/apilot-app --workbench
 open -n -a Apilot --args --workbench
 ```
 
-第一次打开时任务列表为空。在「连接 → 添加连接」选择 Obsidian Tasks，填写 vault 的绝对路径，可选填相对目录作为同步范围。Apilot 在保存后首次同步，运行期间每分钟刷新，也可点击连接的同步按钮。同一数据目录只运行一个 Apilot 实例，切换默认模式与工作台前先退出当前实例。任务和连接配置保存在 Apilot 的本地数据库中。来源不可读时仍可查看上次成功结果，连接页保留成功时间及最近的同步日志。改变范围后，旧范围数据会退出查询。Apilot 只读 Markdown 文件，隐藏目录、链接和代码示例中的任务不导入。
+第一次打开时任务列表为空。在「连接 → 添加连接」选择 Obsidian Tasks，填写 vault 的绝对路径，可选填相对目录作为同步范围。Apilot 在保存后首次同步，运行期间每分钟刷新，也可点击连接的同步按钮。同一数据目录由一个本地服务持有。工作台可连接已运行的服务。任务和连接配置保存在 Apilot 的本地数据库中。来源不可读时仍可查看上次成功结果，连接页保留成功时间及最近的同步日志。改变范围后，旧范围数据会退出查询。Apilot 只读 Markdown 文件，隐藏目录、链接和代码示例中的任务不导入。
 
 要离线体验第二种来源，在连接页主动添加 GitHub Issues。此连接使用标明「模拟数据」的 `alswl/issues` 示例，开放和关闭的 issue 均可浏览。该连接无需 GitHub 账号。
 
-在 Apilot 运行期间可通过 CLI 读取同一批数据。连接与任务 ID 可从列表中获取。
+## 用 CLI 配置、导入和查询
+
+可以先在独立终端启动本地服务。CLI 和工作台都通过当前用户的 Unix Socket 连接，使用相同的 `APILOT_DATA_DIR`。工作台单独启动时也可为自己启动本地服务。
+
+```sh
+go run ./cmd/apilot-app --serve
+```
+
+在另一个终端配置来源，或直接导入一组本地任务。
+
+```sh
+printf '%s\n' '{"kind":"obsidian_tasks","name":"Notes","vault":"/path/to/vault","scope":"Work"}' |
+  apilot workbench connection save - --json
+
+printf '%s\n' '{"name":"Inbox","tasks":[{"key":"review","title":"Review release notes","state":"open"}]}' |
+  apilot workbench task import - --json
+```
+
+两个命令也可读取 JSON 文件。更新已有 Obsidian 或模拟连接时，配置中带上现有 `id` 和 `version`。GitHub 模拟配置的 `kind` 为 `github_issues`，`repository` 为 `alswl/issues`。本地导入按名称替换整组任务。沿用同一个 `key` 可保留任务 ID。提供空的 `tasks` 数组会清空该组。任务状态可用 `open`、`in_progress`、`done`、`cancelled` 或 `unknown`。
+
+连接与任务 ID 可从列表中获取。
 
 ```sh
 apilot workbench connection list --json
+apilot workbench connection show CONNECTION_ID --json
+apilot workbench sync run CONNECTION_ID --json
 apilot workbench task list --connection CONNECTION_ID --state open --json
 apilot workbench task show TASK_ID --json
 apilot workbench sync show CONNECTION_ID --json
 ```
 
-生产工作台的来源任务操作为只读。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
+`apilot workbench connection remove CONNECTION_ID` 可删除连接及本地快照。Obsidian 和 GitHub 来源始终只读。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
 
 ```sh
 go run ./cmd/apilot-app --mock

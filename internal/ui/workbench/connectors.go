@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo/ui"
 )
@@ -72,6 +73,9 @@ func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
 			})
 			if components.IconButton(c.Key("log"), "list.bullet.rectangle", tr("同步日志")+" · "+tr(conn.Name), false).Clicked() {
 				m.syncLogID = conn.ID
+			}
+			if conn.SourceKind == common.WorkbenchLocalImport {
+				return
 			}
 			if components.IconButton(c.Key("settings"), "gearshape", tr("连接配置")+" · "+tr(conn.Name), m.pendingSync[conn.ID]).Clicked() {
 				m.editConnector(*conn)

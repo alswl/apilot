@@ -30,7 +30,7 @@ var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 
 type mockup struct {
 	liveConnections                      []common.WorkbenchSnapshot
-	live                                 *services.Service
+	live                                 *services.Remote
 	liveBusy, liveError                  bool
 	liveGeneration                       uint64
 	framework                            bool

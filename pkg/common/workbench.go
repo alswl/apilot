@@ -83,3 +83,17 @@ type WorkbenchPage struct {
 	Total    int             `json:"total"`
 	Revision int64           `json:"revision"`
 }
+
+const WorkbenchLocalImport = "local_import"
+
+type WorkbenchImport struct {
+	Name  string                `json:"name"`
+	Tasks []WorkbenchImportTask `json:"tasks"`
+}
+
+type WorkbenchImportTask struct {
+	Key     string `json:"key"`
+	Title   string `json:"title"`
+	State   string `json:"state"`
+	Summary string `json:"summary,omitempty"`
+}

@@ -161,4 +161,46 @@ func TestWorkbenchReadPath(t *testing.T) {
 	if get(obs).Total != 0 {
 		t.Fatal("obsolete scope is visible")
 	}
+	file := filepath.Join(t.TempDir(), "input.json")
+	send := func(input string, code int, args ...string) json.RawMessage {
+		t.Helper()
+		if err := os.WriteFile(file, []byte(input), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return call(code, append(args, file)...)
+	}
+	var created common.WorkbenchSnapshot
+	data := send(`{"kind":"github_issues","name":"CLI mock","repository":"alswl/issues"}`, 0, "workbench", "connection", "save")
+	if err := json.Unmarshal(data, &created); err != nil {
+		t.Fatal(err)
+	}
+	previous := wait(runtime.Service, created.ID, "success", 0)
+	call(0, "workbench", "connection", "show", created.ID)
+	call(0, "workbench", "sync", "run", created.ID)
+	wait(runtime.Service, created.ID, "success", previous.ID)
+	call(0, "workbench", "connection", "remove", created.ID)
+	call(4, "workbench", "connection", "show", created.ID)
+	data = send(`{"name":"Collected","tasks":[{"key":"a","title":"Original","state":"open"}]}`, 0, "workbench", "task", "import")
+	if err := json.Unmarshal(data, &created); err != nil {
+		t.Fatal(err)
+	}
+	page := get(created.ID)
+	if page.Total != 1 || page.Items[0].Mode != "import" {
+		t.Fatalf("%+v", page)
+	}
+	importedID := page.Items[0].ID
+	send(`{"name":"Collected","tasks":[{"key":"a","title":"Updated","state":"done"}]}`, 0, "workbench", "task", "import")
+	page = get(created.ID)
+	if page.Total != 1 || page.Items[0].ID != importedID || page.Items[0].State != "done" {
+		t.Fatalf("%+v", page)
+	}
+	send(`{"name":"Collected","tasks":[{"key":"a","title":"Invalid","state":"invalid"}]}`, 2, "workbench", "task", "import")
+	if get(created.ID).Items[0].Title != "Updated" {
+		t.Fatal("invalid import overwrote the snapshot")
+	}
+	send(`{"name":"Collected","tasks":[]}`, 0, "workbench", "task", "import")
+	if get(created.ID).Total != 0 {
+		t.Fatal("empty import did not clear the collection")
+	}
+
 }

@@ -99,7 +99,7 @@ func TestEmptyFrameworkNavigationAndConnectorScaffolds(t *testing.T) {
 
 func TestLiveWorkbenchProjectsReadOnlyTasks(t *testing.T) {
 	m := newFramework()
-	m.live = &services.Service{}
+	m.live = services.NewRemote("")
 	m.useAdaptiveLayout()
 	local := common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: "local", Name: "Vault", Kind: obsidianTasks, Mode: "local"}}
 	mock := common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: "mock", Name: "Example", Kind: githubIssues, Mode: "mock", Repository: "alswl/issues"}}

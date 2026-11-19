@@ -24,6 +24,8 @@ func readWorkbench(ctx context.Context, c common.WorkbenchConnection) ([]common.
 type workbenchStore interface {
 	WorkbenchConnections() ([]common.WorkbenchSnapshot, error)
 	SaveWorkbench(common.WorkbenchConnection, bool) error
+	DeleteWorkbench(string) error
+	CommitWorkbenchImport(common.WorkbenchConnection, []common.WorkbenchAttempt, []common.WorkbenchTask, []common.WorkbenchTask, *time.Time) error
 	RecordWorkbench(common.WorkbenchConnection, []common.WorkbenchAttempt, []common.WorkbenchTask, []common.WorkbenchTask, *time.Time) error
 	WorkbenchPage(common.WorkbenchQuery) (common.WorkbenchPage, error)
 	WorkbenchObject(string) (common.WorkbenchTask, error)
@@ -187,6 +189,9 @@ func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) er
 	if err != nil {
 		return err
 	}
+	if snapshot.Kind == common.WorkbenchLocalImport {
+		return common.Err("INVALID_ARGUMENT", "Update imported tasks with workbench task import")
+	}
 	now := time.Now().UTC()
 	for i := range snapshot.Attempts {
 		if snapshot.Attempts[i].State == "running" {
@@ -250,20 +255,7 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 		return
 	}
 	matchWorkbench(c, before, tasks)
-	old := map[string]common.WorkbenchTask{}
-	for _, task := range before {
-		old[task.ID] = task
-	}
-	for _, task := range tasks {
-		prior, ok := old[task.ID]
-		if !ok {
-			attempt.Added++
-		} else if !reflect.DeepEqual(prior, task) {
-			attempt.Updated++
-		}
-		delete(old, task.ID)
-	}
-	attempt.Removed = len(old)
+	countWorkbenchChanges(attempt, before, tasks)
 	attempt.State = "success"
 	if err := st.RecordWorkbench(c, attempts, before, tasks, &now); err != nil {
 		attempt.State = "failed"
@@ -285,6 +277,9 @@ func (s *Service) tickWorkbench(st workbenchStore) {
 			connections, err := st.WorkbenchConnections()
 			if err == nil {
 				for _, c := range connections {
+					if c.Kind == common.WorkbenchLocalImport {
+						continue
+					}
 					s.mu.Lock()
 					_ = s.startWorkbenchLocked(st, c.ID, trigger)
 					s.mu.Unlock()
@@ -294,4 +289,21 @@ func (s *Service) tickWorkbench(st workbenchStore) {
 			timer.Reset(time.Minute)
 		}
 	}
+}
+
+func countWorkbenchChanges(attempt *common.WorkbenchAttempt, before, tasks []common.WorkbenchTask) {
+	old := map[string]common.WorkbenchTask{}
+	for _, task := range before {
+		old[task.ID] = task
+	}
+	for _, task := range tasks {
+		prior, ok := old[task.ID]
+		if !ok {
+			attempt.Added++
+		} else if !reflect.DeepEqual(prior, task) {
+			attempt.Updated++
+		}
+		delete(old, task.ID)
+	}
+	attempt.Removed = len(old)
 }
