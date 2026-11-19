@@ -185,7 +185,7 @@ func TestWorkbenchReadPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := get(created.ID)
-	if page.Total != 1 || page.Items[0].Mode != "import" {
+	if page.Total != 1 || page.Items[0].Kind != common.WorkbenchLocal || page.Items[0].Mode != "local" {
 		t.Fatalf("%+v", page)
 	}
 	importedID := page.Items[0].ID
@@ -202,5 +202,28 @@ func TestWorkbenchReadPath(t *testing.T) {
 	if get(created.ID).Total != 0 {
 		t.Fatal("empty import did not clear the collection")
 	}
+
+	var catalog struct {
+		Items []struct {
+			Kind string `json:"kind"`
+		}
+	}
+	if err := json.Unmarshal(call(0, "workbench", "connector", "list"), &catalog); err != nil {
+		t.Fatal(err)
+	}
+	foundLocal := false
+	for _, item := range catalog.Items {
+		foundLocal = foundLocal || item.Kind == common.WorkbenchLocal
+	}
+	if !foundLocal {
+		t.Fatal("connector catalog omitted Local")
+	}
+	call(0, "workbench", "connection", "show", common.DefaultWorkbenchLocalID)
+	send(`{"tasks":[{"key":"hello","title":"Default Local task","state":"open"}]}`, 0, "workbench", "task", "import")
+	if page := get(common.DefaultWorkbenchLocalID); page.Total != 1 || page.Items[0].Kind != common.WorkbenchLocal {
+		t.Fatalf("%+v", page)
+	}
+	call(2, "workbench", "sync", "run", common.DefaultWorkbenchLocalID)
+	call(5, "workbench", "connection", "remove", common.DefaultWorkbenchLocalID)
 
 }

@@ -3,6 +3,8 @@ package workbench
 import (
 	_ "embed"
 
+	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -27,6 +29,10 @@ func parseConnectorLogo(mark []byte) *ui.SVG {
 }
 
 func connectorLogo(c *ui.Context, kind string, size float32) {
+	if kind == common.WorkbenchLocal {
+		ui.Box(c).Size(size, size).Shrink(0).Children(func() { components.Symbol(c, "internaldrive", c.Theme().TextMuted) })
+		return
+	}
 	logo, color := obsidianLogo, ui.Hex("#7C3AED")
 	if kind == githubIssues {
 		logo, color = githubLogo, c.Theme().Text

@@ -189,7 +189,7 @@ func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) er
 	if err != nil {
 		return err
 	}
-	if snapshot.Kind == common.WorkbenchLocalImport {
+	if snapshot.Kind == common.WorkbenchLocal {
 		return common.Err("INVALID_ARGUMENT", "Update imported tasks with workbench task import")
 	}
 	now := time.Now().UTC()
@@ -277,7 +277,7 @@ func (s *Service) tickWorkbench(st workbenchStore) {
 			connections, err := st.WorkbenchConnections()
 			if err == nil {
 				for _, c := range connections {
-					if c.Kind == common.WorkbenchLocalImport {
+					if c.Kind == common.WorkbenchLocal {
 						continue
 					}
 					s.mu.Lock()

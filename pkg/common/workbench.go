@@ -84,10 +84,13 @@ type WorkbenchPage struct {
 	Revision int64           `json:"revision"`
 }
 
-const WorkbenchLocalImport = "local_import"
+const (
+	WorkbenchLocal          = "local"
+	DefaultWorkbenchLocalID = "local"
+)
 
 type WorkbenchImport struct {
-	Name  string                `json:"name"`
+	Name  string                `json:"name,omitempty"`
 	Tasks []WorkbenchImportTask `json:"tasks"`
 }
 

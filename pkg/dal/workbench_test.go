@@ -50,7 +50,7 @@ func TestWorkbenchSnapshotTransaction(t *testing.T) {
 		t.Fatal("accepted stale query")
 	}
 	current, err := s.WorkbenchConnections()
-	if err != nil || len(current) != 1 || current[0].LastSuccess == nil {
+	if err != nil || len(current) != 2 || current[1].ID != c.ID || current[1].LastSuccess == nil {
 		t.Fatalf("empty result should be successful: %+v %v", current, err)
 	}
 }
@@ -80,5 +80,45 @@ func TestWorkbenchMigratesV2(t *testing.T) {
 	}
 	if _, err := s.WorkbenchConnections(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWorkbenchMigratesImportedConnection(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := common.WorkbenchConnection{ID: "legacy", Version: 1, Kind: "local_import", Mode: "import", Name: "Local"}
+	task := common.WorkbenchTask{ID: "preserved", ConnectionID: c.ID, SourceKey: "original", Kind: c.Kind, Mode: c.Mode, Title: "Before update", State: "open"}
+	now := time.Now().UTC()
+	attempts := []common.WorkbenchAttempt{{ID: 1, Trigger: "import", State: "success", Started: now, Finished: &now}}
+	if err := s.CommitWorkbenchImport(c, attempts, nil, []common.WorkbenchTask{task}, &now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("DELETE FROM workbench_connections WHERE id='local'; PRAGMA user_version=3"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	connections, err := s.WorkbenchConnections()
+	if err != nil || len(connections) != 2 {
+		t.Fatalf("connections=%+v err=%v", connections, err)
+	}
+	migrated, builtin := connections[0], connections[1]
+	if migrated.ID != c.ID || migrated.Kind != common.WorkbenchLocal || len(migrated.Attempts) != 1 ||
+		builtin.ID != common.DefaultWorkbenchLocalID || builtin.Name == migrated.Name {
+		t.Fatalf("migration did not preserve the existing collection: %+v", connections)
+	}
+	obj, err := s.WorkbenchObject(task.ID)
+	if err != nil || obj.ConnectionID != c.ID || obj.SourceKey != task.SourceKey ||
+		obj.Kind != common.WorkbenchLocal || obj.Mode != "local" {
+		t.Fatalf("task=%+v err=%v", obj, err)
 	}
 }

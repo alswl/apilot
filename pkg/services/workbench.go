@@ -4,24 +4,27 @@ import "github.com/alswl/apilot/pkg/common"
 
 // WorkbenchConnector describes a source kind and its fixture configuration.
 type WorkbenchConnector struct {
-	Kind             string
-	Name             string
-	DemoCapabilities string
-	DemoSyncMode     string
-	SearchAliases    []string
-	SearchFields     []string
+	Kind             string   `json:"kind"`
+	Name             string   `json:"name"`
+	UserConfigurable bool     `json:"user_configurable"`
+	DemoCapabilities string   `json:"-"`
+	DemoSyncMode     string   `json:"-"`
+	SearchAliases    []string `json:"search_aliases,omitempty"`
+	SearchFields     []string `json:"search_fields,omitempty"`
 }
 
 func WorkbenchConnectors() []WorkbenchConnector {
 	return []WorkbenchConnector{
+		{Kind: common.WorkbenchLocal, Name: "Local", SearchAliases: []string{"local", "import"}},
+
 		{
-			Kind: common.WorkbenchGitHubIssues, Name: "GitHub Issues",
+			Kind: common.WorkbenchGitHubIssues, Name: "GitHub Issues", UserConfigurable: true,
 			DemoCapabilities: "Issues 写入 · Webhook", DemoSyncMode: "定时拉取",
 			SearchAliases: []string{"github", "issues"},
 			SearchFields:  []string{"repo", "assignee", "milestone", "state", "state_reason"},
 		},
 		{
-			Kind: common.WorkbenchObsidianTasks, Name: "Obsidian Tasks",
+			Kind: common.WorkbenchObsidianTasks, Name: "Obsidian Tasks", UserConfigurable: true,
 			DemoCapabilities: "文件变化 · 增量读取 · 回写", DemoSyncMode: "文件变化",
 			SearchAliases: []string{"obsidian"},
 			SearchFields:  []string{"path", "section", "start", "scheduled", "done", "checkbox"},

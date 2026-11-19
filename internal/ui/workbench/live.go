@@ -80,7 +80,7 @@ func (m *mockup) refreshLive() {
 
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
 	var connections []connection
-	kinds := append(services.WorkbenchConnectors(), services.WorkbenchConnector{Kind: common.WorkbenchLocalImport, Name: tr("本地导入"), SearchAliases: []string{"import"}})
+	kinds := services.WorkbenchConnectors()
 	for _, snapshot := range snapshots {
 		for _, kind := range kinds {
 			if kind.Kind != snapshot.Kind {
@@ -93,6 +93,9 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			}
 			draft.Scope, draft.VaultPath, draft.Repository = snapshot.Scope, snapshot.Vault, snapshot.Repository
 			draft.Status, draft.Capabilities, draft.Identity = "等待首次同步", "只读", "本地"
+			if snapshot.Kind == common.WorkbenchLocal {
+				draft.Scope, draft.Capabilities = "由 Apilot 管理", "CLI 导入"
+			}
 			if snapshot.Mode == "mock" {
 				draft.Scope, draft.Identity = snapshot.Repository, "模拟数据"
 			}
@@ -114,9 +117,15 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 					draft.Status = "连接断开"
 				}
 			}
+			if snapshot.Kind == common.WorkbenchLocal {
+				draft.Status = "可用"
+			}
 			events := make([]syncEvent, 0, len(snapshot.Attempts))
 			for _, a := range slices.Backward(snapshot.Attempts) {
 				message := tr(workbenchAttemptLabel(a.State))
+				if a.Trigger == "import" {
+					message = tr("导入完成")
+				}
 				if a.State == "success" {
 					message += fmt.Sprintf(" (+%d ~%d −%d)", a.Added, a.Updated, a.Removed)
 				}

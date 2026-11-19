@@ -7,6 +7,8 @@ import (
 
 func dispatchWorkbench(s *services.Service, r Request) (any, error) {
 	switch r.Method {
+	case "workbench.connector.list":
+		return map[string]any{"items": services.WorkbenchConnectors()}, nil
 	case "workbench.task.list":
 		var q common.WorkbenchQuery
 		if err := decode(r.Params, &q); err != nil {

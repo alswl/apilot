@@ -29,11 +29,12 @@ printf '%s\n' '{"name":"Inbox","tasks":[{"key":"review","title":"Review release 
   apilot workbench task import - --json
 ```
 
-两个命令也可读取 JSON 文件。更新已有 Obsidian 或模拟连接时，配置中带上现有 `id` 和 `version`。GitHub 模拟配置的 `kind` 为 `github_issues`，`repository` 为 `alswl/issues`。本地导入按名称替换整组任务。沿用同一个 `key` 可保留任务 ID。提供空的 `tasks` 数组会清空该组。任务状态可用 `open`、`in_progress`、`done`、`cancelled` 或 `unknown`。
+两个命令也可读取 JSON 文件。更新已有 Obsidian 或模拟连接时，配置中带上现有 `id` 和 `version`。GitHub 模拟配置的 `kind` 为 `github_issues`，`repository` 为 `alswl/issues`。Local 是 Apilot 内置的任务连接器，默认连接无需配置。导入时省略 `name` 写入默认 Local；指定名称会创建或更新一个命名的 Local 连接。每次导入替换该连接内的任务。沿用同一个 `key` 可保留任务 ID。提供空的 `tasks` 数组会清空该组。任务状态可用 `open`、`in_progress`、`done`、`cancelled` 或 `unknown`。
 
-连接与任务 ID 可从列表中获取。
+连接器类型、连接与任务 ID 可从列表中获取。
 
 ```sh
+apilot workbench connector list --json
 apilot workbench connection list --json
 apilot workbench connection show CONNECTION_ID --json
 apilot workbench sync run CONNECTION_ID --json
@@ -42,7 +43,7 @@ apilot workbench task show TASK_ID --json
 apilot workbench sync show CONNECTION_ID --json
 ```
 
-`apilot workbench connection remove CONNECTION_ID` 可删除连接及本地快照。Obsidian 和 GitHub 来源始终只读。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
+`apilot workbench connection remove CONNECTION_ID` 可删除用户创建的连接及本地快照。默认 Local 连接可用空的 `tasks` 数组清空。Obsidian 和 GitHub 来源始终只读。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
 
 ```sh
 go run ./cmd/apilot-app --mock

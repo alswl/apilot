@@ -21,6 +21,9 @@ var observerSchema string
 //go:embed migrations/003_workbench.sql
 var workbenchSchema string
 
+//go:embed migrations/004_workbench_local.sql
+var workbenchLocalSchema string
+
 type Store struct{ db *sql.DB }
 
 func Open(path string) (*Store, error) {
@@ -44,64 +47,36 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, e
 	}
-	if version > 3 {
+	if version > 4 {
 		db.Close()
-		return nil, fmt.Errorf("database schema %d is newer than supported 3", version)
+		return nil, fmt.Errorf("database schema %d is newer than supported 4", version)
 	}
-	if version == 0 {
-		tx, e := db.Begin()
-		if e != nil {
+	for index, migration := range []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema} {
+		next := index + 1
+		if next <= version {
+			continue
+		}
+		if err := applyMigration(db, next, migration); err != nil {
 			db.Close()
-			return nil, e
-		}
-		defer tx.Rollback()
-		if _, e = tx.Exec(schema); e == nil {
-			_, e = tx.Exec("PRAGMA user_version=1")
-		}
-		if e == nil {
-			e = tx.Commit()
-		}
-		if e != nil {
-			db.Close()
-			return nil, e
-		}
-	}
-	if version < 2 {
-		tx, e := db.Begin()
-		if e != nil {
-			db.Close()
-			return nil, e
-		}
-		defer tx.Rollback()
-		if _, e = tx.Exec(observerSchema); e == nil {
-			_, e = tx.Exec("PRAGMA user_version=2")
-		}
-		if e == nil {
-			e = tx.Commit()
-		}
-		if e != nil {
-			db.Close()
-			return nil, e
-		}
-	}
-	if version < 3 {
-		tx, err := db.Begin()
-		if err == nil {
-			defer tx.Rollback()
-			_, err = tx.Exec(workbenchSchema)
-			if err == nil {
-				_, err = tx.Exec("PRAGMA user_version=3")
-			}
-			if err == nil {
-				err = tx.Commit()
-			}
-		}
-		if err != nil {
-			db.Close()
-			return nil, err
+			return nil, fmt.Errorf("migrate database to schema %d: %w", next, err)
 		}
 	}
 	return s, nil
+}
+
+func applyMigration(db *sql.DB, version int, schema string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(schema); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version=%d", version)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) Close() error { return s.db.Close() }

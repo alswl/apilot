@@ -42,7 +42,7 @@ func (m *mockup) connections(c *ui.Context) {
 	ui.Row(c.Key("actions")).FillWidth().Justify(ui.End).Children(func() {
 		ui.MenuButton(c.Key("add"), tr("添加连接"), func(menu *ui.Menu) {
 			for _, connector := range services.WorkbenchConnectors() {
-				if menu.Item(connector.Name).Chosen() {
+				if connector.UserConfigurable && menu.Item(connector.Name).Chosen() {
 					m.addConnector(connector.Kind)
 				}
 			}
@@ -71,10 +71,10 @@ func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
 				components.Heading(c, tr(conn.Name))
 				components.Muted(c, tr(conn.ConnectorID)+" · "+tr(conn.Scope))
 			})
-			if components.IconButton(c.Key("log"), "list.bullet.rectangle", tr("同步日志")+" · "+tr(conn.Name), false).Clicked() {
+			if components.IconButton(c.Key("log"), "list.bullet.rectangle", m.connectorLogTitle(conn)+" · "+tr(conn.Name), false).Clicked() {
 				m.syncLogID = conn.ID
 			}
-			if conn.SourceKind == common.WorkbenchLocalImport {
+			if conn.SourceKind == common.WorkbenchLocal {
 				return
 			}
 			if components.IconButton(c.Key("settings"), "gearshape", tr("连接配置")+" · "+tr(conn.Name), m.pendingSync[conn.ID]).Clicked() {
@@ -107,10 +107,16 @@ func (m *mockup) syncProgressView(c *ui.Context, conn *connection) {
 			ui.Progress(c.Key("bar"), float64(progress)/3).FillWidth().Label(tr("同步进度"))
 		} else {
 			icon, color := "checkmark.circle", c.Theme().Success
-			if conn.Status != "同步正常" {
+			if conn.Status != "同步正常" && conn.Status != "可用" {
 				icon, color = "exclamationmark.circle", c.Theme().Warning
 			}
 			components.StatusLabel(c.Key("status"), components.Status{Text: tr(conn.Status), Icon: icon, Color: color})
+		}
+		if conn.SourceKind == common.WorkbenchLocal {
+			if conn.LastConfirmedAt != "—" {
+				components.Muted(c, tr("上次导入 ")+conn.LastConfirmedAt)
+			}
+			return
 		}
 		components.Muted(c, tr("上次确认 ")+tr(conn.LastConfirmedAt))
 	})
@@ -154,6 +160,13 @@ func (m *mockup) syncConnection(conn *connection, after func(time.Duration, func
 	})
 }
 
+func (m *mockup) connectorLogTitle(conn *connection) string {
+	if conn.SourceKind == common.WorkbenchLocal {
+		return tr("导入记录")
+	}
+	return tr("同步日志")
+}
+
 func (m *mockup) syncLogDialog(c *ui.Context) {
 	open := m.syncLogID != ""
 	ui.Modal(c, &open, func() {
@@ -163,7 +176,7 @@ func (m *mockup) syncLogDialog(c *ui.Context) {
 			return
 		}
 		ui.Column(c).Width(490).Gap(12).Children(func() {
-			components.Title(c, tr("同步日志"))
+			components.Title(c, m.connectorLogTitle(conn))
 			components.Muted(c, tr(conn.Name)+" · "+tr(conn.ConnectorID))
 			m.syncProgressView(c.Key("status"), conn)
 			ui.Divider(c)
@@ -209,6 +222,9 @@ func (m *mockup) connectorDraft(connector services.WorkbenchConnector) connectio
 
 func (m *mockup) seedConnectorScaffolds() {
 	for _, connector := range services.WorkbenchConnectors() {
+		if !connector.UserConfigurable {
+			continue
+		}
 		draft := m.connectorDraft(connector)
 		draft.ID, draft.Name, draft.Scope, draft.Identity = connector.Kind, connector.Name, "—", "—"
 		m.connectionsData = append(m.connectionsData, draft)
@@ -217,7 +233,7 @@ func (m *mockup) seedConnectorScaffolds() {
 
 func (m *mockup) addConnector(kind string) {
 	for _, connector := range services.WorkbenchConnectors() {
-		if connector.Kind == kind {
+		if connector.Kind == kind && connector.UserConfigurable {
 			m.editConnector(m.connectorDraft(connector))
 			return
 		}

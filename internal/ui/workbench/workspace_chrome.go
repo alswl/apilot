@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -69,6 +70,10 @@ func breadcrumbButton(c *ui.Context, title, label string) bool {
 func (m *mockup) statusBar(c *ui.Context) {
 	total, pending, unhealthy, awaiting := len(m.connectionsData), len(m.pendingSync), 0, 0
 	for _, conn := range m.connectionsData {
+		if conn.SourceKind == common.WorkbenchLocal {
+			total--
+			continue
+		}
 		if m.pendingSync[conn.ID] {
 			continue
 		}

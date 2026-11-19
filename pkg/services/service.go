@@ -172,7 +172,7 @@ func (s *Service) Doctor() map[string]any {
 		st, e := os.Stat(path)
 		checks[path] = map[string]any{"exists": e == nil, "directory": e == nil && st.IsDir()}
 	}
-	return map[string]any{"data_dir": s.dir, "schema_version": 3, "status": s.Status(), "path_checks": checks}
+	return map[string]any{"data_dir": s.dir, "schema_version": 4, "status": s.Status(), "path_checks": checks}
 }
 
 func (s *Service) String() string { return fmt.Sprintf("apilot(%s)", s.dir) }

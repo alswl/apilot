@@ -17,7 +17,7 @@ func init() {
 	group.AddCommand(list, &cobra.Command{Use: "show ID", Args: cobra.ExactArgs(1), RunE: func(_ *cobra.Command, args []string) error {
 		return showWorkbench("workbench.task.show", map[string]string{"id": args[0]})
 	}})
-	group.AddCommand(&cobra.Command{Use: "import FILE|-", Short: "Replace a named local task collection from JSON", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	group.AddCommand(&cobra.Command{Use: "import FILE|-", Short: "Replace tasks in a Local connection from JSON", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		return workbenchJSONFile(cmd, "workbench.task.import", args[0])
 	}})
 	workbenchCmd.AddCommand(group)

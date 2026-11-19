@@ -17,6 +17,9 @@ func (s *Service) RemoveWorkbench(id string) error {
 	if err != nil {
 		return err
 	}
+	if id == common.DefaultWorkbenchLocalID {
+		return common.Err("CONFLICT", "The built-in Local connection can be cleared by importing an empty tasks array")
+	}
 	if err := st.DeleteWorkbench(id); err != nil {
 		return err
 	}
@@ -34,8 +37,8 @@ func (s *Service) ImportWorkbench(batch common.WorkbenchImport) (common.Workbenc
 		return empty, common.Err("CONFLICT", "App is stopping")
 	}
 	batch.Name = strings.TrimSpace(batch.Name)
-	if batch.Name == "" || len(batch.Name) > 256 || batch.Tasks == nil {
-		return empty, common.Err("INVALID_ARGUMENT", "An import name and tasks array are required")
+	if len(batch.Name) > 256 || batch.Tasks == nil {
+		return empty, common.Err("INVALID_ARGUMENT", "Provide a tasks array and an optional connection name of at most 256 bytes")
 	}
 	tasks := make([]common.WorkbenchTask, 0, len(batch.Tasks))
 	keys := map[string]bool{}
@@ -55,19 +58,26 @@ func (s *Service) ImportWorkbench(batch common.WorkbenchImport) (common.Workbenc
 	if err != nil {
 		return empty, err
 	}
-	c := common.WorkbenchConnection{ID: common.ID(), Version: 1, Kind: common.WorkbenchLocalImport, Mode: "import", Name: batch.Name}
+	c := common.WorkbenchConnection{ID: common.ID(), Version: 1, Kind: common.WorkbenchLocal, Mode: "local", Name: batch.Name}
 	var attempts []common.WorkbenchAttempt
 	existing := false
 	for _, snapshot := range list {
-		if !strings.EqualFold(snapshot.Name, batch.Name) {
+		matches := strings.EqualFold(snapshot.Name, batch.Name)
+		if batch.Name == "" {
+			matches = snapshot.ID == common.DefaultWorkbenchLocalID
+		}
+		if !matches {
 			continue
 		}
-		if snapshot.Kind != common.WorkbenchLocalImport {
+		if snapshot.Kind != common.WorkbenchLocal {
 			return empty, common.Err("CONFLICT", "Connection name belongs to another source")
 		}
 		c, attempts = snapshot.WorkbenchConnection, snapshot.Attempts
 		existing = true
 		break
+	}
+	if batch.Name == "" && !existing {
+		return empty, common.Err("INTERNAL", "Built-in Local connection unavailable")
 	}
 	var before []common.WorkbenchTask
 	if existing {
