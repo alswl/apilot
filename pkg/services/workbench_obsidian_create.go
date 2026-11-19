@@ -124,7 +124,8 @@ func (s *Service) reconcileObsidianWrite(store workbenchStore, writer workbenchT
 	index := -1
 	if input.SourceObjectID != "" {
 		for i := range tasks {
-			if tasks[i].ID == input.SourceObjectID && tasks[i].State == input.State {
+			date := tasks[i].NativeFields["done"]
+			if tasks[i].ID == input.SourceObjectID && tasks[i].State == input.State && (date != "") == (input.State == "done") {
 				index = i
 				break
 			}

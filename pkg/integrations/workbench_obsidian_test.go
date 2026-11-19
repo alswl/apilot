@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/alswl/apilot/pkg/common"
 )
@@ -112,13 +113,13 @@ func TestWorkbenchObsidianCheckboxKeepsOtherBytes(t *testing.T) {
 	original := "\xef\xbb\xbf# Tasks\r\n  2. [ ] Ship #release 📅 2026-11-20 🆔 release\r\n- [ ] Keep\r\n"
 	task := parseWorkbenchNote(connection, "Release.md", original)[0]
 	edited := "Extra paragraph\r\n" + original
-	data, err := SetWorkbenchObsidianCheckbox(connection, []byte(edited), task, "done")
-	want := strings.Replace(edited, "2. [ ]", "2. [x]", 1)
+	data, err := SetWorkbenchObsidianCheckbox(connection, []byte(edited), task, "done", time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC))
+	want := strings.Replace(edited, "2. [ ] Ship #release 📅 2026-11-20 🆔 release", "2. [x] Ship #release 📅 2026-11-20 🆔 release ✅ 2026-11-20", 1)
 	if err != nil || string(data) != want {
 		t.Fatalf("result: %q, %v", data, err)
 	}
 	duplicate := original + "  2. [ ] Ship #release 📅 2026-11-20 🆔 release\r\n"
-	if _, err := SetWorkbenchObsidianCheckbox(connection, []byte(duplicate), task, "done"); err == nil {
+	if _, err := SetWorkbenchObsidianCheckbox(connection, []byte(duplicate), task, "done", time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)); err == nil {
 		t.Fatal("accepted a duplicate target")
 	}
 }
@@ -150,8 +151,30 @@ func TestWorkbenchObsidianCheckboxDistinguishesSections(t *testing.T) {
 	connection := common.WorkbenchConnection{}
 	original := "# First\n- [ ] Review\n# Second\n- [ ] Review\n"
 	tasks := parseWorkbenchNote(connection, "Release.md", original)
-	result, err := SetWorkbenchObsidianCheckbox(connection, []byte(original), tasks[1], "done")
-	if err != nil || string(result) != "# First\n- [ ] Review\n# Second\n- [x] Review\n" {
+	result, err := SetWorkbenchObsidianCheckbox(connection, []byte(original), tasks[1], "done", time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC))
+	if err != nil || string(result) != "# First\n- [ ] Review\n# Second\n- [x] Review ✅ 2026-11-20\n" {
 		t.Fatalf("second section: %q %v", result, err)
+	}
+}
+
+func TestWorkbenchObsidianCompletionKeepsTaskFormatAndNoteTail(t *testing.T) {
+	connection := common.WorkbenchConnection{}
+	date := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)
+	open := "- [ ] Review [due:: 2026-11-22] ^anchor <!-- ✅ 2020-01-01 -->\r\n"
+	task := parseWorkbenchNote(connection, "Review.md", open)[0]
+	closed, err := SetWorkbenchObsidianCheckbox(connection, []byte(open), task, "done", date)
+	want := "- [x] Review [due:: 2026-11-22] [completion:: 2026-11-20] ^anchor <!-- ✅ 2020-01-01 -->\r\n"
+	if err != nil || string(closed) != want {
+		t.Fatalf("completed: %q %v", closed, err)
+	}
+	task = parseWorkbenchNote(connection, "Review.md", string(closed))[0]
+	tomorrow := date.AddDate(0, 0, 1)
+	again, err := SetWorkbenchObsidianCheckbox(connection, closed, task, "done", tomorrow)
+	if err != nil || string(again) != want {
+		t.Fatalf("completion date should be kept: %q %v", again, err)
+	}
+	reopened, err := SetWorkbenchObsidianCheckbox(connection, closed, task, "open", tomorrow)
+	if err != nil || string(reopened) != open {
+		t.Fatalf("reopened: %q %v", reopened, err)
 	}
 }

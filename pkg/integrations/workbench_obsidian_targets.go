@@ -9,9 +9,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/alswl/apilot/pkg/common"
 )
@@ -251,8 +253,8 @@ func MatchesWorkbenchObsidianTask(prior, candidate common.WorkbenchTask) bool {
 }
 
 // SetWorkbenchObsidianCheckbox locates the previously observed task in the
-// current note and changes only its checkbox byte.
-func SetWorkbenchObsidianCheckbox(c common.WorkbenchConnection, content []byte, prior common.WorkbenchTask, state string) ([]byte, error) {
+// current note and updates its checkbox and Tasks completion date.
+func SetWorkbenchObsidianCheckbox(c common.WorkbenchConnection, content []byte, prior common.WorkbenchTask, state string, date time.Time) ([]byte, error) {
 	path := prior.NativeFields["path"]
 	line := -1
 	for _, candidate := range parseWorkbenchNote(c, path, string(content)) {
@@ -289,6 +291,46 @@ func SetWorkbenchObsidianCheckbox(c common.WorkbenchConnection, content []byte, 
 	if state == "done" {
 		checkbox = "x"
 	}
-	lines[line] = prefix + raw[:match[2]] + checkbox + raw[match[3]:]
+	body := raw[match[4]:]
+	if state == "done" && prior.NativeFields["done"] == "" {
+		marker := " ✅ " + date.Format(time.DateOnly)
+		if wbInlineField.MatchString(prior.Summary) {
+			marker = " [completion:: " + date.Format(time.DateOnly) + "]"
+		}
+		tail := wbTaskLineTail.FindStringIndex(body)[0]
+		body = body[:tail] + marker + body[tail:]
+	} else if state == "open" {
+		body = WorkbenchObsidianWithoutCompletionDate(body)
+	}
+	lines[line] = prefix + raw[:match[2]] + checkbox + raw[match[3]:match[4]] + body
 	return []byte(strings.Join(lines, "\n")), nil
+}
+
+var wbTaskLineTail = regexp.MustCompile(`(?:[ \t]+\^[A-Za-z0-9-]+)?(?:[ \t]*<!--[^\r\n]*?-->)*[ \t\r]*$`)
+var wbCompletionDate = regexp.MustCompile(`(?:[ \t]+✅[ \t]*\d{4}-\d{2}-\d{2}\b|[ \t]*(?i:\[completion::[ \t]*\d{4}-\d{2}-\d{2}[ \t]*\]|\(completion::[ \t]*\d{4}-\d{2}-\d{2}[ \t]*\)))`)
+var wbCompletionDateValue = regexp.MustCompile(`\d{4}-\d{2}-\d{2}`)
+
+// WorkbenchObsidianWithoutCompletionDate leaves comments intact and provides
+// stable task text when the checkbox and completion date change together.
+func WorkbenchObsidianWithoutCompletionDate(body string) string {
+	var result strings.Builder
+	for {
+		visible, comment, ok := strings.Cut(body, "<!--")
+		result.WriteString(wbCompletionDate.ReplaceAllStringFunc(visible, func(marker string) string {
+			if _, err := time.Parse(time.DateOnly, wbCompletionDateValue.FindString(marker)); err != nil {
+				return marker
+			}
+			return ""
+		}))
+		if !ok {
+			return result.String()
+		}
+		comment, body, ok = strings.Cut(comment, "-->")
+		result.WriteString("<!--")
+		result.WriteString(comment)
+		if !ok {
+			return result.String()
+		}
+		result.WriteString("-->")
+	}
 }

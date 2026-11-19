@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/integrations"
 )
 
 func matchWorkbench(c common.WorkbenchConnection, before, after []common.WorkbenchTask) {
@@ -70,7 +71,7 @@ func matchWorkbench(c common.WorkbenchConnection, before, after []common.Workben
 func matchObsidianTasksBySection(before, after []common.WorkbenchTask, indexes []int) bool {
 	type position struct{ id, heading, summary string }
 	key := func(t common.WorkbenchTask) position {
-		return position{t.NativeID, t.NativeFields["heading_path"], t.Summary}
+		return position{t.NativeID, t.NativeFields["heading_path"], integrations.WorkbenchObsidianWithoutCompletionDate(t.Summary)}
 	}
 	previous := make(map[position]common.WorkbenchTask, len(before))
 	for _, task := range before {

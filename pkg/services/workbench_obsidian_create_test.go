@@ -136,8 +136,9 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 	}
 	data, err = os.ReadFile(note)
 	want := strings.Replace(beforeComplete, "- [ ] Bridge task", "- [x] Bridge task", 1)
+	want = strings.Replace(want, obsidianCreationMarker(workbenchFingerprint(input))+"\n", obsidianCreationMarker(workbenchFingerprint(input))+" ✅ "+time.Now().Format(time.DateOnly)+"\n", 1)
 	if err != nil || string(data) != want {
-		t.Fatalf("completion modified more than the checkbox: %s %v", data, err)
+		t.Fatalf("completion modified more than the checkbox and date: %s %v", data, err)
 	}
 	if replay, err := s.WriteWorkbenchTask(status); err != nil || replay != completed {
 		t.Fatalf("complete replay: %+v %v", replay, err)

@@ -49,7 +49,7 @@ func (s *Service) setWorkbenchObsidianState(store workbenchStore, writer workben
 	if err != nil {
 		return empty, common.Err("CONFLICT", "Could not read the task note")
 	}
-	replacement, err := integrations.SetWorkbenchObsidianCheckbox(connection.WorkbenchConnection, content, task, input.State)
+	replacement, err := integrations.SetWorkbenchObsidianCheckbox(connection.WorkbenchConnection, content, task, input.State, time.Now())
 	if err != nil {
 		if problem, ok := err.(*common.Error); ok && problem.Code == "STALE_REVISION" {
 			conflict.Reason = problem.Message

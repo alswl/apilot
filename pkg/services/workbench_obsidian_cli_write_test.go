@@ -150,8 +150,11 @@ run().then(console.log).catch(error => { console.log("Error: " + error.message);
 	if receipt, err := s.WriteWorkbenchTask(complete); err != nil || receipt.SyncState != "confirmed" {
 		t.Fatalf("complete: %+v %v", receipt, err)
 	}
-	if readNote() != strings.Replace(beforeComplete, "- [ ] 发布", "- [x] 发布", 1)+"Editor text.\r\n" {
-		t.Fatal("completion changed bytes outside the checkbox")
+	expected := strings.Replace(beforeComplete, "- [ ] 发布", "- [x] 发布", 1)
+	marker := obsidianCreationMarker(workbenchFingerprint(input))
+	expected = strings.Replace(expected, marker+"\r\n", marker+" ✅ "+time.Now().Format(time.DateOnly)+"\r\n", 1)
+	if readNote() != expected+"Editor text.\r\n" {
+		t.Fatal("completion changed bytes outside the checkbox and date")
 	}
 	task, err = s.WorkbenchTask(task.ID)
 	if err != nil {
