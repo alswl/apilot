@@ -3,6 +3,7 @@ package integrations
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -16,6 +17,7 @@ import (
 type workbenchObsidianCLI struct {
 	executable string
 	vault      string
+	basePath   string
 }
 
 func openWorkbenchObsidianCLI(ctx context.Context, c common.WorkbenchConnection) (workbenchObsidianCLI, error) {
@@ -40,7 +42,8 @@ func openWorkbenchObsidianCLI(ctx context.Context, c common.WorkbenchConnection)
 	if err != nil {
 		return cli, err
 	}
-	selected, selectedErr := os.Stat(strings.TrimRight(string(path), "\r\n"))
+	cli.basePath = strings.TrimRight(string(path), "\r\n")
+	selected, selectedErr := os.Stat(cli.basePath)
 	expected, expectedErr := os.Stat(c.Vault)
 	if selectedErr != nil || expectedErr != nil || !os.SameFile(selected, expected) {
 		return cli, common.Err("CONFLICT", "Obsidian CLI did not select the configured vault")
@@ -55,10 +58,15 @@ func (cli workbenchObsidianCLI) run(ctx context.Context, command string, args ..
 		return nil, common.Err("CONFLICT", "Could not start Obsidian CLI")
 	}
 	const maxOutput = 8 << 20
+	stop := context.AfterFunc(ctx, func() { _ = stdout.Close() })
+	defer stop()
 	output, err := io.ReadAll(io.LimitReader(stdout, maxOutput+1))
 	if err != nil || len(output) > maxOutput {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return nil, common.Err("CONFLICT", "Obsidian CLI output could not be read within the size limit")
 	}
 	waitErr := cmd.Wait()
@@ -112,19 +120,69 @@ func readWorkbenchObsidianCLI(ctx context.Context, c common.WorkbenchConnection)
 		return nil, err
 	}
 	tasks := []common.WorkbenchTask{}
-	for _, note := range notes {
-		content, err := cli.run(ctx, "read", "path="+note.NotePath)
+	reportWorkbenchReadProgress(ctx, 0, len(notes))
+	for read := 0; read < len(notes); {
+		batch := notes[read:min(read+32, len(notes))]
+		contents, err := cli.readBatch(ctx, batch)
 		if err != nil {
 			return nil, err
 		}
-		for _, task := range parseWorkbenchNote(c, note.NotePath, string(content)) {
-			if len(task.Summary) > 12<<10 {
-				return nil, common.Err("CONFLICT", "Obsidian task line exceeds the read limit")
+		for i, content := range contents {
+			for _, task := range parseWorkbenchNote(c, batch[i].NotePath, content) {
+				if len(task.Summary) > 12<<10 {
+					return nil, common.Err("CONFLICT", "Obsidian task line exceeds the read limit")
+				}
+				tasks = append(tasks, task)
 			}
-			tasks = append(tasks, task)
 		}
+		read += len(contents)
+		reportWorkbenchReadProgress(ctx, read, len(notes))
 	}
 	return normalizeWorkbenchObsidianIDs(tasks), nil
+}
+
+// Use the same cached Markdown read as the CLI read command, with a bounded
+// response so vaults containing large notes can still be read in batches.
+func (cli workbenchObsidianCLI) readBatch(ctx context.Context, notes []common.WorkbenchNote) ([]string, error) {
+	paths := make([]string, len(notes))
+	for i, note := range notes {
+		paths[i] = note.NotePath
+	}
+	pathJSON, _ := json.Marshal(paths)
+	vaultJSON, _ := json.Marshal(cli.basePath)
+	script := `(async () => {
+        const vault = app.vault;
+        if (vault.adapter.getBasePath() !== ` + string(vaultJSON) + `) {
+            throw new Error("Unexpected vault");
+        }
+        const files = ` + string(pathJSON) + `;
+        const encoder = new TextEncoder();
+        const output = [];
+        let size = 0;
+        for (const path of files) {
+            const file = vault.getFileByPath(path);
+            if (!file) throw new Error("Note no longer exists");
+            if (file.stat.size > 8388608) throw new Error("Note exceeds read limit");
+            const entry = JSON.stringify(await vault.cachedRead(file));
+            size += encoder.encode(entry).length + 1;
+            if (size > 8388500) {
+                if (!output.length) throw new Error("Note exceeds CLI response limit");
+                break;
+            }
+            output.push(entry);
+        }
+        return "[" + output.join(",") + "]";
+    })()`
+	output, err := cli.run(ctx, "eval", "code="+script)
+	if err != nil {
+		return nil, err
+	}
+	result, ok := bytes.CutPrefix(output, []byte("=> "))
+	var contents []string
+	if !ok || json.Unmarshal(result, &contents) != nil || len(contents) == 0 || len(contents) > len(notes) {
+		return nil, common.Err("CONFLICT", "Obsidian CLI returned an invalid batch of notes")
+	}
+	return contents, nil
 }
 
 func ReadWorkbenchObsidianTarget(ctx context.Context, c common.WorkbenchConnection, notePath string) ([]byte, error) {

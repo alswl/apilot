@@ -62,16 +62,22 @@ type WorkbenchConnection struct {
 	Version          int64             `json:"version"`
 }
 
+type WorkbenchReadProgress struct {
+	Read  int `json:"read"`
+	Total int `json:"total"`
+}
+
 type WorkbenchAttempt struct {
-	ID       int64      `json:"id"`
-	Trigger  string     `json:"trigger"`
-	State    string     `json:"state"`
-	Started  time.Time  `json:"started"`
-	Finished *time.Time `json:"finished,omitempty"`
-	Error    string     `json:"error,omitempty"`
-	Added    int        `json:"added"`
-	Updated  int        `json:"updated"`
-	Removed  int        `json:"removed"`
+	Progress *WorkbenchReadProgress `json:"progress,omitempty"`
+	ID       int64                  `json:"id"`
+	Trigger  string                 `json:"trigger"`
+	State    string                 `json:"state"`
+	Started  time.Time              `json:"started"`
+	Finished *time.Time             `json:"finished,omitempty"`
+	Error    string                 `json:"error,omitempty"`
+	Added    int                    `json:"added"`
+	Updated  int                    `json:"updated"`
+	Removed  int                    `json:"removed"`
 }
 
 type WorkbenchCapabilities struct {

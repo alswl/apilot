@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/integrations"
 )
 
 type workbenchReader func(context.Context, common.WorkbenchConnection) ([]common.WorkbenchTask, error)
@@ -48,6 +49,12 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 			return nil, err
 		}
 		connections[i].PluginDisabled = !enabled
+		if attempts := connections[i].Attempts; len(attempts) > 0 && attempts[0].State == "running" {
+			if progress, ok := s.readProgress.Load(attempts[0].ID); ok {
+				value := progress.(common.WorkbenchReadProgress)
+				attempts[0].Progress = &value
+			}
+		}
 		connections[i].Capabilities = s.workbenchConnectionCapabilities(connections[i])
 	}
 	return connections, nil
@@ -256,6 +263,8 @@ func (s *Service) RunWorkbenchSync(id string) (int64, error) {
 	return snapshot.Attempts[0].ID, nil
 }
 
+const workbenchReadTimeout = 30 * time.Second
+
 func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) error {
 	if s.stopping {
 		return common.Err("CONFLICT", "App is stopping")
@@ -292,7 +301,10 @@ func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) er
 	if err := st.RecordWorkbench(conn, attempts, nil, nil, nil); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(s.ctx, workbenchReadTimeout)
+	ctx = integrations.WithWorkbenchReadProgress(ctx, func(progress common.WorkbenchReadProgress) {
+		s.readProgress.Store(attempt.ID, progress)
+	})
 	s.workbenchActive[id] = cancel
 	s.wg.Add(1)
 	go s.runWorkbench(ctx, cancel, st, conn, attempts, s.workbenchReader)
@@ -301,6 +313,7 @@ func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) er
 
 func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, st workbenchStore, c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, read workbenchReader) {
 	defer s.wg.Done()
+	defer s.readProgress.Delete(attempts[0].ID)
 	defer cancel()
 	before, err := st.WorkbenchObjects(c.ID)
 	var tasks []common.WorkbenchTask
@@ -327,8 +340,14 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 		return
 	}
 	attempts = attempts[:min(20, len(attempts))]
-	if ctx.Err() != nil || current.PluginDisabled {
+	if errors.Is(ctx.Err(), context.Canceled) || current.PluginDisabled {
 		attempt.State = "cancelled"
+		_ = st.RecordWorkbench(c, attempts, nil, nil, nil)
+		return
+	}
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		attempt.State = "failed"
+		attempt.Error = "Source read timed out after " + workbenchReadTimeout.String()
 		_ = st.RecordWorkbench(c, attempts, nil, nil, nil)
 		return
 	}

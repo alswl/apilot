@@ -23,6 +23,7 @@ type connection struct {
 	BridgeConfigured bool
 	Paused           bool
 	ActiveAttempt    int64
+	ReadProgress     *common.WorkbenchReadProgress
 	Version          int64  `json:"-"`
 	ID               string `json:"connection_id"`
 	Name             string `json:"name"`

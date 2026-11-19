@@ -113,8 +113,18 @@ func (m *mockup) syncProgressView(c *ui.Context, conn *connection) {
 			if progress == 2 {
 				phase = "应用增量"
 			}
-			components.StatusLabel(c.Key("phase"), components.Status{Text: tr(phase), Color: c.Theme().Accent, Loading: true})
-			ui.Progress(c.Key("bar"), float64(progress)/3).FillWidth().Label(tr("同步进度"))
+			label := tr(phase)
+			liveProgress := conn.ReadProgress
+			known := m.live != nil && liveProgress != nil && liveProgress.Total > 0
+			if known {
+				label = fmt.Sprintf(tr("已读取 %d / %d 篇笔记"), liveProgress.Read, liveProgress.Total)
+			}
+			components.StatusLabel(c.Key("phase"), components.Status{Text: label, Color: c.Theme().Accent, Loading: !known})
+			if known {
+				ui.Progress(c.Key("bar"), float64(liveProgress.Read)/float64(liveProgress.Total)).FillWidth().Label(tr("同步进度"))
+			} else if m.live == nil {
+				ui.Progress(c.Key("bar"), float64(progress)/3).FillWidth().Label(tr("同步进度"))
+			}
 		} else {
 			icon, color := "checkmark.circle", c.Theme().Success
 			if conn.Status != "同步正常" && conn.Status != "可用" {

@@ -320,3 +320,44 @@ func TestWorkbenchObsidianSyncRecordsSafeReadFailure(t *testing.T) {
 	}
 	t.Fatal("sync did not finish")
 }
+
+func TestWorkbenchReadDeadlineFailsWithoutPublishingPartialTasks(t *testing.T) {
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	connection := common.WorkbenchConnection{
+		ID: "deadline-test", Kind: common.WorkbenchObsidianTasks, Mode: "local", Version: 1,
+	}
+	store, err := s.workbenchStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveWorkbench(connection, false); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	attempts := []common.WorkbenchAttempt{{ID: now.UnixNano(), State: "running", Started: now}}
+	if err := store.RecordWorkbench(connection, attempts, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	s.wg.Add(1)
+	s.runWorkbench(ctx, cancel, store, connection, attempts, func(context.Context, common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
+		return []common.WorkbenchTask{{SourceKey: "partial", Title: "Partial", State: "open"}}, context.DeadlineExceeded
+	})
+	snapshot, err := s.WorkbenchSnapshot(connection.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempt := snapshot.Attempts[0]; attempt.State != "failed" || attempt.Error != "Source read timed out after 30s" {
+		t.Fatalf("deadline attempt: %+v", attempt)
+	}
+	page, err := s.WorkbenchTasks(common.WorkbenchQuery{Connection: connection.ID})
+	if err != nil || len(page.Items) != 0 {
+		t.Fatalf("deadline published a partial snapshot: %+v %v", page, err)
+	}
+}

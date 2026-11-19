@@ -21,6 +21,7 @@ type active struct {
 
 type Service struct {
 	workbenchActive  map[string]context.CancelFunc
+	readProgress     sync.Map // attempt ID to common.WorkbenchReadProgress
 	workbenchReader  workbenchReader
 	workbenchPlugins map[string]workbenchPlugin
 	observers        map[string]common.Observer

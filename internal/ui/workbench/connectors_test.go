@@ -130,7 +130,7 @@ func TestLocalKeyValueLabelsCanBeSavedAndSearched(t *testing.T) {
 	}
 }
 
-func TestLiveConnectionResultsDistinguishCancellationFromOffline(t *testing.T) {
+func TestLiveConnectionResultsDistinguishCancellationFromFailure(t *testing.T) {
 	m := newMockup()
 	m.live = services.NewRemote("")
 	now := time.Now()
@@ -142,7 +142,7 @@ func TestLiveConnectionResultsDistinguishCancellationFromOffline(t *testing.T) {
 		status string
 	}{
 		{"cancelled", false, "同步正常"},
-		{"failed", false, "连接断开"},
+		{"failed", false, "同步失败"},
 		{"success", true, "已暂停"},
 	} {
 		snapshot := common.WorkbenchSnapshot{
@@ -239,5 +239,20 @@ func TestDisconnectFailedObsidianConnectionFromSettings(t *testing.T) {
 	}
 	if data, err := os.ReadFile(note); err != nil || string(data) != original {
 		t.Fatalf("source note was modified: %v", err)
+	}
+}
+
+func TestLiveSyncDisplaysReadCountsWhenAvailable(t *testing.T) {
+	m := newMockup()
+	m.live = services.NewRemote("")
+	conn := &connection{ID: "reading"}
+	m.pendingSync[conn.ID] = true
+	view := func(c *ui.Context) { m.syncProgressView(c, conn) }
+	if !ui.NewTester(view, 490, 100).HasText("读取来源") {
+		t.Fatal("missing indeterminate read status")
+	}
+	conn.ReadProgress = &common.WorkbenchReadProgress{Read: 64, Total: 4000}
+	if !ui.NewTester(view, 490, 100).HasText("已读取 64 / 4000 篇笔记") {
+		t.Fatal("missing live note count")
 	}
 }

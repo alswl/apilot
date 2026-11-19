@@ -29,11 +29,11 @@ func TestWorkbenchObsidianCLIReadsScopedMarkdown(t *testing.T) {
 case "$2:$3" in
   vault:info=path) printf '%s\n' "$APILOT_OBSIDIAN_TEST_VAULT";;
   files:) printf '%s\n' 'Work/a note.md' 'Work/asset.png' 'Outside.md';;
-  'read:path=Work/a note.md')
+  eval:code=*)
     if [ "$APILOT_OBSIDIAN_TEST_OFFLINE" = 1 ]; then
       printf '%s\n' 'The CLI is unable to find Obsidian.'
     else
-      printf '%s\n' '# Heading' '' '- [ ] Shared task'
+      printf '%s\n' '=> ["# Heading\n\n- [ ] Shared task\n"]'
     fi;;
   *) exit 1;;
 esac

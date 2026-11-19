@@ -73,6 +73,8 @@ components:
         id:
           format: int64
           type: integer
+        progress:
+          $ref: "#/components/schemas/WorkbenchReadProgress"
         removed:
           format: int64
           type: integer
@@ -457,6 +459,19 @@ components:
           type: boolean
       required:
         - enabled
+      type: object
+    WorkbenchReadProgress:
+      additionalProperties: false
+      properties:
+        read:
+          format: int64
+          type: integer
+        total:
+          format: int64
+          type: integer
+      required:
+        - read
+        - total
       type: object
     WorkbenchResultID:
       additionalProperties: false

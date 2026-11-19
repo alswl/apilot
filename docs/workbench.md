@@ -58,7 +58,7 @@ apilot workbench connection resume CONNECTION_ID VERSION --json
 
 在 Obsidian 连接配置中，点 Vault 路径旁的「选择文件夹…」，选择 vault 根目录。将同步范围设为 `.` 可扫描整个 vault。保存后在同步日志查看读取结果。
 
-Obsidian 连接的「读取方式」默认直接读取 Markdown。也可选 Obsidian CLI，或在连接 JSON 中填写 `"read_method":"obsidian_cli"`。使用 CLI 时，启动 Obsidian、开启命令行接口并打开目标 vault；Apilot 会核对 CLI 返回的 vault 路径。CLI 模式只读，同步失败时可在同步日志查看原因。
+Obsidian 连接的「读取方式」默认直接读取 Markdown。也可选 Obsidian CLI，或在连接 JSON 中填写 `"read_method":"obsidian_cli"`。使用 CLI 时，启动 Obsidian、开启命令行接口并打开目标 vault；Apilot 会核对 CLI 返回的 vault 路径。CLI 模式只读，按批读取 Markdown。扫描开始时显示读取状态，取得笔记总数后显示已读数。30 秒内未读完整轮时，本次同步标为失败并保留上次确认的任务。主动取消会记录为已取消。两种结果都可在同步日志查看。
 
 ```sh
 go run ./cmd/apilot-app --mock

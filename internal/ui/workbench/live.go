@@ -130,11 +130,12 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 				switch snapshot.Attempts[0].State {
 				case "running":
 					draft.ActiveAttempt = snapshot.Attempts[0].ID
+					draft.ReadProgress = snapshot.Attempts[0].Progress
 					m.pendingSync[draft.ID] = true
 				case "success":
 					draft.Status = "同步正常"
 				case "failed":
-					draft.Status = "连接断开"
+					draft.Status = "同步失败"
 				default:
 					if snapshot.LastSuccess != nil {
 						draft.Status = "同步正常"

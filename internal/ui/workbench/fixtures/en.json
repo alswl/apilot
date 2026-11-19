@@ -516,6 +516,7 @@
   "状态映射": "Status mapping",
   "状态显示名": "Status display name",
   "复选框字符": "Checkbox character",
+  "已读取 %d / %d 篇笔记": "Read %d / %d notes",
   "读取方式": "Read method",
   "直接读取 Markdown": "Read Markdown directly",
   "选择文件夹…": "Choose Folder…",

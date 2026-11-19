@@ -112,15 +112,16 @@ type ErrorModel struct {
 
 // WorkbenchAttempt defines model for WorkbenchAttempt.
 type WorkbenchAttempt struct {
-	Added    int64      `json:"added"`
-	Error    *string    `json:"error,omitempty"`
-	Finished *time.Time `json:"finished,omitempty"`
-	Id       int64      `json:"id"`
-	Removed  int64      `json:"removed"`
-	Started  time.Time  `json:"started"`
-	State    string     `json:"state"`
-	Trigger  string     `json:"trigger"`
-	Updated  int64      `json:"updated"`
+	Added    int64                  `json:"added"`
+	Error    *string                `json:"error,omitempty"`
+	Finished *time.Time             `json:"finished,omitempty"`
+	Id       int64                  `json:"id"`
+	Progress *WorkbenchReadProgress `json:"progress,omitempty"`
+	Removed  int64                  `json:"removed"`
+	Started  time.Time              `json:"started"`
+	State    string                 `json:"state"`
+	Trigger  string                 `json:"trigger"`
+	Updated  int64                  `json:"updated"`
 }
 
 // WorkbenchCapabilities defines model for WorkbenchCapabilities.
@@ -293,6 +294,12 @@ type WorkbenchPluginInputBody struct {
 	// Examples: http://apilot/schemas/WorkbenchPluginInputBody.json
 	Schema  *string `json:"$schema,omitempty"`
 	Enabled bool    `json:"enabled"`
+}
+
+// WorkbenchReadProgress defines model for WorkbenchReadProgress.
+type WorkbenchReadProgress struct {
+	Read  int64 `json:"read"`
+	Total int64 `json:"total"`
 }
 
 // WorkbenchResultID defines model for WorkbenchResultID.
