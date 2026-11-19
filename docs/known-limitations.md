@@ -3,7 +3,7 @@
 - Deliberately detached processes (`setsid` or another process group), and execution helpers that are also killed, are outside the cleanup guarantee. The App is not a sandbox.
 - Real system sleep/resume has not been exercised. Resume events and future schedule reset are implemented; no custom daylight-saving behavior or special tests are included.
 - Notification delivery/permission refusal, login-item registration, VoiceOver, input-method composition have not been fully verified in the packaged App. Their interfaces exist, but automated core tests cannot prove OS behavior.
-- GUI navigation has headless tests plus real native screenshots at 640×480 and 480×360. Full mouse/keyboard form submission, file opening, copy and scroll restoration still need manual acceptance.
+- The unified Workbench has headless navigation tests and packaged macOS probes for menu-bar entry, window close and reopen, settings, and reuse of task and observer editors. The packaged App passed 20 quit and crash recovery repetitions. Full mouse and keyboard form submission, file opening, copying, and scroll restoration still need manual acceptance.
 - Real Codex/herdr commands have not been run as acceptance fixtures. Generic local command/observer integration is tested.
 - macOS 12 and Intel/universal binaries have not been validated. Published downloads target Apple Silicon; development builds are ad hoc. See [distribution](distribution.md) for signing metadata.
 - Linux and Windows applications are not implemented or accepted. Cross-compilation checks cover only the shared domain, configuration, scheduling and presentation packages; process helpers, IPC, desktop integration and SQLite's C toolchain still need platform work.
