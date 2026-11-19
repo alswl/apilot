@@ -159,3 +159,36 @@ func TestWorkbenchMigratesV4PluginAndTaskIdentity(t *testing.T) {
 		t.Fatalf("connections: %+v %v", connections, err)
 	}
 }
+
+func TestWorkbenchSnapshotReassignsSourceKeysAtomically(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "data.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	connection := common.WorkbenchConnection{ID: "obsidian", Version: 1}
+	if err := store.SaveWorkbench(connection, false); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	before := []common.WorkbenchTask{
+		{ID: "a", SourceKey: "note:repeat\x000", Title: "Ship 🔁 every day", State: "open", ConnectionID: connection.ID},
+		{ID: "b", SourceKey: "note:ship\x000", Title: "Ship", State: "open", ConnectionID: connection.ID},
+	}
+	if err := store.RecordWorkbench(connection, nil, nil, before, &now); err != nil {
+		t.Fatal(err)
+	}
+	after := append([]common.WorkbenchTask(nil), before...)
+	after[0].SourceKey, after[1].SourceKey = "note:ship\x000", "note:ship\x001"
+	after[0].Title = "Ship"
+
+	if err := store.RecordWorkbench(connection, nil, before, after, &now); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range after {
+		got, err := store.WorkbenchObject(want.ID)
+		if err != nil || got.SourceKey != want.SourceKey || got.Title != want.Title {
+			t.Fatalf("task %s: %+v %v", want.ID, got, err)
+		}
+	}
+}
