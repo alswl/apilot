@@ -8,6 +8,7 @@ import (
 
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/config"
+	"github.com/alswl/apilot/pkg/integrations"
 	"github.com/alswl/apilot/pkg/services"
 	"github.com/danielgtaylor/huma/v2/humatest"
 )
@@ -62,7 +63,23 @@ func TestWorkbenchHTTPDoesNotRequireLegacyTransport(t *testing.T) {
 	if err != nil || page.Total != 1 || page.Items[0].Title != "HTTP task" {
 		t.Fatalf("%+v %v", page, err)
 	}
-	if _, err := remote.WorkbenchTasks(common.WorkbenchQuery{Revision: page.Revision + 1}); common.ProtocolError(err).Code != "STALE_REVISION" {
+	if _, err := remote.WorkbenchTasks(common.WorkbenchQuery{Revision: page.Revision + 1}); err == nil || common.ProtocolError(err).Code != "STALE_REVISION" {
 		t.Fatalf("business error code was lost: %v", err)
+	}
+}
+
+func TestWorkbenchLegacyIPCCompatibility(t *testing.T) {
+	runtime, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	data, err := integrations.Call(runtime.SocketPath, "workbench.connection.show", map[string]string{"id": "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c common.WorkbenchSnapshot
+	if err := json.Unmarshal(data, &c); err != nil || c.ID != common.DefaultWorkbenchLocalID || c.Kind != common.WorkbenchLocal {
+		t.Fatalf("legacy connection payload %s: %v", data, err)
 	}
 }

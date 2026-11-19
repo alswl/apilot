@@ -146,10 +146,6 @@ func newWorkspace(data scenarioFixture) *mockup {
 	}
 }
 
-func RunFramework(keybindingsPath, language string) error {
-	return runWorkspace(newFramework(), "", keybindingsPath, language)
-}
-
 func RunMock(capture, keybindingsPath, language string) error {
 	m := newMockup()
 	m.objects = append(m.objects, loadExtendedTasks()...)

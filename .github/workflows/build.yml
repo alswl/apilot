@@ -97,6 +97,10 @@ jobs:
       - name: Check dependency boundary and versions
         if: steps.changes.outputs.full == 'true'
         run: make check-architecture check-version check-portable
+      - name: Verify generated OpenAPI contract and client
+        if: steps.changes.outputs.full == 'true'
+        run: make check-openapi
+
       - name: Test complete suite with race detector
         if: steps.changes.outputs.full == 'true'
         run: |
