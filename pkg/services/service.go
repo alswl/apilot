@@ -116,6 +116,8 @@ func NewWithWorkbenchPlugins(dir string, openStore func(string) (Store, error), 
 	s.wg.Add(1)
 	go s.tick()
 	if wb, ok := db.(workbenchStore); ok {
+		// Queue startup scans before callers can create or cancel a scan.
+		s.startScheduledWorkbench(wb, "startup")
 		s.wg.Add(1)
 		go s.tickWorkbench(wb)
 	}

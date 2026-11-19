@@ -341,28 +341,31 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 	}
 }
 
+func (s *Service) startScheduledWorkbench(st workbenchStore, trigger string) {
+	connections, err := st.WorkbenchConnections()
+	if err != nil {
+		return
+	}
+	for _, c := range connections {
+		if !s.workbenchPlugins[c.Kind].capabilities.Refresh {
+			continue
+		}
+		s.mu.Lock()
+		_ = s.startWorkbenchLocked(st, c.ID, trigger)
+		s.mu.Unlock()
+	}
+}
+
 func (s *Service) tickWorkbench(st workbenchStore) {
 	defer s.wg.Done()
-	timer := time.NewTimer(0)
+	timer := time.NewTimer(time.Minute)
 	defer timer.Stop()
-	trigger := "startup"
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 		case <-timer.C:
-			connections, err := st.WorkbenchConnections()
-			if err == nil {
-				for _, c := range connections {
-					if !s.workbenchPlugins[c.Kind].capabilities.Refresh {
-						continue
-					}
-					s.mu.Lock()
-					_ = s.startWorkbenchLocked(st, c.ID, trigger)
-					s.mu.Unlock()
-				}
-			}
-			trigger = "periodic"
+			s.startScheduledWorkbench(st, "periodic")
 			timer.Reset(time.Minute)
 		}
 	}
