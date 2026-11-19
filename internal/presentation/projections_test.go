@@ -39,7 +39,7 @@ func TestMenuProjectionKeepsTotalsAndBounds(t *testing.T) {
 		events = append(events, common.AttentionEvent{})
 	}
 	p := ProjectMenu(nil, runs, events)
-	if p.ActiveCount != 8 || p.UnreadCount != 8 || len(p.Active) != PreviewLimit || len(p.Recent) != PreviewLimit || len(p.Attention) != PreviewLimit {
+	if p.ActiveCount != 8 || p.UnreadCount != 8 || len(p.Active) != PreviewLimit || len(p.Attention) != PreviewLimit {
 		t.Fatal(p)
 	}
 }

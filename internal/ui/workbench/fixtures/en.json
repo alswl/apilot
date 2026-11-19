@@ -514,6 +514,8 @@
   "状态映射": "Status mapping",
   "状态显示名": "Status display name",
   "复选框字符": "Checkbox character",
+  "读取方式": "Read method",
+  "直接读取 Markdown": "Read Markdown directly",
   "Vault 路径": "Vault path",
   "同步范围": "Sync scope",
   "文件变化": "File changes",

@@ -21,6 +21,13 @@ func (s *Service) prepareWorkbenchBridge(c *common.WorkbenchConnection, old comm
 		}
 		return nil, nil
 	}
+	if c.ReadMethod == common.WorkbenchObsidianCLI {
+		if update || (input.WriteEnabled != nil && *input.WriteEnabled) {
+			return nil, common.Err("INVALID_ARGUMENT", "Obsidian CLI connections are read-only")
+		}
+		c.WriteEnabled = false
+		return nil, nil
+	}
 	targetChanged := c.Vault != old.Vault || c.Scope != old.Scope
 	if targetChanged || update {
 		c.WriteEnabled = false

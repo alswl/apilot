@@ -83,7 +83,7 @@ func Execute() int {
 		<-ctx.Done()
 		return 0
 	}
-	if err := ui.Run(runtime, remote, *framework, *verify, *keybindings, *language); err != nil {
+	if err := ui.Run(runtime, remote, !*verify, *verify, *keybindings, *language); err != nil {
 		log.Print(err)
 		return 1
 	}

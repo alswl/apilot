@@ -146,6 +146,7 @@ type WorkbenchConnectionInput struct {
 	Kind              WorkbenchConnectionInputKind `json:"kind"`
 	Mode              *string                      `json:"mode,omitempty"`
 	Name              string                       `json:"name"`
+	ReadMethod        *string                      `json:"read_method,omitempty"`
 	Repository        *string                      `json:"repository,omitempty"`
 	Scope             *string                      `json:"scope,omitempty"`
 	Statuses          *map[string]string           `json:"statuses,omitempty"`
@@ -320,6 +321,7 @@ type WorkbenchSnapshot struct {
 	Paused           *bool                   `json:"paused,omitempty"`
 	PendingWrites    *[]WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
 	PluginDisabled   *bool                   `json:"plugin_disabled,omitempty"`
+	ReadMethod       *string                 `json:"read_method,omitempty"`
 	Repository       *string                 `json:"repository,omitempty"`
 	Scope            *string                 `json:"scope,omitempty"`
 	Statuses         *map[string]string      `json:"statuses,omitempty"`

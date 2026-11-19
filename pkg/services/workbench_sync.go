@@ -149,6 +149,9 @@ func (s *Service) ConfigureWorkbench(c common.WorkbenchConnection, input common.
 		if !filepath.IsAbs(c.Vault) || (c.Scope != "" && !filepath.IsLocal(c.Scope)) {
 			return "", common.Err("INVALID_ARGUMENT", "Choose an absolute vault path and a relative scope")
 		}
+		if c.ReadMethod != "" && c.ReadMethod != common.WorkbenchObsidianCLI {
+			return "", common.Err("INVALID_ARGUMENT", "Unknown Obsidian read method")
+		}
 		c.Mode = "local"
 		c.Vault = filepath.Clean(c.Vault)
 		c.Scope = filepath.Clean(c.Scope)
@@ -159,6 +162,9 @@ func (s *Service) ConfigureWorkbench(c common.WorkbenchConnection, input common.
 			}
 		}
 	case common.WorkbenchGitHubIssues:
+		if c.ReadMethod != "" {
+			return "", common.Err("INVALID_ARGUMENT", "Read method requires an Obsidian connection")
+		}
 		if !strings.EqualFold(c.Repository, "alswl/issues") {
 			return "", common.Err("INVALID_ARGUMENT", "Mock repository must be alswl/issues")
 		}
@@ -202,7 +208,7 @@ func (s *Service) ConfigureWorkbench(c common.WorkbenchConnection, input common.
 	if err != nil {
 		return "", err
 	}
-	changed := reset || prior.WriteEnabled != c.WriteEnabled || bridge != nil
+	changed := reset || prior.ReadMethod != c.ReadMethod || prior.WriteEnabled != c.WriteEnabled || bridge != nil
 	if prior.ID != "" && changed {
 		c.Version++
 		trigger = "configuration"

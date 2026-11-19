@@ -61,6 +61,13 @@ func openWorkbenchNoteRoot(c common.WorkbenchConnection) (*os.Root, error) {
 }
 
 func ListWorkbenchObsidianNotes(ctx context.Context, c common.WorkbenchConnection) ([]common.WorkbenchNote, error) {
+	if c.ReadMethod == common.WorkbenchObsidianCLI {
+		cli, err := openWorkbenchObsidianCLI(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+		return cli.notes(ctx, c.Scope)
+	}
 	root, err := openWorkbenchNoteRoot(c)
 	if err != nil {
 		return nil, err

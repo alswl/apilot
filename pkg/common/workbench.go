@@ -44,7 +44,10 @@ type WorkbenchTaskEvent struct {
 	Text string    `json:"text"`
 }
 
+const WorkbenchObsidianCLI = "obsidian_cli"
+
 type WorkbenchConnection struct {
+	ReadMethod       string            `json:"read_method,omitempty"`
 	WriteEnabled     bool              `json:"write_enabled,omitempty"`
 	BridgeConfigured bool              `json:"bridge_configured,omitempty"`
 	Paused           bool              `json:"paused,omitempty"`

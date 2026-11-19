@@ -403,6 +403,10 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 				}
 				if ui.PrimaryButton(c.Key("save"), tr("保存配置")).Clicked() {
 					if m.live != nil && edit.SourceKind == obsidianTasks {
+						if edit.ReadMethod == common.WorkbenchObsidianCLI {
+							edit.WriteEnabled = false
+							edit.bridge = common.WorkbenchBridgeInput{}
+						}
 						edit.bridge.WriteEnabled = &edit.WriteEnabled
 						edit.problem = m.saveLiveConnection(edit.connection, edit.bridge)
 					} else {
@@ -419,6 +423,9 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 }
 
 func (m *mockup) obsidianBridgeFields(c *ui.Context, edit *connectorEdit) {
+	if edit.ReadMethod == common.WorkbenchObsidianCLI {
+		return
+	}
 	ui.Checkbox(c.Key("writable"), &edit.WriteEnabled, tr("允许回写"))
 	if !edit.WriteEnabled {
 		return
@@ -459,6 +466,17 @@ func (m *mockup) obsidianConnectorFields(c *ui.Context, edit *connectorEdit) {
 		})
 	})
 	components.TextField(c.Key("vault"), tr("Vault 路径"), &edit.VaultPath)
+	if m.live != nil {
+		method := "直接读取 Markdown"
+		if edit.ReadMethod == common.WorkbenchObsidianCLI {
+			method = "Obsidian CLI"
+		}
+		choiceField(c.Key("read-method"), "读取方式", &method, []string{"直接读取 Markdown", "Obsidian CLI"})
+		edit.ReadMethod = ""
+		if method == "Obsidian CLI" {
+			edit.ReadMethod = common.WorkbenchObsidianCLI
+		}
+	}
 }
 
 func (m *mockup) connectorMappingFields(c *ui.Context, edit *connectorEdit) {

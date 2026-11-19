@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alswl/apilot/internal/presentation"
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo"
 )
@@ -22,18 +23,12 @@ func TestTrayBoundsDynamicContentAndKeepsIdentity(t *testing.T) {
 	if len(items) > 20 {
 		t.Fatalf("root grows with task count: %d", len(items))
 	}
-	quick := 0
-	var recent *mygo.MenuItem
+	if items[0].ID != "workbench" {
+		t.Fatal("the first command must open the main window")
+	}
+	groups := map[string]*mygo.MenuItem{}
 	for _, item := range items {
-		if strings.HasPrefix(item.ID, "task-") {
-			quick++
-			if item.ToolTip != s.tasks[quick-1].Name || !strings.HasSuffix(item.Label, "…") {
-				t.Fatal("truncation lost full task name")
-			}
-		}
-		if item.ID == "recent" {
-			recent = item
-		}
+		groups[item.ID] = item
 		for _, child := range item.Submenu {
 			if len(child.Submenu) != 0 {
 				t.Fatal("third menu level")
@@ -46,10 +41,16 @@ func TestTrayBoundsDynamicContentAndKeepsIdentity(t *testing.T) {
 			t.Fatal("raw error expanded the menu")
 		}
 	}
-	if quick != quickTaskLimit || recent == nil || recent.Submenu[0].ID != "run-failed" {
-		t.Fatal("overflow handling or completed-history selection failed")
+	quick := groups["quick-tasks"]
+	if quick == nil || len(quick.Submenu) != presentation.QuickTaskLimit || groups["recent"] != nil {
+		t.Fatal("expected bounded task shortcuts and history in the workbench")
 	}
-	if items[1].ID != "attention" || len(items[1].Submenu) != 5 {
+	for i, item := range quick.Submenu {
+		if item.ID != "task-"+s.tasks[i].ID || item.ToolTip != s.tasks[i].Name || !strings.HasSuffix(item.Label, "…") {
+			t.Fatal("truncation lost task identity")
+		}
+	}
+	if attention := groups["attention"]; attention == nil || len(attention.Submenu) != presentation.PreviewLimit+2 {
 		t.Fatal("reminders have no bounded preview and full-list entry")
 	}
 }
@@ -61,14 +62,11 @@ func TestTrayHidesEmptyGroupsButRetainsCoreCommands(t *testing.T) {
 	found := map[string]bool{}
 	for _, item := range items {
 		found[item.ID] = true
-		if item.ID == "recent" && (len(item.Submenu) != 1 || item.Submenu[0].Label != tr("allHistory")) {
-			t.Fatal("history command disappeared when history is empty")
-		}
 	}
-	if found["attention"] || found["active"] || found["install-cli"] {
+	if found["attention"] || found["active"] || found["quick-tasks"] || found["recent"] || found["install-cli"] {
 		t.Fatal("irrelevant groups or setup command clutter the menu")
 	}
-	for _, id := range []string{"new-task", "manage", "settings", "recent"} {
+	for _, id := range []string{"workbench", "new-task", "manage", "settings", "quit"} {
 		if !found[id] {
 			t.Fatalf("missing stable entry %s", id)
 		}

@@ -8,8 +8,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const quickTaskLimit = presentation.QuickTaskLimit
-
 func menuLabel(text string) string { return presentation.MenuLabel(text) }
 
 func (s *windowState) openTasks() {
@@ -39,7 +37,11 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 	if s.busy {
 		heading = tr("apilotWorking")
 	}
-	menu := []*mygo.MenuItem{{ID: "status", Label: heading, Disabled: true}}
+	menu := []*mygo.MenuItem{
+		{ID: "workbench", Label: tr("openApilot"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }},
+		mygo.Separator(),
+		{ID: "status", Label: heading, Disabled: true},
+	}
 
 	unread := projected.UnreadCount
 	attention := []*mygo.MenuItem{}
@@ -58,7 +60,7 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 		}})
 	}
 	if activeCount > 0 {
-		if activeCount > 3 {
+		if activeCount > len(projected.Active) {
 			active = append(active, mygo.Separator(), &mygo.MenuItem{Label: tr("allRuns"), Click: func(*mygo.MenuItem, *mygo.Window) { s.openHistory("") }})
 		}
 		menu = append(menu, &mygo.MenuItem{ID: "active", Label: fmt.Sprintf(tr("runningD"), activeCount), Submenu: active})
@@ -67,39 +69,26 @@ func (s *windowState) trayItems(status map[string]any) []*mygo.MenuItem {
 		menu = append(menu, &mygo.MenuItem{ID: "last-error", Label: tr("actionFailedViewDetails"), Click: func(*mygo.MenuItem, *mygo.Window) { s.showAutomation() }})
 	}
 
-	menu = append(menu, mygo.Separator(), &mygo.MenuItem{Label: tr("quickTasks"), Disabled: true})
-	for _, t := range projected.Tasks {
-		items := []*mygo.MenuItem{{Label: tr("runNow"), Disabled: s.busy || taskActive(s.runs, t.ID), Click: func(*mygo.MenuItem, *mygo.Window) {
-			s.action(func() error { _, e := s.service.RunTask(t.ID, "manual"); return e })
-		}}}
-		if t.Schedule != nil {
-			items = append(items, &mygo.MenuItem{Label: tr("automaticRuns"), Type: mygo.MenuItemCheckbox, Checked: t.Enabled && t.Schedule.Enabled, Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) {
-				s.action(func() error { return s.setAutomatic(t) })
-			}})
+	menu = append(menu, mygo.Separator())
+	if len(projected.Tasks) > 0 {
+		quick := make([]*mygo.MenuItem, 0, len(projected.Tasks))
+		for _, task := range projected.Tasks {
+			quick = append(quick, &mygo.MenuItem{
+				ID: "task-" + task.ID, Label: menuLabel(task.Name), ToolTip: task.Name,
+				Disabled: s.busy || taskActive(s.runs, task.ID),
+				Click: func(*mygo.MenuItem, *mygo.Window) {
+					s.action(func() error { _, err := s.service.RunTask(task.ID, "manual"); return err })
+				},
+			})
 		}
-		items = append(items, &mygo.MenuItem{Label: tr("edit2"), Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) { s.editTask(&t) }})
-		menu = append(menu, &mygo.MenuItem{ID: "task-" + t.ID, Label: menuLabel(t.Name), ToolTip: t.Name, Submenu: items})
-	}
-	if len(s.tasks) == 0 {
-		menu = append(menu, &mygo.MenuItem{Label: tr("noTasks"), Disabled: true})
+		menu = append(menu, &mygo.MenuItem{ID: "quick-tasks", Label: tr("runNow"), Submenu: quick})
 	}
 	menu = append(menu,
-		&mygo.MenuItem{ID: "workbench", Label: tr("openApilot"), Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }},
 		&mygo.MenuItem{ID: "new-task", Label: tr("newTask2"), Disabled: s.busy, Click: func(*mygo.MenuItem, *mygo.Window) { s.editTask(nil) }},
-		&mygo.MenuItem{ID: "manage", Label: tr("allTasks"), Click: func(*mygo.MenuItem, *mygo.Window) { s.openTasks() }}, mygo.Separator())
-
-	recent := []*mygo.MenuItem{}
-	for _, r := range projected.Recent {
-		recent = append(recent, &mygo.MenuItem{ID: "run-" + r.ID, Label: menuLabel(statusText(r.Status) + " · " + r.TaskName), ToolTip: r.TaskName, Click: func(*mygo.MenuItem, *mygo.Window) { s.openHistory(r.ID) }})
-	}
-	if len(recent) > 0 {
-		recent = append(recent, mygo.Separator())
-	}
-	recent = append(recent, &mygo.MenuItem{Label: tr("allHistory"), Click: func(*mygo.MenuItem, *mygo.Window) { s.openHistory("") }})
-	menu = append(menu,
-		&mygo.MenuItem{ID: "recent", Label: tr("runHistory"), Submenu: recent},
+		&mygo.MenuItem{ID: "manage", Label: tr("allTasks"), Click: func(*mygo.MenuItem, *mygo.Window) { s.openTasks() }},
+		mygo.Separator(),
 		&mygo.MenuItem{ID: "settings", Label: tr("settings2"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { s.showSettings() }},
-		mygo.Separator(), &mygo.MenuItem{Label: tr("quitApilot"), Role: mygo.RoleQuit})
+		mygo.Separator(), &mygo.MenuItem{ID: "quit", Label: tr("quitApilot"), Role: mygo.RoleQuit})
 	return menu
 }
 

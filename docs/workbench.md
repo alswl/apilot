@@ -56,6 +56,8 @@ apilot workbench connection resume CONNECTION_ID VERSION --json
 
 `apilot workbench connection remove CONNECTION_ID` 可删除用户创建的连接及本地快照。默认 Local 连接可用空的 `tasks` 数组清空。GitHub 样例来源只读。Obsidian 可在配置桥接后启用回写。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
 
+Obsidian 连接的「读取方式」默认直接读取 Markdown。也可选 Obsidian CLI，或在连接 JSON 中填写 `"read_method":"obsidian_cli"`。使用 CLI 时，启动 Obsidian、开启命令行接口并打开目标 vault；Apilot 会核对 CLI 返回的 vault 路径。CLI 模式只读，同步失败时可在同步日志查看原因。
+
 ```sh
 go run ./cmd/apilot-app --mock
 open -n -a Apilot --args --mock
@@ -71,7 +73,7 @@ open -n -a Apilot --args --mock
 
 ## 管理自动化
 
-从菜单栏选择「打开 Apilot」进入工作台。工作台关闭后，菜单栏和定时执行继续运行。`--workbench` 可在启动时直接打开窗口。
+启动 Apilot 会打开工作台主窗口，并显示 Dock 图标。关闭窗口后，状态栏菜单和定时执行继续运行。点击 Dock 图标，或在状态栏菜单选「打开 Apilot」，可以重新打开主窗口。
 
 工作台的「定时任务」按顺序包含任务、运行历史、观察器和关注事件。在这里创建和编辑自动化任务、立即运行或暂停计划；运行详情可停止执行、查看标准输出与标准错误。观察器支持编辑、启停和删除，关注事件可标为已读并返回关联运行或观察器。「任务」顶层页面仍用于浏览 Local、Obsidian 和 GitHub 等来源任务。
 

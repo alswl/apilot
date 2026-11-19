@@ -70,6 +70,7 @@ type workbenchConnectionInput struct {
 	ID         string            `json:"id,omitempty"`
 	Kind       string            `json:"kind" enum:"obsidian_tasks,github_issues"`
 	Name       string            `json:"name" minLength:"1" maxLength:"256"`
+	ReadMethod string            `json:"read_method,omitempty"`
 	Vault      string            `json:"vault,omitempty"`
 	Scope      string            `json:"scope,omitempty"`
 	Repository string            `json:"repository,omitempty"`
@@ -131,7 +132,7 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		func(in *workbenchID) (common.WorkbenchSnapshot, error) { return s.WorkbenchSnapshot(in.ID) })
 	registerWorkbench(api, http.MethodPut, workbenchPath+"/connections", "saveWorkbenchConnection", "Save a connection", "Connections", []int{400, 404, 409},
 		func(in *workbenchBody[workbenchConnectionInput]) (common.WorkbenchSnapshot, error) {
-			id, err := s.ConfigureWorkbench(common.WorkbenchConnection{ID: in.Body.ID, Kind: in.Body.Kind, Name: in.Body.Name, Vault: in.Body.Vault, Scope: in.Body.Scope, Repository: in.Body.Repository, Statuses: in.Body.Statuses, Version: in.Body.Version}, in.Body.WorkbenchBridgeInput)
+			id, err := s.ConfigureWorkbench(common.WorkbenchConnection{ID: in.Body.ID, Kind: in.Body.Kind, Name: in.Body.Name, Vault: in.Body.Vault, ReadMethod: in.Body.ReadMethod, Scope: in.Body.Scope, Repository: in.Body.Repository, Statuses: in.Body.Statuses, Version: in.Body.Version}, in.Body.WorkbenchBridgeInput)
 			if err != nil {
 				return common.WorkbenchSnapshot{}, err
 			}

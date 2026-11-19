@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/integrations"
@@ -28,6 +29,9 @@ func (s *Service) WorkbenchNotes(ctx context.Context, id string) ([]common.Workb
 	}
 	notes, err := integrations.ListWorkbenchObsidianNotes(ctx, connection.WorkbenchConnection)
 	if err != nil {
+		if connection.ReadMethod == common.WorkbenchObsidianCLI {
+			return nil, err
+		}
 		return nil, common.Err("CONFLICT", "Vault notes could not be read")
 	}
 	current, err := s.workbenchObsidianConnection(id)
@@ -42,7 +46,9 @@ func (s *Service) WorkbenchHeadings(id, notePath string) ([]common.WorkbenchHead
 	if err != nil {
 		return nil, err
 	}
-	content, err := integrations.ReadWorkbenchObsidianNote(connection.WorkbenchConnection, notePath)
+	ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
+	defer cancel()
+	content, err := integrations.ReadWorkbenchObsidianTarget(ctx, connection.WorkbenchConnection, notePath)
 	if err != nil {
 		if problem, ok := err.(*common.Error); ok {
 			return nil, problem

@@ -106,6 +106,7 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 				m.sourceFilter = draft.Name
 			}
 			draft.Scope, draft.VaultPath, draft.Repository = snapshot.Scope, snapshot.Vault, snapshot.Repository
+			draft.ReadMethod = snapshot.ReadMethod
 			draft.Status, draft.Capabilities, draft.Identity = "等待首次同步", "只读", "本地"
 			if snapshot.Kind == common.WorkbenchObsidianTasks && snapshot.Capabilities.Create {
 				draft.Writable = true
@@ -192,7 +193,7 @@ func (m *mockup) replaceLiveTasks(tasks []sourceObject) {
 }
 
 func (m *mockup) saveLiveConnection(config connection, bridge common.WorkbenchBridgeInput) string {
-	c := common.WorkbenchConnection{ID: config.ID, Version: config.Version, Kind: config.SourceKind, Name: config.Name, Vault: config.VaultPath, Scope: config.Scope, Repository: config.Repository}
+	c := common.WorkbenchConnection{ID: config.ID, Version: config.Version, Kind: config.SourceKind, Name: config.Name, Vault: config.VaultPath, ReadMethod: config.ReadMethod, Scope: config.Scope, Repository: config.Repository}
 	if c.Kind == githubIssues {
 		c.Repository = "alswl/issues"
 	} else {

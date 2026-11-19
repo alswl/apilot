@@ -147,6 +147,8 @@ components:
           maxLength: 256
           minLength: 1
           type: string
+        read_method:
+          type: string
         repository:
           type: string
         scope:
@@ -512,6 +514,8 @@ components:
             - "null"
         plugin_disabled:
           type: boolean
+        read_method:
+          type: string
         repository:
           type: string
         scope:

@@ -16,6 +16,9 @@ import (
 var errVaultChanged = errors.New("vault changed during scan")
 
 func ReadWorkbenchObsidian(ctx context.Context, c common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
+	if c.ReadMethod == common.WorkbenchObsidianCLI {
+		return readWorkbenchObsidianCLI(ctx, c)
+	}
 	vault, err := os.OpenRoot(c.Vault)
 	if err != nil {
 		return nil, obsidianScanError("Open Obsidian vault", "", err)
@@ -126,6 +129,10 @@ func ReadWorkbenchObsidian(ctx context.Context, c common.WorkbenchConnection) ([
 	if err != nil || vaultErr != nil || originalErr != nil || len(files) != 0 || !os.SameFile(current, expected) || !os.SameFile(currentVault, originalVault) {
 		return nil, obsidianScanError("Verify vault contents", scope, errVaultChanged)
 	}
+	return normalizeWorkbenchObsidianIDs(all), nil
+}
+
+func normalizeWorkbenchObsidianIDs(all []common.WorkbenchTask) []common.WorkbenchTask {
 	ids := map[string]int{}
 	for _, task := range all {
 		if task.NativeID != "" {
@@ -138,7 +145,7 @@ func ReadWorkbenchObsidian(ctx context.Context, c common.WorkbenchConnection) ([
 			task.SourceKey = workbenchNoteKey(task.NativeFields["path"], task.Title)
 		}
 	}
-	return all, nil
+	return all
 }
 
 func sameWorkbenchFile(a, b fs.FileInfo) bool {

@@ -37,7 +37,7 @@ Published builds are available from [GitHub Releases](https://github.com/alswl/a
 
 Downloads currently target **Apple Silicon**. The configured minimum is macOS 12; that version and Intel Macs have not been validated.
 
-1. Open `/Applications/Apilot.app`. It starts in the menu bar.
+1. Open `/Applications/Apilot.app`. The Workbench opens, and Apilot appears in the Dock and menu bar.
 2. Choose **设置… → 命令行工具** to install the CLI.
 3. Check the connection:
 
@@ -66,9 +66,9 @@ apilot logs RUN_ID
 
 Replace `RUN_ID` with the ID returned by `task run`. Triggering returns immediately; use `apilot run show RUN_ID --json` to check completion.
 
-In the menu bar, each shortcut task has **立即运行**, **自动运行** when scheduled, and **编辑…**. **新建任务…** opens the task editor. **全部任务…** opens the **任务 / 历史 / 观察 / 关注** tabs; select a run to read its logs. Running work and pending reminders appear when relevant, and **执行历史** lists recent completed runs. The menu previews up to five tasks; the complete list remains in the management window.
+The Apilot status icon opens a menu with **打开 Apilot**, running tasks, alerts, and **立即运行** shortcuts for up to five tasks. **新建任务…** opens the automation editor. **全部任务…** opens the Workbench's automation area, where you can edit schedules and inspect run history and logs.
 
-Choose **设置…** or press `⌘,` for notifications, timeouts, concurrency and retention. Reopen the App to recover the management window if its menu-bar icon is hidden.
+Choose **设置…** or press `⌘,` for notifications, timeouts, concurrency and retention. Click Apilot in the Dock to reopen the Workbench after closing it.
 
 ## CLI
 

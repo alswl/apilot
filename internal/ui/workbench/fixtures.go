@@ -43,6 +43,7 @@ type connection struct {
 	LastConfirmedAt string            `json:"last_confirmed_at"`
 	StatusLabels    map[string]string `json:"status_labels"`
 	CheckboxMapping map[string]string `json:"checkbox_mapping"`
+	ReadMethod      string            `json:"read_method,omitempty"`
 	VaultPath       string            `json:"vault_path"`
 	SyncMode        string            `json:"sync_mode"`
 }

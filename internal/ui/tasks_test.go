@@ -72,16 +72,16 @@ func TestMenuOffersDailyActionsWithoutMainWindow(t *testing.T) {
 		}
 	}
 	walk(items)
-	for _, label := range []string{fmt.Sprintf(tr("stopS"), "review"), tr("runNow"), tr("automaticRuns"), tr("newTask2"), tr("allTasks"), tr("settings2")} {
+	for _, label := range []string{fmt.Sprintf(tr("stopS"), "review"), tr("runNow"), tr("newTask2"), tr("allTasks"), tr("settings2")} {
 		if found[label] == nil {
 			t.Fatalf("missing menu action %q", label)
 		}
 	}
-	if !found[tr("runNow")].Disabled {
+	if !found["review"].Disabled {
 		t.Fatal("active task can be triggered again")
 	}
-	if !found[tr("automaticRuns")].Checked {
-		t.Fatal("schedule state not reflected")
+	if found[tr("automaticRuns")] != nil {
+		t.Fatal("schedule editing belongs in the workbench")
 	}
 	if s.win != nil {
 		t.Fatal("menu needs main window")
