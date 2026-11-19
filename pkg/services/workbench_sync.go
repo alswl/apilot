@@ -363,6 +363,7 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 		return
 	}
 	matchWorkbench(c, before, tasks)
+	recordObsidianImport(c, before, tasks, now)
 	countWorkbenchChanges(attempt, before, tasks)
 	attempt.State = "success"
 	if err := st.RecordWorkbench(c, attempts, before, tasks, &now); err != nil {

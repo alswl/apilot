@@ -1,10 +1,15 @@
 package workbench
 
 import (
+	"net/url"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -65,7 +70,7 @@ func (m *mockup) taskPreview(c *ui.Context) {
 		if len(o.Activity) > 0 {
 			event := o.Activity[len(o.Activity)-1]
 			components.ContentSection(c.Key("latest"), tr("最近进展"), func() {
-				components.ActivityRow(c, tr(event.At), tr(event.Text))
+				components.ActivityRow(c, taskActivityTime(event), tr(event.Text))
 			})
 		}
 	})
@@ -167,10 +172,46 @@ func (m *mockup) taskLinks(c *ui.Context, o *sourceObject) {
 	}
 }
 
+func obsidianNoteURL(vault, note string) string {
+	localPath := filepath.FromSlash(note)
+	if !filepath.IsAbs(vault) || !filepath.IsLocal(localPath) || filepath.Clean(localPath) != localPath ||
+		!strings.EqualFold(filepath.Ext(localPath), ".md") {
+		return ""
+	}
+	query := url.QueryEscape(filepath.Join(vault, localPath))
+	return "obsidian://open?path=" + strings.ReplaceAll(query, "+", "%20")
+}
+
+func (m *mockup) obsidianSourceLink(c *ui.Context, o *sourceObject) {
+	conn := m.taskConnection(*o)
+	if conn == nil || conn.SourceKind != common.WorkbenchObsidianTasks {
+		return
+	}
+	if link := obsidianNoteURL(conn.VaultPath, o.NativeFields["path"]); link != "" {
+		detail := m.taskDetailUI(o.ID)
+		if components.TextAction(c.Key("open"), tr("在 Obsidian 中打开")) {
+			detail.sourceOpenFailed = mygo.Shell.OpenExternal(link) != nil
+		}
+		if detail.sourceOpenFailed {
+			components.Muted(c.Key("error"), tr("无法打开 Obsidian"))
+		}
+	}
+}
+
+func taskActivityTime(event taskEvent) string {
+	if event.At != "" {
+		return tr(event.At)
+	}
+	if !event.Time.IsZero() {
+		return event.Time.Local().Format("2006-01-02 15:04:05")
+	}
+	return ""
+}
+
 func (m *mockup) taskActivity(c *ui.Context, o *sourceObject) {
 	for i := len(o.Activity) - 1; i >= 0; i-- {
 		event := o.Activity[i]
-		components.ActivityRow(c.Key(i), tr(event.At), tr(event.Text))
+		components.ActivityRow(c.Key(i), taskActivityTime(event), tr(event.Text))
 	}
 }
 

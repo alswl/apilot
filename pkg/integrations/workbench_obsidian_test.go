@@ -122,3 +122,26 @@ func TestWorkbenchObsidianCheckboxKeepsOtherBytes(t *testing.T) {
 		t.Fatal("accepted a duplicate target")
 	}
 }
+
+func TestWorkbenchObsidianTaskMetadataFormats(t *testing.T) {
+	content := "# Release\n" +
+		"- [ ] Ship 🔁 every week on Monday 📅 2026-11-23 ➕ 2026-11-19 ❌ 2026-11-25 ⛔ one,two 🏁 delete ⏫ 🆔 ship\n" +
+		"- [x] Review [created:: 2026-11-19] (start:: 2026-11-20) [scheduled:: 2026-11-22] [completion:: 2026-11-24] [repeat:: every day] [dependsOn:: ship] [id:: review] [priority:: lowest]\n"
+	tasks := parseWorkbenchNote(common.WorkbenchConnection{}, "Projects/Release.md", content)
+	if len(tasks) != 2 || tasks[0].Title != "Ship" || tasks[1].Title != "Review" {
+		t.Fatalf("unexpected tasks: %+v", tasks)
+	}
+	for index, fields := range []map[string]string{
+		{"file": "Release.md", "path": "Projects/Release.md", "section": "Release", "line": "2",
+			"recurrence": "every week on Monday", "due": "2026-11-23", "created": "2026-11-19",
+			"cancelled": "2026-11-25", "depends_on": "one,two", "on_completion": "delete", "priority": "high", "id": "ship"},
+		{"created": "2026-11-19", "start": "2026-11-20", "scheduled": "2026-11-22", "done": "2026-11-24",
+			"recurrence": "every day", "priority": "lowest", "depends_on": "ship", "id": "review"},
+	} {
+		for field, want := range fields {
+			if got := tasks[index].NativeFields[field]; got != want {
+				t.Errorf("task %d field %s = %q, want %q", index, field, got, want)
+			}
+		}
+	}
+}

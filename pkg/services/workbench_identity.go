@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/alswl/apilot/pkg/common"
 )
@@ -34,6 +35,9 @@ func matchWorkbench(c common.WorkbenchConnection, before, after []common.Workben
 				for _, p := range previous {
 					if task.SourceKey == p.SourceKey {
 						task.ID = p.ID
+						if c.Kind == common.WorkbenchObsidianTasks {
+							task.Activity = p.Activity
+						}
 						matched = reflect.DeepEqual(task, p)
 						break
 					}
@@ -55,6 +59,39 @@ func matchWorkbench(c common.WorkbenchConnection, before, after []common.Workben
 					}
 				}
 			}
+		}
+	}
+}
+
+// Keep existing IDs when a previously unrecognized attribute changes the
+// parser's key for an otherwise identical line.
+func recordObsidianImport(c common.WorkbenchConnection, before, after []common.WorkbenchTask, now time.Time) {
+	if c.Kind != common.WorkbenchObsidianTasks {
+		return
+	}
+	type oldLine struct{ locator, summary string }
+	previous := make(map[string]common.WorkbenchTask, len(before))
+	legacy := make(map[oldLine]string)
+	for _, task := range before {
+		previous[task.ID] = task
+		if task.NativeFields["file"] == "" {
+			legacy[oldLine{task.Locator, task.Summary}] = task.ID
+		}
+	}
+	assigned := make(map[string]bool, len(after))
+	for _, task := range after {
+		assigned[task.ID] = true
+	}
+	for i := range after {
+		task := &after[i]
+		if _, ok := previous[task.ID]; !ok {
+			if id := legacy[oldLine{task.Locator, task.Summary}]; id != "" && !assigned[id] {
+				assigned[id], task.ID = true, id
+			}
+		}
+		task.Activity = previous[task.ID].Activity
+		if len(task.Activity) == 0 {
+			task.Activity = []common.WorkbenchTaskEvent{{Time: now, Text: "从 Obsidian 导入"}}
 		}
 	}
 }

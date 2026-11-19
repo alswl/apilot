@@ -689,7 +689,7 @@ func (m *mockup) taskValues(o sourceObject) []string {
 	}
 	updated := "—"
 	if len(o.Activity) > 0 {
-		updated = tr(o.Activity[len(o.Activity)-1].At)
+		updated = taskActivityTime(o.Activity[len(o.Activity)-1])
 	}
 	return []string{m.sourceText(o.Title), status, tr(o.NativeFields["priority"]), displayTaskID(o) + " · " + source, due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", ")}
 }
@@ -743,7 +743,7 @@ func (m *mockup) taskRows() []int {
 			}
 			order = dateA.Compare(dateB)
 		case "priority":
-			rank := map[string]int{"最低": 1, "低": 2, "普通": 3, "中": 4, "高": 5, "最高": 6}
+			rank := map[string]int{"最低": 1, "低": 2, "普通": 3, "中": 4, "高": 5, "最高": 6, "lowest": 1, "low": 2, "normal": 3, "medium": 4, "high": 5, "highest": 6}
 			order = cmp.Compare(rank[a.NativeFields["priority"]], rank[b.NativeFields["priority"]])
 		default:
 			order = strings.Compare(m.taskValues(a)[column], m.taskValues(b)[column])
@@ -787,11 +787,15 @@ func (m *mockup) taskListControls(c *ui.Context) {
 		if compact {
 			m.taskControlsPopover(c.Key("filter-panel"), fields, &m.searchExpanded, func() {
 				ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() { m.taskFilterSelects(c.Key("selects")) })
+				m.sourceLogoFilters(c.Key("source"))
 				m.sourceQuickFilters(c.Key("source-quick-filters"))
 				m.searchHelp(c.Key("search-help"))
 			})
 		}
 	})
+	if !compact {
+		m.sourceLogoFilters(c.Key("source"))
+	}
 }
 
 func (m *mockup) taskFilterSelects(c *ui.Context) {
@@ -800,11 +804,42 @@ func (m *mockup) taskFilterSelects(c *ui.Context) {
 		states = []string{"全部状态", "待处理", "进行中", "已完成", "不计划处理", "未知"}
 	}
 	localizedSelect(c.Key("status"), &m.statusFilter, states, 110)
-	sources := []string{"全部来源"}
-	for _, connection := range m.connectionsData {
-		sources = append(sources, connection.Name)
+}
+
+func (m *mockup) sourceLogoFilters(c *ui.Context) {
+	if len(m.connectionsData) == 0 {
+		return
 	}
-	localizedSelect(c.Key("source"), &m.sourceFilter, sources, 128)
+	ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(4).Children(func() {
+		all := m.sourceFilter == "全部来源"
+		if components.IconToggle(c.Key("all"), "square.grid.2x2", tr("全部来源"), all).Clicked() {
+			m.sourceFilter = "全部来源"
+		}
+		for _, connection := range m.connectionsData {
+			name := tr(connection.Name)
+			selected := m.sourceFilter == connection.Name
+			button := ui.ButtonBase(c.Key(connection.ID)).Label(name).Tooltip(name).Size(32, 30).Radius(6).Center().Selected(selected)
+			if selected {
+				button.Background(c.Theme().Selection)
+			} else if button.Hovered() {
+				button.Background(c.Theme().SurfaceHover)
+			}
+			button.Children(func() {
+				opacity := float32(0.45)
+				if all || selected {
+					opacity = 1
+				}
+				ui.Box(c).Opacity(opacity).Children(func() { connectorLogo(c, connection.SourceKind, 16) })
+			})
+			if button.Clicked() {
+				if selected {
+					m.sourceFilter = "全部来源"
+				} else {
+					m.sourceFilter = connection.Name
+				}
+			}
+		}
+	})
 }
 
 func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
@@ -891,13 +926,14 @@ func (m *mockup) taskProperties(c *ui.Context, o *sourceObject) {
 	} else if due := o.NativeFields["due"]; due != "" {
 		components.PropertyGrid(c.Key("due"), []components.Property{{ID: "due", Title: tr("截止日"), Value: tr(due)}}, 2)
 	}
+	m.obsidianSourceLink(c.Key("obsidian-link"), o)
 	m.taskDateProperties(c.Key("dates"), o)
 	m.taskLabelProperty(c.Key("labels"), o)
 	if conn := m.taskConnection(*o); conn != nil {
 		var properties []components.Property
 		for _, field := range conn.SearchFields {
 			switch field {
-			case "start", "scheduled", "done", "created_at", "updated_at", "closed_at":
+			case "created", "start", "scheduled", "done", "cancelled", "created_at", "updated_at", "closed_at":
 				continue
 			}
 			if value := strings.Join(m.searchValues(*o, field), ", "); strings.TrimSpace(value) != "" && field != "checkbox" {
@@ -916,12 +952,14 @@ func (m *mockup) taskDateProperties(c *ui.Context, o *sourceObject) {
 		latest := o.Activity[len(o.Activity)-1]
 		nativeTime, _ := time.Parse(time.RFC3339, updated)
 		if updated == "" || latest.Time.After(nativeTime) {
-			updated = tr(latest.At)
+			updated = taskActivityTime(latest)
 		}
 	}
 	var dates []components.Property
 	for _, item := range [][3]string{
 		{"created", "创建时间", fields["created_at"]},
+		{"created-date", "创建日期", fields["created"]},
+		{"cancelled", "取消日期", fields["cancelled"]},
 		{"updated", "更新时间", updated},
 		{"start", "开始日期", fields["start"]},
 		{"scheduled", "计划日期", fields["scheduled"]},

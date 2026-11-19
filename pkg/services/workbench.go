@@ -29,7 +29,7 @@ func WorkbenchConnectors() []WorkbenchConnector {
 			Kind: common.WorkbenchObsidianTasks, Name: "Obsidian Tasks", UserConfigurable: true,
 			DemoCapabilities: "文件变化 · 增量读取 · 回写", DemoSyncMode: "文件变化",
 			SearchAliases: []string{"obsidian"},
-			SearchFields:  []string{"path", "section", "start", "scheduled", "done", "checkbox"},
+			SearchFields:  []string{"file", "path", "section", "line", "created", "start", "scheduled", "done", "cancelled", "recurrence", "depends_on", "on_completion", "checkbox"},
 		},
 	}
 }

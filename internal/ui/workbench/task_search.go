@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"maps"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -127,6 +128,14 @@ func (m *mockup) searchValues(object sourceObject, field string) []string {
 		return taskLabelValues(object)
 	case "id":
 		return []string{object.ID, object.NativeID, displayTaskID(object)}
+	case "file":
+		if value := object.NativeFields["path"]; value != "" {
+			return []string{path.Base(value)}
+		}
+	case "depends_on":
+		if value := object.NativeFields["depends_on"]; value != "" {
+			return strings.FieldsFunc(value, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+		}
 	case "assignee":
 		return object.Assignees
 	case "title":
@@ -243,7 +252,11 @@ func (m *mockup) sourceQuickFilters(c *ui.Context) {
 			continue
 		}
 		ui.Row(c.Key("quick-filters-" + conn.ID)).FillWidth().Wrap().Gap(8).Children(func() {
-			for _, field := range conn.SearchFields[:min(2, len(conn.SearchFields))] {
+			fields := conn.SearchFields[:min(2, len(conn.SearchFields))]
+			if conn.SourceKind == "obsidian_tasks" {
+				fields = []string{"file", "priority", "due", "scheduled", "recurrence", "on_completion"}
+			}
+			for _, field := range fields {
 				values := make(map[string]bool)
 				for _, object := range m.objects {
 					if object.ConnectionID == conn.ID {
@@ -268,7 +281,7 @@ func (m *mockup) sourceQuickFilters(c *ui.Context) {
 }
 
 func searchFieldTitle(field string) string {
-	if title := map[string]string{"path": "路径", "section": "章节", "repo": "仓库", "assignee": "负责人", "milestone": "里程碑", "state_reason": "关闭原因", "start": "开始日期", "scheduled": "计划日期", "done": "完成日期"}[field]; title != "" {
+	if title := map[string]string{"file": "文件名", "line": "行号", "created": "创建日期", "cancelled": "取消日期", "recurrence": "重复规则", "depends_on": "依赖任务", "on_completion": "完成后操作", "priority": "优先级", "due": "截止日", "path": "路径", "section": "章节", "repo": "仓库", "assignee": "负责人", "milestone": "里程碑", "state_reason": "关闭原因", "start": "开始日期", "scheduled": "计划日期", "done": "完成日期"}[field]; title != "" {
 		return title
 	}
 	return field

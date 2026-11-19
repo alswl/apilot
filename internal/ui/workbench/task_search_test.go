@@ -55,3 +55,39 @@ func TestTaskSearchFieldsAndLabelPicker(t *testing.T) {
 		t.Fatal("clicking a label must apply the exact filter and return focus to search")
 	}
 }
+
+func TestObsidianSourceLinkAndTaskFields(t *testing.T) {
+	if got := obsidianNoteURL("/Vaults/我的 Vault", "Work/Plan + 1.md"); got != "obsidian://open?path=%2FVaults%2F%E6%88%91%E7%9A%84%20Vault%2FWork%2FPlan%20%2B%201.md" {
+		t.Fatalf("unexpected Obsidian URI: %q", got)
+	}
+	if obsidianNoteURL("/Vaults/Test", "../Other.md") != "" {
+		t.Fatal("accepted a note outside the configured vault")
+	}
+	m := newMockup()
+	m.connectionsData = []connection{{ID: "vault", Name: "Test vault", SearchFields: []string{"file", "recurrence", "depends_on"}}}
+	task := sourceObject{ConnectionID: "vault", NativeFields: map[string]string{
+		"path": "Work/Plan.md", "recurrence": "every week", "depends_on": "one,two",
+	}}
+	m.search = `file:=Plan.md recurrence:"every week" depends_on:=two`
+	query, problem := m.parseSearch()
+	if problem != "" || !m.matchesTask(task, query) {
+		t.Fatalf("could not filter by Obsidian task attributes: %s", problem)
+	}
+}
+
+func TestSourceLogoFiltersToggleConnection(t *testing.T) {
+	m := newMockup()
+	m.connectionsData = []connection{
+		{ID: "one", Name: "First vault", SourceKind: obsidianTasks},
+		{ID: "two", Name: "Second vault", SourceKind: obsidianTasks},
+	}
+	p := ui.NewTester(m.sourceLogoFilters, 380, 100)
+	click(t, p, "First vault")
+	if m.sourceFilter != "First vault" {
+		t.Fatalf("source filter after click: %q", m.sourceFilter)
+	}
+	click(t, p, "First vault")
+	if m.sourceFilter != "全部来源" {
+		t.Fatalf("source filter after repeated click: %q", m.sourceFilter)
+	}
+}

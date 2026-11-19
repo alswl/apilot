@@ -3,6 +3,7 @@ package integrations
 import (
 	"encoding/json"
 	"fmt"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,7 +15,13 @@ import (
 var wbCheckbox = regexp.MustCompile(`^\s*(?:[-+*]|[0-9]+[.)])\s+\[([^\]\r\n])\]\s+(.+)$`)
 var wbHeading = regexp.MustCompile(`^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t\r]*$`)
 var wbTag = regexp.MustCompile(`(?:^|\s)(#[\pL\pN_/-]+)`)
-var wbField = regexp.MustCompile(`(?:^|\s)(🆔\s*[A-Za-z0-9_-]+|[📅⏳🛫✅]\s*\d{4}-\d{2}-\d{2}|[🔺⏫🔼🔽⏬])`)
+var wbField = regexp.MustCompile(`(?:^|\s)(🆔\s*[A-Za-z0-9_-]+|[📅⏳🛫✅➕❌]\s*\d{4}-\d{2}-\d{2}|[🔺⏫🔼🔽⏬]|⛔\s*[A-Za-z0-9_-]+(?:,\s*[A-Za-z0-9_-]+)*|🏁\s*(?:delete|keep)\b|🔁\s+[^📅⏳🛫✅➕❌🔺⏫🔼🔽⏬⛔🏁🆔#^\[\r\n]*[^📅⏳🛫✅➕❌🔺⏫🔼🔽⏬⛔🏁🆔#^\[\s])`)
+
+var wbInlineField = regexp.MustCompile(`(?i)\[(created|start|scheduled|due|completion|cancelled|priority|repeat|onCompletion|id|dependsOn)::[ \t]*([^\]\r\n]+)\]|\((created|start|scheduled|due|completion|cancelled|priority|repeat|onCompletion|id|dependsOn)::[ \t]*([^()\r\n]+)\)`)
+var wbTaskID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+var wbTaskDependencies = regexp.MustCompile(`^[A-Za-z0-9_-]+(?:,\s*[A-Za-z0-9_-]+)*$`)
+var wbPriorities = map[rune]string{'🔺': "highest", '⏫': "high", '🔼': "medium", '🔽': "low", '⏬': "lowest"}
+var wbDateKeys = map[rune]string{'📅': "due", '⏳': "scheduled", '🛫': "start", '✅': "done", '➕': "created", '❌': "cancelled"}
 
 func scanWorkbenchMarkdown(content string, visit func(int, string)) {
 	var fence byte
@@ -50,7 +57,7 @@ func scanWorkbenchMarkdown(content string, visit func(int, string)) {
 	}
 }
 
-func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []common.WorkbenchTask {
+func parseWorkbenchNote(c common.WorkbenchConnection, notePath, content string) []common.WorkbenchTask {
 	var out []common.WorkbenchTask
 	var sections []string
 	var levels []int
@@ -83,32 +90,59 @@ func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []co
 				state = v
 			}
 		}
-		fields := map[string]string{"path": path, "line": strconv.Itoa(i + 1), "section": "", "checkbox": m[1], "status": state}
+		fields := map[string]string{"path": notePath, "file": path.Base(notePath), "line": strconv.Itoa(i + 1), "section": "", "checkbox": m[1], "status": state}
 		if len(sections) != 0 {
 			fields["section"] = sections[len(sections)-1]
 			fields["heading_path"] = headingPath
 		}
 		body := m[2]
-		var id string
-		title := wbField.ReplaceAllStringFunc(body, func(match string) string {
+		title := wbInlineField.ReplaceAllStringFunc(body, func(match string) string {
+			groups := wbInlineField.FindStringSubmatch(match)
+			key, value := groups[1], groups[2]
+			if key == "" {
+				key, value = groups[3], groups[4]
+			}
+			key = strings.ToLower(key)
+			switch key {
+			case "completion":
+				key = "done"
+			case "repeat":
+				key = "recurrence"
+			case "oncompletion":
+				key = "on_completion"
+			case "dependson":
+				key = "depends_on"
+			}
+			if setWorkbenchTaskField(fields, key, strings.TrimSpace(value)) {
+				return ""
+			}
+			return match
+		})
+		title = wbField.ReplaceAllStringFunc(title, func(match string) string {
 			token := strings.TrimSpace(match)
 			symbol := []rune(token)[0]
 			value := strings.TrimSpace(strings.TrimPrefix(token, string(symbol)))
-			if symbol == '🆔' {
-				id = value
+			if priority := wbPriorities[symbol]; priority != "" {
+				fields["priority"] = priority
 				return ""
 			}
-			dateKey := map[rune]string{'📅': "due", '⏳': "scheduled", '🛫': "start", '✅': "done"}[symbol]
-			if dateKey != "" {
-				if _, err := time.Parse("2006-01-02", value); err != nil {
-					return match
-				}
-				fields[dateKey] = value
-			} else {
-				fields["priority"] = map[rune]string{'🔺': "highest", '⏫': "high", '🔼': "medium", '🔽': "low", '⏬': "lowest"}[symbol]
+			key := wbDateKeys[symbol]
+			switch symbol {
+			case '🆔':
+				key = "id"
+			case '⛔':
+				key = "depends_on"
+			case '🔁':
+				key = "recurrence"
+			case '🏁':
+				key = "on_completion"
 			}
-			return ""
+			if setWorkbenchTaskField(fields, key, value) {
+				return ""
+			}
+			return match
 		})
+		id := fields["id"]
 		title = strings.TrimSpace(title)
 		if title == "" {
 			title = body
@@ -117,13 +151,50 @@ func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []co
 		for _, tag := range wbTag.FindAllStringSubmatch(body, -1) {
 			tags = append(tags, tag[1])
 		}
-		key := workbenchNoteKey(path, title)
+		key := workbenchNoteKey(notePath, title)
 		if id != "" {
 			key = "task:" + id
 		}
-		out = append(out, common.WorkbenchTask{SourceKey: key, NativeID: id, Title: title, State: state, Locator: fmt.Sprintf("%s:%d", path, i+1), Labels: tags, Summary: body, NativeFields: fields})
+		out = append(out, common.WorkbenchTask{SourceKey: key, NativeID: id, Title: title, State: state, Locator: fmt.Sprintf("%s:%d", notePath, i+1), Labels: tags, Summary: body, NativeFields: fields})
 	})
 	return out
+}
+
+func setWorkbenchTaskField(fields map[string]string, key, value string) bool {
+	switch key {
+	case "created", "start", "scheduled", "due", "done", "cancelled":
+		if _, err := time.Parse("2006-01-02", value); err != nil {
+			return false
+		}
+	case "id":
+		if !wbTaskID.MatchString(value) {
+			return false
+		}
+	case "depends_on":
+		if !wbTaskDependencies.MatchString(value) {
+			return false
+		}
+	case "priority":
+		value = strings.ToLower(value)
+		switch value {
+		case "highest", "high", "medium", "normal", "low", "lowest", "none":
+		default:
+			return false
+		}
+	case "on_completion":
+		value = strings.ToLower(value)
+		if value != "delete" && value != "keep" {
+			return false
+		}
+	case "recurrence":
+		if value == "" {
+			return false
+		}
+	default:
+		return false
+	}
+	fields[key] = value
+	return true
 }
 
 func workbenchWithoutComments(line string, comment *bool) string {

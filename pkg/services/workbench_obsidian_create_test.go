@@ -121,6 +121,10 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(task.Activity) != 1 || task.Activity[0].Time.IsZero() || task.Activity[0].Text != "从 Obsidian 导入" {
+		t.Fatalf("missing import activity: %+v", task.Activity)
+	}
+	importedAt := task.Activity[0].Time
 	beforeComplete := string(data)
 	status := common.WorkbenchTaskWrite{
 		RequestID: "complete-bridge-task", SourceObjectID: task.ID, State: "done",
@@ -139,7 +143,7 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 		t.Fatalf("complete replay: %+v %v", replay, err)
 	}
 	task, err = s.WorkbenchTask(task.ID)
-	if err != nil || task.State != "done" {
+	if err != nil || task.State != "done" || len(task.Activity) != 1 || !task.Activity[0].Time.Equal(importedAt) {
 		t.Fatalf("completed task: %+v %v", task, err)
 	}
 	status.RequestID, status.State, status.TargetVersion = "reopen-bridge-task", "open", task.TargetVersion

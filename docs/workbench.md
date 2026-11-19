@@ -60,6 +60,8 @@ apilot workbench connection resume CONNECTION_ID VERSION --json
 
 Obsidian 连接的「读取方式」默认直接读取 Markdown。也可选 Obsidian CLI，或在连接 JSON 中填写 `"read_method":"obsidian_cli"`。使用 CLI 时，启动 Obsidian、开启命令行接口并打开目标 vault；Apilot 会核对 CLI 返回的 vault 路径。CLI 模式只读，按批读取 Markdown。扫描开始时显示读取状态，取得笔记总数后显示已读数。30 秒内未读完整轮时，本次同步标为失败并保留上次确认的任务。主动取消会记录为已取消。两种结果都可在同步日志查看。
 
+Obsidian 任务详情显示文件名、vault 内路径、章节和行号，并可用「在 Obsidian 中打开」打开原笔记。「活动」记录 Apilot 导入任务的时间。任务搜索支持 Obsidian Tasks 的 Emoji 和 Dataview 字段，例如 `file:Release.md`、`scheduled:2026-11-24`、`has:recurrence`、`depends_on:=deploy`。点来源图标只看该连接，再点一次恢复全部来源。
+
 ```sh
 go run ./cmd/apilot-app --mock
 open -n -a Apilot --args --mock

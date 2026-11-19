@@ -104,6 +104,8 @@ func (s *Service) reconcileObsidianWrite(store workbenchStore, writer workbenchT
 		return receipt, err
 	}
 	matchWorkbench(connection.WorkbenchConnection, before, tasks)
+	now := time.Now().UTC()
+	recordObsidianImport(connection.WorkbenchConnection, before, tasks, now)
 	index := -1
 	if input.SourceObjectID != "" {
 		for i := range tasks {
@@ -128,7 +130,6 @@ func (s *Service) reconcileObsidianWrite(store workbenchStore, writer workbenchT
 	if index < 0 {
 		return receipt, nil
 	}
-	now := time.Now().UTC()
 	attempt := common.WorkbenchAttempt{ID: now.UnixNano(), Trigger: "write", State: "success", Started: now, Finished: &now}
 	countWorkbenchChanges(&attempt, before, tasks)
 	attempts := append([]common.WorkbenchAttempt{attempt}, connection.Attempts...)
