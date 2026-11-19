@@ -95,10 +95,13 @@ func (m *mockup) layoutWorkspace(c *ui.Context, width float32) {
 			m.layoutTaskDetail(c.Key("expanded-detail"))
 			return
 		}
-		m.layoutBrief(c.Key("brief"))
-		ui.Divider(c)
 		_, height := c.Size()
-		availableHeight := height - 51 - layoutBriefSize - 1 - statusBarHeight - 1
+		availableHeight := height - 51 - statusBarHeight - 1
+		if m.live == nil {
+			m.layoutBrief(c.Key("brief"))
+			ui.Divider(c)
+			availableHeight -= layoutBriefSize + 1
+		}
 		m.layout.listHeight = availableHeight
 		if m.layout.detailHidden {
 			m.layout.listWidth = width
@@ -178,15 +181,17 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 			ui.Scroll(c.Key("brief-thread")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&m.nowSession().scroll).Children(func() {
 				ui.Column(c).FillWidth().Gap(8).Children(func() { m.nowChatContent(c) })
 			})
-			m.nowComposer(c, m.layout.focusAssistant)
+			if !m.framework {
+				m.nowComposer(c, m.layout.focusAssistant)
+			}
 			return
 		}
 
 		object := &m.objects[index]
 		m.taskBackLink(c.Key("return-to-source"))
 		ui.Row(c.Key("title-row")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			title := ui.Text(c.Key("title"), tr(object.Title)).FontSize(18).FontWeight(600).SingleLine().Ellipsis("…").
-				Tooltip(tr(object.Title)).Focusable().Grow(1).MinWidth(0)
+			title := ui.Text(c.Key("title"), m.sourceText(object.Title)).FontSize(18).FontWeight(600).SingleLine().Ellipsis("…").
+				Tooltip(m.sourceText(object.Title)).Focusable().Grow(1).MinWidth(0)
 			if m.layout.focusDetail {
 				title.Focus()
 				m.layout.focusDetail = false
@@ -194,7 +199,11 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 			m.detailSizeButton(c.Key("detail-size"))
 		})
 		ui.Row(c.Key("actions")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-			ui.Text(c, displayTaskID(*object)+" · "+m.taskStateLabel(*object)).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…").MinWidth(0).Grow(1)
+			caption := displayTaskID(*object) + " · " + m.taskStateLabel(*object)
+			if object.Mode == "mock" {
+				caption += " · " + tr("模拟数据")
+			}
+			ui.Text(c, caption).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…").MinWidth(0).Grow(1)
 			m.taskWatchButton(c.Key("watch"), object)
 			m.taskSourceActions(c.Key("edit"), object)
 		})

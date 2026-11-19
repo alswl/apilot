@@ -42,7 +42,7 @@ func (m *mockup) workspaceBreadcrumb(c *ui.Context) {
 			}
 		case tasksPage:
 			if index := m.currentTaskIndex(); index >= 0 && !m.layout.detailHidden {
-				current, back = tr(m.objects[index].Title), m.showTaskList
+				current, back = m.sourceText(m.objects[index].Title), m.showTaskList
 			}
 		}
 		if back != nil {

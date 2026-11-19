@@ -17,7 +17,7 @@ func Execute() int {
 		return integrations.Serve()
 	}
 	flags := flag.NewFlagSet("apilot-app", flag.ContinueOnError)
-	framework := flags.Bool("workbench", false, "open the workbench with no source data")
+	framework := flags.Bool("workbench", false, "open the live workbench")
 	mock := flags.Bool("mock", false, "open the workbench with local fixture data")
 	capture := flags.String("capture", "", "save workbench screenshots in mock mode")
 	keybindings := flags.String("keybindings", "", "load workbench keyboard bindings from this JSON file")
@@ -39,7 +39,13 @@ func Execute() int {
 	if workbenchMode {
 		var err error
 		if *framework {
-			err = workbench.RunFramework(*keybindings, *language)
+			runtime, openErr := server.Open(config.DataDir())
+			if openErr != nil {
+				log.Print(openErr)
+				return 1
+			}
+			defer runtime.Close()
+			err = workbench.RunLive(runtime.Service, *keybindings, *language)
 		} else {
 			err = workbench.RunMock(*capture, *keybindings, *language)
 		}

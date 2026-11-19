@@ -1,13 +1,26 @@
 # macOS 工作台使用指南
 
-从仓库启动空工作台，或给已安装的 Apilot 传入同样的参数。
+从仓库启动只读工作台，或给已安装的 Apilot 传入同样的参数。
 
 ```sh
 go run ./cmd/apilot-app --workbench
 open -n -a Apilot --args --workbench
 ```
 
-空工作台提供导航和设置入口，以及 GitHub Issues 与 Obsidian Tasks 的配置骨架。两个连接器均显示未接入，配置只在本次运行中保留。要体验任务、简报、助理回复和同步演示，请启动样例模式。
+第一次打开时任务列表为空。在「连接 → 添加连接」选择 Obsidian Tasks，填写 vault 的绝对路径，可选填相对目录作为同步范围。Apilot 在保存后首次同步，运行期间每分钟刷新，也可点击连接的同步按钮。同一数据目录只运行一个 Apilot 实例，切换默认模式与工作台前先退出当前实例。任务和连接配置保存在 Apilot 的本地数据库中。来源不可读时仍可查看上次成功结果，连接页保留成功时间及最近的同步日志。改变范围后，旧范围数据会退出查询。Apilot 只读 Markdown 文件，隐藏目录、链接和代码示例中的任务不导入。
+
+要离线体验第二种来源，在连接页主动添加 GitHub Issues。此连接使用标明「模拟数据」的 `alswl/issues` 示例，开放和关闭的 issue 均可浏览。该连接无需 GitHub 账号。
+
+在 Apilot 运行期间可通过 CLI 读取同一批数据。连接与任务 ID 可从列表中获取。
+
+```sh
+apilot workbench connection list --json
+apilot workbench task list --connection CONNECTION_ID --state open --json
+apilot workbench task show TASK_ID --json
+apilot workbench sync show CONNECTION_ID --json
+```
+
+生产工作台的来源任务操作为只读。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
 
 ```sh
 go run ./cmd/apilot-app --mock
@@ -34,7 +47,7 @@ open -n -a Apilot --args --mock
 
 单击任务行后，详情区显示描述、来源属性和可用时间，下方的链接、评论、活动和助理各有标签。评论保存在本次模拟会话内。可用 `j/k` 跨页浏览，按 `o` 或 Return 打开详情并移入焦点，按 Esc 回列表。若打开详情前侧栏是收起的，也会恢复为收起。打开关联任务后，可用详情顶部的返回链接或 Esc 回到来源任务和原列表位置。详情底部可直接询问当前任务。点工具栏星光会打开助理弹窗，并带上选中的任务或当前 Now 会话。缩放时保留筛选和草稿。自动调整每页数量后，当前任务仍在显示的页内；无选区时保留原页面第一项所在的位置。
 
-## 在来源里更改任务
+## 在样例模式中模拟修改
 
 任务行首的复选框和 `x` 都能完成或重开任务。右键单击任务行可切换连接器支持的其他状态。按 `a` 编辑任务，按 `l` 管理标签。详情里的标签输入框支持添加标签，点击已有标签可直接修改。Enter 应用，编辑时可点取消图标。普通标签按来源规则保存，键值标签保存在本地模拟会话内，可用 `label:=risk:high` 精确搜索。来源修改会先显示等待确认。
 

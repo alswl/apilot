@@ -70,6 +70,9 @@ func (m *mockup) openTaskButton(c *ui.Context) {
 }
 
 func sourceState(o sourceObject, kind string) string {
+	if o.State != "" {
+		return workbenchStateLabel(o.State)
+	}
 	if kind == githubIssues {
 		if o.NativeFields["state"] != "closed" {
 			return "开放"
@@ -95,6 +98,9 @@ func (conn *connection) displayState(state string) string {
 }
 
 func (m *mockup) taskStateLabel(o sourceObject) string {
+	if o.State != "" {
+		return tr(workbenchStateLabel(o.State))
+	}
 	if conn := m.taskConnection(o); conn != nil {
 		if label := conn.StatusLabels[sourceState(o, conn.SourceKind)]; label != "" {
 			return label

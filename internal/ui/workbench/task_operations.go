@@ -363,6 +363,9 @@ func (m *mockup) submitSourceEdit(edit taskSourceEdit, after func(time.Duration,
 }
 
 func taskClosed(o sourceObject) bool {
+	if o.State != "" {
+		return o.State == "done" || o.State == "cancelled"
+	}
 	return o.NativeFields["state"] == "closed" || o.NativeFields["status"] == "已完成" || o.NativeFields["status"] == "不计划处理"
 }
 

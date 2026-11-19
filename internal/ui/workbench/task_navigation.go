@@ -57,7 +57,7 @@ func (m *mockup) taskBackLink(c *ui.Context) {
 	if index < 0 {
 		return
 	}
-	label := fmt.Sprintf(tr("返回 %s"), tr(m.objects[index].Title))
+	label := fmt.Sprintf(tr("返回 %s"), m.sourceText(m.objects[index].Title))
 	link := ui.ButtonBase(c).Label(label).Tooltip(label).MinWidth(0).MinHeight(26).Justify(ui.Start)
 	link.Children(func() {
 		ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(6).Children(func() {

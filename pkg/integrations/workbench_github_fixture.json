@@ -1,0 +1,4 @@
+[
+  {"native_id":"101","title":"Review release checklist","state":"open","locator":"fixture:alswl/issues#101","summary":"Sample issue for offline acceptance.","labels":["release"],"assignees":["sample-maintainer"],"native_fields":{"repo":"alswl/issues","state":"open","status":"open"}},
+  {"native_id":"102","title":"Confirm notification behavior","state":"done","locator":"fixture:alswl/issues#102","summary":"Sample completed issue for offline acceptance.","native_fields":{"repo":"alswl/issues","state":"closed","state_reason":"completed","status":"done"}}
+]

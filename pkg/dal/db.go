@@ -18,6 +18,9 @@ var schema string
 //go:embed migrations/002_observers.sql
 var observerSchema string
 
+//go:embed migrations/003_workbench.sql
+var workbenchSchema string
+
 type Store struct{ db *sql.DB }
 
 func Open(path string) (*Store, error) {
@@ -41,9 +44,9 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, e
 	}
-	if version > 2 {
+	if version > 3 {
 		db.Close()
-		return nil, fmt.Errorf("database schema %d is newer than supported 2", version)
+		return nil, fmt.Errorf("database schema %d is newer than supported 3", version)
 	}
 	if version == 0 {
 		tx, e := db.Begin()
@@ -79,6 +82,23 @@ func Open(path string) (*Store, error) {
 		if e != nil {
 			db.Close()
 			return nil, e
+		}
+	}
+	if version < 3 {
+		tx, err := db.Begin()
+		if err == nil {
+			defer tx.Rollback()
+			_, err = tx.Exec(workbenchSchema)
+			if err == nil {
+				_, err = tx.Exec("PRAGMA user_version=3")
+			}
+			if err == nil {
+				err = tx.Commit()
+			}
+		}
+		if err != nil {
+			db.Close()
+			return nil, err
 		}
 	}
 	return s, nil

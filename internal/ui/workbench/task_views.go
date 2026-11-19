@@ -199,7 +199,7 @@ func (m *mockup) taskTables(c *ui.Context, rows []int) {
 			icons[4] = "calendar"
 		}
 		group.Rows = append(group.Rows, components.TableRow{
-			ID: o.ID, Title: tr(o.Title), Cells: cellsAt(m.taskValues(o), indexes), Icons: cellsAt(icons, indexes),
+			ID: o.ID, Title: m.sourceText(o.Title), Cells: cellsAt(m.taskValues(o), indexes), Icons: cellsAt(icons, indexes),
 			Leading: func(c *ui.Context) { m.taskStatusCheckbox(c, o) },
 			Menu: func(menu *ui.Menu) {
 				if menu.Item(tr("打开完整任务")).Chosen() {

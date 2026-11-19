@@ -32,8 +32,11 @@ func (m *mockup) connectionByID(id string) *connection {
 }
 
 func (m *mockup) connections(c *ui.Context) {
-	if m.framework {
+	if m.framework && m.live == nil {
 		components.Muted(c.Key("guidance"), tr("通过齿轮查看配置。同步尚未接入，配置只在本次运行中保留。"))
+	}
+	if m.liveError {
+		components.Muted(c.Key("live-error"), tr("无法读取工作台数据"))
 	}
 	ui.Row(c.Key("actions")).FillWidth().Justify(ui.End).Children(func() {
 		ui.MenuButton(c.Key("add"), tr("添加连接"), func(menu *ui.Menu) {
@@ -77,7 +80,7 @@ func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
 			if conn.Status == "连接断开" {
 				label, icon = "重新连接", "bolt.horizontal"
 			}
-			if components.IconButton(c.Key("sync"), icon, tr(label)+" · "+tr(conn.Name), m.framework || m.pendingSync[conn.ID]).Clicked() {
+			if components.IconButton(c.Key("sync"), icon, tr(label)+" · "+tr(conn.Name), (m.framework && m.live == nil) || m.pendingSync[conn.ID]).Clicked() {
 				m.syncConnection(conn, m.after)
 			}
 		})
@@ -116,6 +119,14 @@ func (m *mockup) appendSyncEvent(id, message string) {
 
 func (m *mockup) syncConnection(conn *connection, after func(time.Duration, func())) {
 	id := conn.ID
+	if m.live != nil {
+		if err := m.live.SyncWorkbench(id); err == nil {
+			m.refreshLive()
+		} else {
+			m.liveError = true
+		}
+		return
+	}
 	if m.framework || m.pendingSync[id] {
 		return
 	}
@@ -180,7 +191,13 @@ func (m *mockup) connectorDraft(connector services.WorkbenchConnector) connectio
 		Capabilities: connector.DemoCapabilities, SyncMode: connector.DemoSyncMode,
 		SearchAliases: connector.SearchAliases, SearchFields: connector.SearchFields,
 	}
-	if m.framework {
+	if m.live != nil {
+		draft.Name = connector.Name
+		draft.Writable = false
+		if draft.SourceKind == githubIssues {
+			draft.Repository = "alswl/issues"
+		}
+	} else if m.framework {
 		draft.Status, draft.Capabilities, draft.Writable = "未接入", "未接入", false
 	}
 	return draft
@@ -241,6 +258,12 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 					} else {
 						m.obsidianConnectorFields(c.Key("obsidian"), edit)
 					}
+					if m.live != nil {
+						if edit.SourceKind != githubIssues {
+							m.connectorMappingFields(c.Key("mapping"), edit)
+						}
+						return
+					}
 					ui.Divider(c.Key("sync-divider"))
 					components.Heading(c.Key("sync-heading"), tr("同步与权限"))
 					modes := []string{"文件变化", "定时拉取"}
@@ -278,6 +301,10 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 }
 
 func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
+	if m.live != nil {
+		components.Muted(c, tr("模拟数据")+" · alswl/issues")
+		return
+	}
 	ui.Row(c).FillWidth().Gap(12).Children(func() {
 		ui.Column(c.Key("account")).Grow(1).MinWidth(0).Children(func() {
 			components.TextField(c, tr("GitHub 账号"), &edit.Identity)
@@ -312,6 +339,9 @@ func (m *mockup) connectorMappingFields(c *ui.Context, edit *connectorEdit) {
 					edit.StatusLabels[mapping.label] = strings.TrimSpace(label)
 				}
 			} else {
+				if m.live != nil && (mapping.label == "待处理" || mapping.label == "已完成") {
+					return
+				}
 				components.DataText(c, tr(mapping.label)).Width(132)
 				value := mapping.native
 				if value == " " {
@@ -327,6 +357,9 @@ func (m *mockup) connectorMappingFields(c *ui.Context, edit *connectorEdit) {
 }
 
 func (m *mockup) saveConnector(config connection) string {
+	if m.live != nil {
+		return m.saveLiveConnection(config)
+	}
 	config.CheckboxMapping = maps.Clone(config.CheckboxMapping)
 	if config.CheckboxMapping == nil {
 		config.CheckboxMapping = make(map[string]string)

@@ -8,6 +8,9 @@ const (
 )
 
 type WorkbenchTask struct {
+	State        string                  `json:"state,omitempty"`
+	Mode         string                  `json:"mode,omitempty"`
+	SourceKey    string                  `json:"-"`
 	ID           string                  `json:"source_object_id"`
 	ConnectionID string                  `json:"connection_id"`
 	NativeID     string                  `json:"native_id"`
@@ -34,4 +37,49 @@ type WorkbenchTaskEvent struct {
 	At   string    `json:"at"`
 	Time time.Time `json:"time"`
 	Text string    `json:"text"`
+}
+
+type WorkbenchConnection struct {
+	ID         string            `json:"id"`
+	Kind       string            `json:"kind"`
+	Name       string            `json:"name"`
+	Vault      string            `json:"vault,omitempty"`
+	Scope      string            `json:"scope,omitempty"`
+	Repository string            `json:"repository,omitempty"`
+	Mode       string            `json:"mode"`
+	Statuses   map[string]string `json:"statuses,omitempty"`
+	Version    int64             `json:"version"`
+}
+
+type WorkbenchAttempt struct {
+	ID       int64      `json:"id"`
+	Trigger  string     `json:"trigger"`
+	State    string     `json:"state"`
+	Started  time.Time  `json:"started"`
+	Finished *time.Time `json:"finished,omitempty"`
+	Error    string     `json:"error,omitempty"`
+	Added    int        `json:"added"`
+	Updated  int        `json:"updated"`
+	Removed  int        `json:"removed"`
+}
+
+type WorkbenchSnapshot struct {
+	WorkbenchConnection
+	LastSuccess *time.Time         `json:"last_success,omitempty"`
+	Attempts    []WorkbenchAttempt `json:"attempts"`
+	Tasks       []WorkbenchTask    `json:"-"`
+}
+
+type WorkbenchQuery struct {
+	Connection string `json:"connection"`
+	State      string `json:"state"`
+	Limit      int    `json:"limit"`
+	Offset     int    `json:"offset"`
+	Revision   int64  `json:"revision"`
+}
+
+type WorkbenchPage struct {
+	Items    []WorkbenchTask `json:"items"`
+	Total    int             `json:"total"`
+	Revision int64           `json:"revision"`
 }

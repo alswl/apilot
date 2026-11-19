@@ -1,4 +1,11 @@
 {
+  "无法读取工作台数据": "Could not read workbench data",
+  "模拟数据": "Mock data",
+  "同步中断": "Sync interrupted",
+  "同步失败": "Sync failed",
+  "只读": "Read-only",
+  "本地": "Local",
+  "未知": "Unknown",
   "新增：": "New: ",
   "工作目录暂不可用，可重试": "Working directory unavailable. Try again.",
   "工作目录暂不可用": "Working directory unavailable",

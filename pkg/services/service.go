@@ -20,25 +20,27 @@ type active struct {
 }
 
 type Service struct {
-	observers    map[string]common.Observer
-	observing    map[string]active
-	observerNext map[string]time.Time
-	closeOnce    sync.Once
-	closeError   error
-	suspended    bool
-	mu           sync.Mutex
-	store        Store
-	dir          string
-	lock         io.Closer
-	ctx          context.Context
-	cancel       context.CancelFunc
-	wg           sync.WaitGroup
-	tasks        map[string]common.Task
-	runs         map[string]common.Run
-	running      map[string]active
-	settings     common.Settings
-	stopping     bool
-	lastError    string
+	workbenchActive map[string]context.CancelFunc
+	workbenchReader workbenchReader
+	observers       map[string]common.Observer
+	observing       map[string]active
+	observerNext    map[string]time.Time
+	closeOnce       sync.Once
+	closeError      error
+	suspended       bool
+	mu              sync.Mutex
+	store           Store
+	dir             string
+	lock            io.Closer
+	ctx             context.Context
+	cancel          context.CancelFunc
+	wg              sync.WaitGroup
+	tasks           map[string]common.Task
+	runs            map[string]common.Run
+	running         map[string]active
+	settings        common.Settings
+	stopping        bool
+	lastError       string
 }
 
 func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
@@ -62,7 +64,7 @@ func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{observers: map[string]common.Observer{}, observing: map[string]active{}, observerNext: map[string]time.Time{}, store: db, dir: dir, lock: lock, ctx: ctx, cancel: cancel, tasks: map[string]common.Task{}, runs: map[string]common.Run{}, running: map[string]active{}}
+	s := &Service{workbenchActive: make(map[string]context.CancelFunc), workbenchReader: readWorkbench, observers: map[string]common.Observer{}, observing: map[string]active{}, observerNext: map[string]time.Time{}, store: db, dir: dir, lock: lock, ctx: ctx, cancel: cancel, tasks: map[string]common.Task{}, runs: map[string]common.Run{}, running: map[string]active{}}
 	fail := func(e error) (*Service, error) { cancel(); db.Close(); lock.Close(); return nil, e }
 	s.settings, e = db.Settings()
 	if e != nil {
@@ -107,6 +109,10 @@ func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
 	}
 	s.wg.Add(1)
 	go s.tick()
+	if wb, ok := db.(workbenchStore); ok {
+		s.wg.Add(1)
+		go s.tickWorkbench(wb)
+	}
 	return s, nil
 }
 
@@ -166,7 +172,7 @@ func (s *Service) Doctor() map[string]any {
 		st, e := os.Stat(path)
 		checks[path] = map[string]any{"exists": e == nil, "directory": e == nil && st.IsDir()}
 	}
-	return map[string]any{"data_dir": s.dir, "schema_version": 2, "status": s.Status(), "path_checks": checks}
+	return map[string]any{"data_dir": s.dir, "schema_version": 3, "status": s.Status(), "path_checks": checks}
 }
 
 func (s *Service) String() string { return fmt.Sprintf("apilot(%s)", s.dir) }

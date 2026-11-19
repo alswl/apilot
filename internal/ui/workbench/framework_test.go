@@ -1,6 +1,8 @@
 package workbench
 
 import (
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/services"
 	"testing"
 	"time"
 
@@ -92,5 +94,34 @@ func TestEmptyFrameworkNavigationAndConnectorScaffolds(t *testing.T) {
 		if m.page != connectionsPage {
 			t.Fatalf("English guidance did not open the connector list at %v", size)
 		}
+	}
+}
+
+func TestLiveWorkbenchProjectsReadOnlyTasks(t *testing.T) {
+	m := newFramework()
+	m.live = &services.Service{}
+	m.useAdaptiveLayout()
+	local := common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: "local", Name: "Vault", Kind: obsidianTasks, Mode: "local"}}
+	mock := common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: "mock", Name: "Example", Kind: githubIssues, Mode: "mock", Repository: "alswl/issues"}}
+	task := sourceObject{ID: "note", ConnectionID: "local", Kind: obsidianTasks, Mode: "local", State: "open", Title: "本地任务", Locator: "Work/Notes.md:2"}
+	issue := sourceObject{ID: "issue", ConnectionID: "mock", Kind: githubIssues, Mode: "mock", State: "done", Title: "Fixture issue", NativeID: "101"}
+	m.applyLive([]common.WorkbenchSnapshot{local, mock}, []sourceObject{task, issue})
+	preview := ui.NewTester(m.view, 1190, 730)
+	click(t, preview, "任务")
+	if !preview.HasText(task.Title) || !preview.HasText(issue.Title) || !preview.HasText("模拟数据") {
+		t.Fatal("tasks or source marker missing from production list")
+	}
+	if m.editableSource(task) || m.editableSource(issue) {
+		t.Fatal("synced objects must be read-only")
+	}
+	m.taskSelection = task.ID
+	m.search = "本地"
+	m.applyLive([]common.WorkbenchSnapshot{local, mock}, []sourceObject{task, issue})
+	if m.taskSelection != task.ID || m.search != "本地" {
+		t.Fatal("refresh lost task context")
+	}
+	m.applyLive([]common.WorkbenchSnapshot{local, mock}, []sourceObject{issue})
+	if m.taskSelection != "" || m.search != "本地" {
+		t.Fatal("removed task should clear selection and retain filter")
 	}
 }
