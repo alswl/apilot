@@ -53,28 +53,19 @@ func (s *Service) createWorkbenchObsidianTask(store workbenchStore, writer workb
 
 func (s *Service) writeWorkbenchObsidianNote(store workbenchStore, writer workbenchTaskWriteStore, connection common.WorkbenchSnapshot, input common.WorkbenchTaskWrite, fingerprint, path string, content, replacement []byte) (common.WorkbenchTaskReceipt, error) {
 	var empty common.WorkbenchTaskReceipt
-	bridge, err := s.openWorkbenchBridge(connection)
-	if err != nil {
-		return empty, err
-	}
 	ctx, cancel := context.WithTimeout(s.ctx, 20*time.Second)
 	defer cancel()
-	if err := bridge.VerifyVault(ctx, connection.WorkbenchConnection); err != nil {
-		return empty, err
-	}
-	remote, etag, err := bridge.ReadNote(ctx, path)
+	write, err := s.prepareWorkbenchObsidianNoteWrite(ctx, connection, path, content, replacement)
 	if err != nil {
 		return empty, err
-	}
-	if !bytes.Equal(remote, content) {
-		return empty, common.Err("STALE_REVISION", "Source note changed before writing")
 	}
 	receipt := common.WorkbenchTaskReceipt{RequestID: input.RequestID, ConnectionID: connection.ID, SyncState: "needs_review", SourceObjectID: input.SourceObjectID}
 	if err := writer.StageWorkbenchTaskWrite(fingerprint, receipt); err != nil {
 		return empty, err
 	}
-	if err := bridge.ReplaceNote(ctx, path, replacement, etag); err != nil {
+	if err := write(); err != nil {
 		if problem, ok := err.(*common.Error); ok && problem.Code == "STALE_REVISION" {
+			receipt.Reason = problem.Message
 			if err := writer.SetWorkbenchTaskWriteState(receipt, "conflict"); err != nil {
 				return receipt, err
 			}
@@ -83,6 +74,30 @@ func (s *Service) writeWorkbenchObsidianNote(store workbenchStore, writer workbe
 		}
 	}
 	return s.reconcileObsidianWrite(store, writer, connection, input, fingerprint, receipt)
+}
+
+func (s *Service) prepareWorkbenchObsidianNoteWrite(ctx context.Context, connection common.WorkbenchSnapshot, path string, content, replacement []byte) (func() error, error) {
+	if connection.ReadMethod == common.WorkbenchObsidianCLI || !connection.BridgeConfigured {
+		if s.workbenchActive[connection.ID] != nil {
+			return nil, common.Err("CONFLICT", "Wait for the active synchronization to finish")
+		}
+		return integrations.PrepareWorkbenchObsidianCLIWrite(ctx, connection.WorkbenchConnection, path, content, replacement)
+	}
+	bridge, err := s.openWorkbenchBridge(connection)
+	if err != nil {
+		return nil, err
+	}
+	if err := bridge.VerifyVault(ctx, connection.WorkbenchConnection); err != nil {
+		return nil, err
+	}
+	remote, etag, err := bridge.ReadNote(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(remote, content) {
+		return nil, common.Err("STALE_REVISION", "Source note changed before writing")
+	}
+	return func() error { return bridge.ReplaceNote(ctx, path, replacement, etag) }, nil
 }
 
 func obsidianCreationMarker(fingerprint string) string {
@@ -95,7 +110,7 @@ func (s *Service) reconcileObsidianWrite(store workbenchStore, writer workbenchT
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
 	defer cancel()
-	tasks, err := s.readWorkbench(ctx, connection.WorkbenchConnection)
+	tasks, err := readWorkbenchObsidianWrittenVault(ctx, connection.WorkbenchConnection)
 	if err != nil {
 		return receipt, nil
 	}
@@ -139,4 +154,11 @@ func (s *Service) reconcileObsidianWrite(store workbenchStore, writer workbenchT
 		return receipt, err
 	}
 	return confirmed, nil
+}
+
+// The CLI commits to the verified local vault. Read the resulting Markdown
+// from disk when confirming writes, including when the CLI response was lost.
+func readWorkbenchObsidianWrittenVault(ctx context.Context, c common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
+	c.ReadMethod = ""
+	return integrations.ReadWorkbenchObsidian(ctx, c)
 }

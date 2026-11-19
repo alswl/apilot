@@ -26,6 +26,10 @@ func matchWorkbench(c common.WorkbenchConnection, before, after []common.Workben
 			task.ConnectionID, task.Kind, task.Mode = c.ID, c.Kind, c.Mode
 			task.SourceKey = fmt.Sprintf("%s\x00%d", key, ordinal)
 		}
+		if c.Kind == common.WorkbenchObsidianTasks && len(previous) == len(indexes) && len(indexes) > 1 &&
+			matchObsidianTasksBySection(previous, after, indexes) {
+			continue
+		}
 		reuse := len(previous) == 1 && len(indexes) == 1
 		if len(previous) == len(indexes) && len(indexes) > 1 {
 			reuse = true
@@ -61,6 +65,35 @@ func matchWorkbench(c common.WorkbenchConnection, before, after []common.Workben
 			}
 		}
 	}
+}
+
+func matchObsidianTasksBySection(before, after []common.WorkbenchTask, indexes []int) bool {
+	type position struct{ id, heading, summary string }
+	key := func(t common.WorkbenchTask) position {
+		return position{t.NativeID, t.NativeFields["heading_path"], t.Summary}
+	}
+	previous := make(map[position]common.WorkbenchTask, len(before))
+	for _, task := range before {
+		identity := key(task)
+		if _, duplicate := previous[identity]; duplicate {
+			return false
+		}
+		previous[identity] = task
+	}
+	seen := make(map[position]bool, len(indexes))
+	for _, i := range indexes {
+		identity := key(after[i])
+		if _, ok := previous[identity]; !ok || seen[identity] {
+			return false
+		}
+		seen[identity] = true
+	}
+	for _, i := range indexes {
+		task := &after[i]
+		prior := previous[key(*task)]
+		task.ID, task.Activity = prior.ID, prior.Activity
+	}
+	return true
 }
 
 // Keep existing IDs when a previously unrecognized attribute changes the

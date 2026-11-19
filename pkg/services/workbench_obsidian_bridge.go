@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"time"
 
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/integrations"
@@ -21,20 +22,25 @@ func (s *Service) prepareWorkbenchBridge(c *common.WorkbenchConnection, old comm
 		}
 		return nil, nil
 	}
-	if c.ReadMethod == common.WorkbenchObsidianCLI {
-		if update || (input.WriteEnabled != nil && *input.WriteEnabled) {
-			return nil, common.Err("INVALID_ARGUMENT", "Obsidian CLI connections are read-only")
-		}
-		c.WriteEnabled = false
-		return nil, nil
-	}
-	targetChanged := c.Vault != old.Vault || c.Scope != old.Scope
+	targetChanged := c.Vault != old.Vault || c.Scope != old.Scope || c.ReadMethod != old.ReadMethod
 	if targetChanged || update {
 		c.WriteEnabled = false
 	}
 	if input.WriteEnabled != nil {
 		c.WriteEnabled = *input.WriteEnabled
 	}
+	if c.ReadMethod == common.WorkbenchObsidianCLI && update {
+		return nil, common.Err("INVALID_ARGUMENT", "Obsidian CLI does not use REST bridge settings")
+	}
+	if c.ReadMethod == common.WorkbenchObsidianCLI || (!update && !c.BridgeConfigured) {
+		if c.WriteEnabled && (!old.WriteEnabled || targetChanged) {
+			ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
+			defer cancel()
+			return nil, integrations.VerifyWorkbenchObsidianCLIWrite(ctx, *c)
+		}
+		return nil, nil
+	}
+
 	if !update && !c.WriteEnabled {
 		return nil, nil
 	}

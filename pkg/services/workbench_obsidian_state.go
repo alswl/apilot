@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/alswl/apilot/pkg/common"
@@ -21,22 +20,28 @@ func (s *Service) setWorkbenchObsidianState(store workbenchStore, writer workben
 		RequestID: input.RequestID, ConnectionID: connection.ID, SourceObjectID: task.ID, SyncState: "conflict",
 	}
 	if input.TargetVersion != workbenchFingerprint(task) {
+		conflict.Reason = "The saved task was refreshed. Review the latest task and try again."
 		return conflict, nil
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
 	defer cancel()
-	tasks, err := s.readWorkbench(ctx, connection.WorkbenchConnection)
+	tasks, err := readWorkbenchObsidianWrittenVault(ctx, connection.WorkbenchConnection)
 	if err != nil {
 		return empty, common.Err("CONFLICT", "Could not verify task identity in the vault")
 	}
-	key, _, _ := strings.Cut(task.SourceKey, "\x00")
 	matches := 0
 	for _, candidate := range tasks {
-		if candidate.SourceKey == key || task.NativeID != "" && candidate.NativeID == task.NativeID {
+		if (task.NativeID != "" && candidate.NativeID == task.NativeID) ||
+			(task.NativeID == "" && integrations.MatchesWorkbenchObsidianTask(task, candidate)) {
 			matches++
 		}
 	}
-	if matches != 1 {
+	if matches == 0 {
+		conflict.Reason = "The task no longer matches the note. Synchronize the vault and try again."
+		return conflict, nil
+	}
+	if matches > 1 {
+		conflict.Reason = "More than one Obsidian task matches the saved task"
 		return conflict, nil
 	}
 	path := task.NativeFields["path"]
@@ -47,6 +52,7 @@ func (s *Service) setWorkbenchObsidianState(store workbenchStore, writer workben
 	replacement, err := integrations.SetWorkbenchObsidianCheckbox(connection.WorkbenchConnection, content, task, input.State)
 	if err != nil {
 		if problem, ok := err.(*common.Error); ok && problem.Code == "STALE_REVISION" {
+			conflict.Reason = problem.Message
 			return conflict, nil
 		}
 		return empty, err

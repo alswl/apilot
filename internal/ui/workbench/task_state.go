@@ -52,13 +52,31 @@ func (m *mockup) taskStateMenu(o sourceObject, menu *ui.Menu) {
 }
 
 func (m *mockup) taskStatusCheckbox(c *ui.Context, o sourceObject) {
-	checked := taskClosed(o)
+	confirmed := taskClosed(o)
+	checked := confirmed
 	label := tr(m.sourceToggleLabel(o))
-	box := ui.Checkbox(c, &checked, "").Label(label).Tooltip(label).Disabled(!m.canToggleSourceTask(o) || m.sourceWritePending(o.ID))
+	box := ui.CheckboxBase(c, &checked).Checked(confirmed).Label(label).Tooltip(label).
+		Disabled(!m.canToggleSourceTask(o) || m.sourceWritePending(o.ID))
 	box.ContextMenu(func(menu *ui.Menu) { m.taskStateMenu(o, menu) })
 	if box.Changed() {
 		m.toggleSourceTask(o)
 		c.Invalidate()
+	}
+	box.Children(func() {
+		icon, color := "square", c.Theme().TextMuted
+		if confirmed {
+			icon, color = "checkmark.square.fill", c.Theme().Accent
+		}
+		components.Symbol(c, icon, color)
+	})
+	if m.live != nil {
+		if m.sourceWritePending(o.ID) {
+			ui.Spinner(c.Key("pending")).Size(13, 13).Label(tr("等待来源确认")).Tooltip(tr("等待来源确认"))
+		} else if problem := m.liveTaskProblems[o.ID]; problem != "" {
+			ui.Box(c.Key("write-problem")).Label(tr(problem)).Tooltip(tr(problem)).Children(func() {
+				components.Symbol(c, "exclamationmark.circle", c.Theme().Warning)
+			})
+		}
 	}
 }
 

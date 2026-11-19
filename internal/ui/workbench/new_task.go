@@ -22,6 +22,9 @@ func (m *mockup) writableConnections() []string {
 }
 
 func (m *mockup) openNewTask() {
+	if m.newTaskPending {
+		return
+	}
 	sources := m.writableConnections()
 	if len(sources) == 0 {
 		return
@@ -33,9 +36,14 @@ func (m *mockup) openNewTask() {
 }
 
 func (m *mockup) newTaskDialog(c *ui.Context) {
-	ui.Modal(c, &m.newTaskOpen, func() {
+	open := m.newTaskOpen
+	ui.Modal(c, &open, func() {
 		ui.Column(c).Width(440).Gap(12).Children(func() {
 			components.Title(c, tr("新建任务"))
+			if m.newTaskPending {
+				components.StatusLabel(c.Key("pending"), components.Status{Text: tr("等待来源确认"), Loading: true, Color: c.Theme().Warning})
+				return
+			}
 			var submitted bool
 			ui.Field(c.Key("title-field"), tr("任务名称"), func() {
 				submitted = ui.TextInput(c.Key("title"), &m.newTaskDraft).Label(tr("任务名称")).
@@ -55,20 +63,27 @@ func (m *mockup) newTaskDialog(c *ui.Context) {
 			title := strings.TrimSpace(m.newTaskDraft)
 			ui.Row(c).FillWidth().Gap(8).Justify(ui.End).Children(func() {
 				if ui.Button(c.Key("cancel"), tr("取消")).Clicked() {
-					m.newTaskOpen = false
+					open = false
 					return
 				}
 				save := ui.PrimaryButton(c.Key("create"), tr("创建任务")).Disabled(title == "" || len(sources) == 0 || !validTarget)
 				if (save.Clicked() || submitted) && title != "" && validTarget {
 					m.createTask(title)
+					open = m.newTaskOpen
 					c.Invalidate()
 				}
 			})
 		})
 	})
+	if !m.newTaskPending {
+		m.newTaskOpen = open
+	}
 }
 
 func (m *mockup) createTask(title string) {
+	if m.newTaskPending {
+		return
+	}
 	for _, conn := range m.connectionsData {
 		if conn.Name != m.newTaskSource || !conn.Writable || (conn.Status != "同步正常" && conn.Status != "可用") {
 			continue
@@ -91,27 +106,9 @@ func (m *mockup) createTask(title string) {
 				request.RequestID = common.ID()
 				m.newTaskRequest = request
 			}
-			receipt, err := m.live.WriteWorkbenchTask(request)
-			if err != nil {
-				problem := common.ProtocolError(err)
-				m.newTaskTargets.problem = problem.Message
-				if problem.Code == "STALE_REVISION" {
-					m.newTaskRequest = common.WorkbenchTaskWrite{}
-				}
-				return
-			}
-			if receipt.SyncState != "confirmed" {
-				m.newTaskTargets.problem = "来源尚未确认，重试可核对本次提交"
-				if receipt.SyncState == "conflict" {
-					m.newTaskTargets.problem = "来源已变化，请刷新写入位置"
-					m.newTaskRequest = common.WorkbenchTaskWrite{}
-				}
-				return
-			}
-			m.newTaskOpen = false
-			m.liveGeneration++
-			m.navigate(tasksPage)
-			m.refreshLive()
+			m.newTaskPending = true
+			m.newTaskTargets.problem = ""
+			m.runLiveTaskWrite(request, m.finishLiveTaskCreate)
 			return
 		}
 		id := fmt.Sprintf("MOCK-%d", len(m.objects)+1)
@@ -141,6 +138,28 @@ func (m *mockup) createTask(title string) {
 		m.recordTaskEvent(id, "在模拟来源创建了任务")
 		m.openFullTask(len(m.objects) - 1)
 		return
+	}
+}
+
+func (m *mockup) finishLiveTaskCreate(receipt common.WorkbenchTaskReceipt, err error) {
+	m.newTaskPending = false
+	if err != nil {
+		problem := common.ProtocolError(err)
+		m.newTaskTargets.problem = problem.Message
+		if problem.Code == "STALE_REVISION" {
+			m.newTaskRequest = common.WorkbenchTaskWrite{}
+		}
+		return
+	}
+	switch receipt.SyncState {
+	case "confirmed":
+		m.newTaskOpen = false
+		m.navigate(tasksPage)
+	case "conflict":
+		m.newTaskTargets.problem = "来源已变化，请刷新写入位置"
+		m.newTaskRequest = common.WorkbenchTaskWrite{}
+	default:
+		m.newTaskTargets.problem = "来源尚未确认，重试可核对本次提交"
 	}
 }
 

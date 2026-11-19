@@ -26,6 +26,21 @@ func (m *mockup) pollLive() {
 	})
 }
 
+func (m *mockup) runLiveTaskWrite(request common.WorkbenchTaskWrite, finish func(common.WorkbenchTaskReceipt, error)) {
+	remote := m.live
+	go func() {
+		receipt, err := remote.WriteWorkbenchTask(request)
+		mygo.RunOnMain(func() {
+			finish(receipt, err)
+			m.liveGeneration++
+			if m.win != nil && !m.win.IsDestroyed() {
+				m.win.Invalidate()
+				m.refreshLive()
+			}
+		})
+	}()
+}
+
 func (m *mockup) refreshLive() {
 	remote := m.live
 	if remote == nil || m.liveBusy {
@@ -62,10 +77,10 @@ func (m *mockup) refreshLive() {
 			detail, detailErr = remote.WorkbenchSyncDetails(syncID)
 		}
 		mygo.RunOnMain(func() {
+			m.liveBusy = false
 			if m.win == nil || m.win.IsDestroyed() {
 				return
 			}
-			m.liveBusy = false
 			if generation != m.liveGeneration {
 				m.refreshLive()
 				return
@@ -90,6 +105,25 @@ func (m *mockup) refreshLive() {
 }
 
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
+	if len(m.pendingTaskEdits) > 0 {
+		current := make(map[string]sourceObject, len(m.pendingTaskEdits))
+		for _, task := range m.objects {
+			if m.pendingTaskEdits[task.ID] {
+				current[task.ID] = task
+			}
+		}
+		for i, task := range tasks {
+			if previous, ok := current[task.ID]; ok {
+				tasks[i] = previous
+				delete(current, task.ID)
+			}
+		}
+		for _, task := range m.objects {
+			if _, missing := current[task.ID]; missing {
+				tasks = append(tasks, task)
+			}
+		}
+	}
 	var connections []connection
 	kinds := services.WorkbenchConnectors()
 	for _, snapshot := range snapshots {

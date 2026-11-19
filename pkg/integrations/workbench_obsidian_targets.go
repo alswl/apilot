@@ -242,18 +242,28 @@ func InsertWorkbenchObsidianTask(content []byte, path []string, version, title, 
 	return []byte(result), nil
 }
 
+// MatchesWorkbenchObsidianTask verifies the task text and its source position.
+// Without a native ID, identical text in separate sections is distinguishable.
+func MatchesWorkbenchObsidianTask(prior, candidate common.WorkbenchTask) bool {
+	return prior.NativeID == candidate.NativeID && prior.Summary == candidate.Summary &&
+		prior.NativeFields["path"] == candidate.NativeFields["path"] &&
+		(prior.NativeID != "" || prior.NativeFields["heading_path"] == candidate.NativeFields["heading_path"])
+}
+
 // SetWorkbenchObsidianCheckbox locates the previously observed task in the
 // current note and changes only its checkbox byte.
 func SetWorkbenchObsidianCheckbox(c common.WorkbenchConnection, content []byte, prior common.WorkbenchTask, state string) ([]byte, error) {
 	path := prior.NativeFields["path"]
 	line := -1
 	for _, candidate := range parseWorkbenchNote(c, path, string(content)) {
-		same := candidate.NativeID == prior.NativeID && candidate.Summary == prior.Summary
-		if !same {
+		if !MatchesWorkbenchObsidianTask(prior, candidate) {
 			continue
 		}
-		if line >= 0 || candidate.NativeFields["checkbox"] != prior.NativeFields["checkbox"] {
-			return nil, common.Err("STALE_REVISION", "Task changed or is not unique")
+		if line >= 0 {
+			return nil, common.Err("STALE_REVISION", "More than one Obsidian task matches the saved task")
+		}
+		if candidate.NativeFields["checkbox"] != prior.NativeFields["checkbox"] {
+			return nil, common.Err("STALE_REVISION", "The Obsidian checkbox changed since the last sync")
 		}
 		number, err := strconv.Atoi(candidate.NativeFields["line"])
 		if err != nil {

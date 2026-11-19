@@ -147,6 +147,7 @@ type WorkbenchTaskReceipt struct {
 	ConnectionID   string `json:"connection_id"`
 	SourceObjectID string `json:"source_object_id,omitempty"`
 	SyncState      string `json:"sync_state"`
+	Reason         string `json:"reason,omitempty"`
 }
 
 type WorkbenchNote struct {

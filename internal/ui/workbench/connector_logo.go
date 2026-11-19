@@ -29,13 +29,25 @@ func parseConnectorLogo(mark []byte) *ui.SVG {
 }
 
 func connectorLogo(c *ui.Context, kind string, size float32) {
-	if kind == common.WorkbenchLocal {
-		ui.Box(c).Size(size, size).Shrink(0).Children(func() { components.Symbol(c, "internaldrive", c.Theme().TextMuted) })
-		return
-	}
-	logo, color := obsidianLogo, ui.Hex("#7C3AED")
+	color := ui.Hex("#7C3AED")
 	if kind == githubIssues {
-		logo, color = githubLogo, c.Theme().Text
+		color = c.Theme().Text
 	}
-	ui.Icon(c, logo).Size(size, size).TextColor(color).Shrink(0)
+	if kind == common.WorkbenchLocal {
+		color = c.Theme().TextMuted
+	}
+	connectorMark(c, kind, size, color)
+}
+
+func connectorMark(c *ui.Context, kind string, size float32, color ui.Color) {
+	switch kind {
+	case common.WorkbenchLocal:
+		ui.Box(c).Size(size, size).Shrink(0).Children(func() { components.Symbol(c, "internaldrive", color) })
+	case githubIssues:
+		ui.Icon(c, githubLogo).Size(size, size).TextColor(color).Shrink(0)
+	case obsidianTasks:
+		ui.Icon(c, obsidianLogo).Size(size, size).TextColor(color).Shrink(0)
+	default:
+		components.Symbol(c, "doc.text", color)
+	}
 }

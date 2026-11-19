@@ -386,6 +386,7 @@ type WorkbenchTaskReceipt struct {
 	// Examples: http://apilot/schemas/WorkbenchTaskReceipt.json
 	Schema         *string `json:"$schema,omitempty"`
 	ConnectionId   string  `json:"connection_id"`
+	Reason         *string `json:"reason,omitempty"`
 	RequestId      string  `json:"request_id"`
 	SourceObjectId *string `json:"source_object_id,omitempty"`
 	SyncState      string  `json:"sync_state"`

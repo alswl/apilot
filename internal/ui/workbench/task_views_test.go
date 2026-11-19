@@ -103,6 +103,7 @@ func TestHostedTaskViewSurvivesWorkspaceRestart(t *testing.T) {
 	first.search, first.sourceFilter, first.taskGrouping = "priority:high", "Work", "按来源分组"
 	first.taskSort = ui.SortOrder{Column: "due", Descending: true}
 	first.taskPageSizeOverride = 20
+	first.taskTable.Columns = ui.TableLayout{Order: []string{"title", "due"}, Widths: map[string]float32{"due": 142}}
 	first.taskColumnsHidden["priority"] = false
 	view := savedTaskView{ID: "kept", Name: "My work", State: first.viewState()}
 	if err := first.saveNamedTaskView(view); err != nil {
@@ -115,26 +116,144 @@ func TestHostedTaskViewSurvivesWorkspaceRestart(t *testing.T) {
 	}
 	second.selectTaskView(view.ID)
 	if second.search != first.search || second.sourceFilter != first.sourceFilter || second.taskGrouping != first.taskGrouping ||
-		second.taskSort != first.taskSort || second.taskPageSizeOverride != 20 || second.taskColumnsHidden["priority"] {
+		second.taskSort != first.taskSort || second.taskPageSizeOverride != 20 || second.taskColumnsHidden["priority"] ||
+		second.taskTable.Columns.Widths["due"] != 142 || !slices.Equal(second.taskTable.Columns.Order, first.taskTable.Columns.Order) {
 		t.Fatal("the reopened view did not restore query, source, sorting, grouping, page size and columns")
+	}
+	second.search = "priority:low"
+	second.saveCurrentTaskView()
+	third := open()
+	if len(third.savedTaskViews) != 1 || third.savedTaskViews[0].ID != view.ID || third.savedTaskViews[0].State.Query != second.search {
+		t.Fatalf("updated view was not persisted in place: %+v", third.savedTaskViews)
 	}
 }
 
-func TestTaskColumnsOpensInCompactTasks(t *testing.T) {
+func TestTaskColumnsOpensFromTableHeader(t *testing.T) {
 	m := newMockup()
 	m.useAdaptiveLayout()
 	m.navigate(tasksPage)
 	p := ui.NewTester(m.view, 680, 580)
-	click(t, p, "列")
-	if !m.taskColumnsOpen || !p.HasText("优先级") {
-		t.Fatal("Columns should show the available table fields")
+	if err := p.RightClick("状态"); err != nil {
+		t.Fatal(err)
 	}
-	click(t, p, "优先级")
+	if !slices.Contains(p.Menu(), "优先级") || !slices.Contains(p.Menu(), "路径") || !slices.Contains(p.Menu(), "章节") {
+		t.Fatalf("header menu does not list columns: %v", p.Menu())
+	}
+	if err := p.ChooseMenuItem("优先级"); err != nil {
+		t.Fatal(err)
+	}
 	if !m.taskColumnVisible("priority") {
-		t.Fatal("clicking a column should change its visibility preference")
+		t.Fatal("choosing a column should change its visibility")
 	}
-	p.Key(0, ui.KeyEscape)
-	if m.taskColumnsOpen {
-		t.Fatal("Escape should close Columns")
+	if err := p.RightClick("状态"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ChooseMenuItem("路径"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.RightClick("状态"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ChooseMenuItem("章节"); err != nil {
+		t.Fatal(err)
+	}
+	_, indexes := m.visibleColumns()
+	values := cellsAt(m.taskValues(m.objects[0]), indexes)
+	if !slices.Contains(values, "Payments/Refunds.md") || !slices.Contains(values, "Acceptance") {
+		t.Fatalf("missing source fields: %v", values)
+	}
+}
+
+func TestSavedViewSplitButtonUpdatesOrSavesCopy(t *testing.T) {
+	m := newMockup()
+	m.navigate(tasksPage)
+	view := savedTaskView{ID: "original", Name: "My tasks", State: m.viewState()}
+	if err := m.saveNamedTaskView(view); err != nil {
+		t.Fatal(err)
+	}
+	m.selectTaskView(view.ID)
+	m.search = "priority:high"
+	p := ui.NewTester(m.view, 1190, 730)
+	click(t, p, "更新视图")
+	if m.saveTaskViewOpen || len(m.savedTaskViews) != 1 || m.savedTaskViews[0].State.Query != m.search {
+		t.Fatal("updating should replace the current saved view in place")
+	}
+	m.search = "priority:low"
+	p.Frame()
+	click(t, p, "视图保存选项")
+	if err := p.ChooseMenuItem("另存为新视图…"); err != nil {
+		t.Fatal(err)
+	}
+	p.Type("Another view")
+	p.Key(0, ui.KeyEnter)
+	if len(m.savedTaskViews) != 2 || m.savedTaskViews[0].ID != view.ID || m.taskView == view.ID {
+		t.Fatal("saving as new should preserve the original and select the new view")
+	}
+}
+
+func TestBuiltInStatusViewsFilterTasks(t *testing.T) {
+	m := newMockup()
+	m.objects = append(m.objects, loadExtendedTasks()...)
+	for id, status := range map[string]string{"in-progress": "进行中", "pending": "待处理"} {
+		m.selectTaskView(id)
+		rows := m.taskRows()
+		if len(rows) == 0 || m.statusFilter != status {
+			t.Fatalf("view %s did not select status %s", id, status)
+		}
+		for _, index := range rows {
+			if m.taskStateLabel(m.objects[index]) != tr(status) {
+				t.Fatalf("view %s included a task with another status", id)
+			}
+		}
+	}
+}
+
+func TestTaskViewSaveTracksColumnChanges(t *testing.T) {
+	m := newMockup()
+	m.navigate(tasksPage)
+	m.saveCurrentTaskView()
+	if m.saveTaskViewOpen || m.taskViewChanged() {
+		t.Fatal("an unchanged view should not be saveable")
+	}
+	p := ui.NewTester(m.view, 1190, 730)
+	if err := p.RightClick("状态"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ChooseMenuItem("文件名"); err != nil {
+		t.Fatal(err)
+	}
+	if !m.taskViewChanged() || m.taskColumnVisible("file") {
+		t.Fatal("changing File Name visibility should make the view saveable")
+	}
+	if err := p.RightClick("状态"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ChooseMenuItem("文件名"); err != nil {
+		t.Fatal(err)
+	}
+	if m.taskViewChanged() || !m.taskColumnVisible("file") {
+		t.Fatal("restoring the original visibility should clear the unsaved change")
+	}
+	if err := p.RightClick("状态"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.ChooseMenuItem("文件名"); err != nil {
+		t.Fatal(err)
+	}
+	click(t, p, "保存视图")
+	p.Type("File preferences")
+	p.Key(0, ui.KeyEnter)
+	if m.taskViewChanged() || len(m.savedTaskViews) != 1 {
+		t.Fatal("the saved column configuration should be clean")
+	}
+	m.taskTable.Columns = ui.TableLayout{Order: []string{"source", "title"}, Widths: map[string]float32{"source": 80}}
+	if !m.taskViewChanged() {
+		t.Fatal("column order and width should count as view changes")
+	}
+	m.saveCurrentTaskView()
+	m.selectTaskView("watching")
+	m.selectTaskView(m.savedTaskViews[0].ID)
+	if m.taskViewChanged() || m.taskTable.Columns.Widths["source"] != 80 || !slices.Equal(m.taskTable.Columns.Order, []string{"source", "title"}) {
+		t.Fatal("the saved view should restore column order and width")
 	}
 }

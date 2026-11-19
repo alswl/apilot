@@ -237,6 +237,8 @@ func (m *mockup) layoutShowsTaskColumn(id string) bool {
 		return m.layout.listWidth >= 620
 	case "due":
 		return m.layout.listWidth >= 510
+	case "file":
+		return m.layout.listWidth >= 580
 	case "priority", "labels", "assignee":
 		return m.layout.listWidth >= 580 || m.taskSort.Column == id
 	default:

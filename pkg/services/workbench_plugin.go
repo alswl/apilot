@@ -147,7 +147,7 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 		return common.WorkbenchCapabilities{}
 	}
 	caps := s.workbenchPlugins[c.Kind].capabilities
-	if c.Kind == common.WorkbenchObsidianTasks && (!c.WriteEnabled || !c.BridgeConfigured) {
+	if c.Kind == common.WorkbenchObsidianTasks && !c.WriteEnabled {
 		caps.Create, caps.SetState = false, false
 	}
 	return caps

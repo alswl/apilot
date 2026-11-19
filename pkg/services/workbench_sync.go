@@ -263,7 +263,12 @@ func (s *Service) RunWorkbenchSync(id string) (int64, error) {
 	return snapshot.Attempts[0].ID, nil
 }
 
-const workbenchReadTimeout = 30 * time.Second
+func workbenchReadTimeout(c common.WorkbenchConnection) time.Duration {
+	if c.ReadMethod == common.WorkbenchObsidianCLI {
+		return 90 * time.Second
+	}
+	return 30 * time.Second
+}
 
 func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) error {
 	if s.stopping {
@@ -301,7 +306,7 @@ func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) er
 	if err := st.RecordWorkbench(conn, attempts, nil, nil, nil); err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(s.ctx, workbenchReadTimeout)
+	ctx, cancel := context.WithTimeout(s.ctx, workbenchReadTimeout(conn))
 	ctx = integrations.WithWorkbenchReadProgress(ctx, func(progress common.WorkbenchReadProgress) {
 		s.readProgress.Store(attempt.ID, progress)
 	})
@@ -347,7 +352,7 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 	}
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		attempt.State = "failed"
-		attempt.Error = "Source read timed out after " + workbenchReadTimeout.String()
+		attempt.Error = "Source read timed out after " + workbenchReadTimeout(c).String()
 		_ = st.RecordWorkbench(c, attempts, nil, nil, nil)
 		return
 	}

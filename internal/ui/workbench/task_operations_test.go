@@ -148,3 +148,63 @@ func TestLiveTaskToggleFollowsConfirmedConnectionCapabilities(t *testing.T) {
 		t.Fatal("read-only connection exposed a status toggle")
 	}
 }
+
+func TestLiveTaskWriteWaitsForConfirmationAndKeepsStateOnConflict(t *testing.T) {
+	m := newMockup()
+	m.live = services.NewRemote("")
+	snapshot := common.WorkbenchSnapshot{
+		WorkbenchConnection: common.WorkbenchConnection{ID: "vault", Kind: obsidianTasks, Name: "Vault"},
+		Capabilities:        common.WorkbenchCapabilities{Create: true, SetState: true},
+		Attempts:            []common.WorkbenchAttempt{{State: "success"}},
+	}
+	open := sourceObject{ID: "task", ConnectionID: "vault", Kind: obsidianTasks, State: "open", TargetVersion: "v1"}
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{open})
+	m.pendingTaskEdits[open.ID] = true
+	m.liveTaskRequests = map[string]common.WorkbenchTaskWrite{open.ID: {RequestID: "complete-once"}}
+	m.liveTaskProblems = make(map[string]string)
+
+	confirmed := open
+	confirmed.State, confirmed.TargetVersion = "done", "v2"
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{confirmed})
+	p := ui.NewTester(func(c *ui.Context) { m.taskStatusCheckbox(c, m.objects[0]) }, 240, 100)
+	if !p.HasText("等待来源确认") || taskClosed(m.objects[0]) {
+		t.Fatal("a pending write should keep the last confirmed status and show progress")
+	}
+	m.finishLiveTaskToggle(open.ID, common.WorkbenchTaskReceipt{SyncState: "conflict"}, nil)
+	p.Frame()
+	if m.sourceWritePending(open.ID) || taskClosed(m.objects[0]) || m.liveTaskRequests[open.ID].RequestID != "" ||
+		!p.HasText("来源已变化，请重新核对任务") {
+		t.Fatal("a conflict must keep the old status and expose the failure")
+	}
+
+	m.pendingTaskEdits[open.ID] = true
+	m.liveTaskRequests[open.ID] = common.WorkbenchTaskWrite{RequestID: "check-on-retry"}
+	m.finishLiveTaskToggle(open.ID, common.WorkbenchTaskReceipt{SyncState: "needs_review"}, nil)
+	if m.liveTaskRequests[open.ID].RequestID != "check-on-retry" || taskClosed(m.objects[0]) {
+		t.Fatal("an uncertain write should retain the same request ID and state")
+	}
+	m.finishLiveTaskToggle(open.ID, common.WorkbenchTaskReceipt{SyncState: "confirmed"}, nil)
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{confirmed})
+	if !taskClosed(m.objects[0]) || m.liveTaskProblems[open.ID] != "" {
+		t.Fatal("readback of a confirmed write should update the task")
+	}
+}
+
+func TestLiveTaskCreateKeepsDraftUntilConfirmed(t *testing.T) {
+	m := newMockup()
+	m.newTaskOpen, m.newTaskPending, m.newTaskDraft = true, true, "Write once"
+	m.newTaskRequest.RequestID = "create-once"
+	count := len(m.objects)
+	p := ui.NewTester(m.newTaskDialog, 680, 480)
+	if !p.HasText("等待来源确认") || p.HasText("创建任务") {
+		t.Fatal("pending create should show progress and hide the submit action")
+	}
+	m.finishLiveTaskCreate(common.WorkbenchTaskReceipt{SyncState: "needs_review"}, nil)
+	if !m.newTaskOpen || m.newTaskPending || m.newTaskDraft != "Write once" || m.newTaskRequest.RequestID != "create-once" || len(m.objects) != count {
+		t.Fatal("unconfirmed create should retain the draft and request without adding a row")
+	}
+	m.finishLiveTaskCreate(common.WorkbenchTaskReceipt{SyncState: "confirmed"}, nil)
+	if m.newTaskOpen || m.newTaskPending || m.page != tasksPage {
+		t.Fatal("confirmed create should close the form")
+	}
+}

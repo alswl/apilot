@@ -256,3 +256,23 @@ func TestLiveSyncDisplaysReadCountsWhenAvailable(t *testing.T) {
 		t.Fatal("missing live note count")
 	}
 }
+
+func TestObsidianWriteUsesCLIUnlessRESTConfigured(t *testing.T) {
+	m := newMockup()
+	edit := &connectorEdit{connection: connection{ReadMethod: common.WorkbenchObsidianCLI}}
+	p := ui.NewTester(func(c *ui.Context) { m.obsidianBridgeFields(c, edit) }, 460, 240)
+	click(t, p, "允许回写")
+	if !edit.WriteEnabled || p.HasText("桥接地址") || p.HasText("桥接令牌") || p.HasText("桥接证书") {
+		t.Fatal("CLI should allow writeback without REST settings")
+	}
+	edit.ReadMethod = ""
+	p.Frame()
+	if p.HasText("桥接地址") {
+		t.Fatal("Markdown reads should allow CLI writeback without REST settings")
+	}
+	click(t, p, "配置 REST 桥接…")
+	p.Frame()
+	if !p.HasText("桥接地址") {
+		t.Fatal("explicitly configuring a REST bridge should show its settings")
+	}
+}

@@ -60,14 +60,14 @@ type mockup struct {
 	taskViewDrafts                       map[string]taskViewState
 	savedTaskViews                       []savedTaskView
 	taskViewStorePath                    string
-	taskColumnsOpen, taskViewSaveError   bool
+	taskViewSaveError                    bool
 	taskColumnsHidden                    map[string]bool
 	taskGroupTables                      map[string]*ui.ListState
 	taskDisplayOpen, saveTaskViewOpen    bool
 	searchExpanded                       bool
 	win, assistant, preferences          *mygo.Window
 	keyboard                             keyboardState
-	newTaskOpen                          bool
+	newTaskOpen, newTaskPending          bool
 	newTaskDraft, newTaskSource          string
 	newTaskTargets                       taskDestinations
 	newTaskRequest                       common.WorkbenchTaskWrite
@@ -653,11 +653,14 @@ var taskColumns = []ui.TableColumn{
 	{ID: "title", Title: "任务", MinWidth: 130, Sortable: true},
 	{ID: "status", Title: "状态", Width: 82, Sortable: true},
 	{ID: "priority", Title: "优先级", Width: 62, Sortable: true},
-	{ID: "source", Title: "来源", Width: 105, Sortable: true},
+	{ID: "source", Title: "来源", Width: 62, Sortable: true},
 	{ID: "due", Title: "截止日", Width: 102, Sortable: true},
 	{ID: "updated", Title: "最近变化", Width: 135, Sortable: true},
 	{ID: "labels", Title: "标签", Width: 105},
 	{ID: "assignee", Title: "经办人", Width: 90, Sortable: true},
+	{ID: "file", Title: "文件名", Width: 145, Sortable: true},
+	{ID: "path", Title: "路径", Width: 220, Sortable: true},
+	{ID: "section", Title: "章节", Width: 140, Sortable: true},
 }
 
 func (m *mockup) connectionName(id string) string {
@@ -669,11 +672,15 @@ func (m *mockup) connectionName(id string) string {
 	return id
 }
 
-func (m *mockup) taskValues(o sourceObject) []string {
+func (m *mockup) taskSourceDescription(o sourceObject) string {
 	source := m.sourceText(m.connectionName(o.ConnectionID))
 	if o.Mode == "mock" {
 		source += " · " + tr("模拟数据")
 	}
+	return displayTaskID(o) + " · " + source
+}
+
+func (m *mockup) taskValues(o sourceObject) []string {
 	due := tr(o.NativeFields["due"])
 	if due == "" {
 		due = "—"
@@ -693,12 +700,15 @@ func (m *mockup) taskValues(o sourceObject) []string {
 	if len(o.Activity) > 0 {
 		updated = taskActivityTime(o.Activity[len(o.Activity)-1])
 	}
-	return []string{m.sourceText(o.Title), status, tr(o.NativeFields["priority"]), displayTaskID(o) + " · " + source, due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", ")}
+	return []string{m.sourceText(o.Title), status, tr(o.NativeFields["priority"]), m.taskSourceDescription(o), due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", "), strings.Join(m.searchValues(o, "file"), ""), o.NativeFields["path"], o.NativeFields["section"]}
 }
 
 func (m *mockup) matchesStatusFilter(task sourceObject) bool {
 	if m.live != nil {
 		return m.statusFilter == "全部状态" || m.statusFilter == workbenchStateLabel(task.State)
+	}
+	if m.statusFilter == "待处理" || m.statusFilter == "进行中" {
+		return m.taskStateLabel(task) == tr(m.statusFilter)
 	}
 	return (m.statusFilter != "未完成" || !taskClosed(task)) && (m.statusFilter != "已完成" || taskClosed(task))
 }
@@ -775,6 +785,7 @@ func (m *mockup) taskListControls(c *ui.Context) {
 			m.keyboard.focusSearch = false
 		}
 		m.keyboard.editingText = search.Focused()
+		m.sourceLogoFilters(c.Key("source"))
 		if !compact {
 			m.taskFilterSelects(c.Key("selects"))
 		}
@@ -789,19 +800,15 @@ func (m *mockup) taskListControls(c *ui.Context) {
 		if compact {
 			m.taskControlsPopover(c.Key("filter-panel"), fields, &m.searchExpanded, func() {
 				ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() { m.taskFilterSelects(c.Key("selects")) })
-				m.sourceLogoFilters(c.Key("source"))
 				m.sourceQuickFilters(c.Key("source-quick-filters"))
 				m.searchHelp(c.Key("search-help"))
 			})
 		}
 	})
-	if !compact {
-		m.sourceLogoFilters(c.Key("source"))
-	}
 }
 
 func (m *mockup) taskFilterSelects(c *ui.Context) {
-	states := []string{"全部状态", "未完成", "已完成"}
+	states := []string{"全部状态", "未完成", "待处理", "进行中", "已完成"}
 	if m.live != nil {
 		states = []string{"全部状态", "待处理", "进行中", "已完成", "不计划处理", "未知"}
 	}
@@ -812,35 +819,38 @@ func (m *mockup) sourceLogoFilters(c *ui.Context) {
 	if len(m.connectionsData) == 0 {
 		return
 	}
-	ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(4).Children(func() {
-		all := m.sourceFilter == "全部来源"
-		if components.IconToggle(c.Key("all"), "square.grid.2x2", tr("全部来源"), all).Clicked() {
-			m.sourceFilter = "全部来源"
-		}
-		for _, connection := range m.connectionsData {
-			name := tr(connection.Name)
-			selected := m.sourceFilter == connection.Name
-			button := ui.ButtonBase(c.Key(connection.ID)).Label(name).Tooltip(name).Size(32, 30).Radius(6).Center().Selected(selected)
-			if selected {
-				button.Background(c.Theme().Selection)
-			} else if button.Hovered() {
-				button.Background(c.Theme().SurfaceHover)
+	width := min(180, 36*(len(m.connectionsData)+1))
+	ui.ScrollHorizontal(c).Width(float32(width)).Height(30).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Gap(4).Children(func() {
+			all := m.sourceFilter == "全部来源"
+			if components.IconToggle(c.Key("all"), "square.grid.2x2", tr("全部来源"), all).Clicked() {
+				m.sourceFilter = "全部来源"
 			}
-			button.Children(func() {
-				opacity := float32(0.45)
-				if all || selected {
-					opacity = 1
-				}
-				ui.Box(c).Opacity(opacity).Children(func() { connectorLogo(c, connection.SourceKind, 16) })
-			})
-			if button.Clicked() {
+			for _, connection := range m.connectionsData {
+				name := tr(connection.Name)
+				selected := m.sourceFilter == connection.Name
+				button := ui.ButtonBase(c.Key(connection.ID)).Label(name).Tooltip(name).Size(32, 30).Radius(6).Center().Selected(selected)
 				if selected {
-					m.sourceFilter = "全部来源"
-				} else {
-					m.sourceFilter = connection.Name
+					button.Background(c.Theme().Selection)
+				} else if button.Hovered() {
+					button.Background(c.Theme().SurfaceHover)
+				}
+				button.Children(func() {
+					opacity := float32(0.45)
+					if all || selected {
+						opacity = 1
+					}
+					ui.Box(c).Opacity(opacity).Children(func() { connectorLogo(c, connection.SourceKind, 16) })
+				})
+				if button.Clicked() {
+					if selected {
+						m.sourceFilter = "全部来源"
+					} else {
+						m.sourceFilter = connection.Name
+					}
 				}
 			}
-		}
+		})
 	})
 }
 
@@ -873,8 +883,8 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 		if autoFit {
 			m.fitTaskPage(c.Theme(), rows, viewportHeight)
 		}
-		m.taskTables(c.Key("tables"), m.pagedTaskRows(rows))
 	}
+	m.taskTables(c.Key("tables"), m.pagedTaskRows(rows))
 
 	if m.framework && len(m.objects) == 0 && problem == "" {
 		ui.Column(c.Key("empty-tasks")).FillWidth().Padding(0, 8).Gap(8).Children(func() {

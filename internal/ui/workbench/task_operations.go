@@ -85,8 +85,11 @@ func (m *mockup) openSourceEdit(o sourceObject) {
 
 func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
 	if m.live != nil {
-		if m.canToggleSourceTask(*o) {
+		if m.canToggleSourceTask(*o) || m.sourceWritePending(o.ID) {
 			m.taskStatusCheckbox(c.Key("toggle"), *o)
+		}
+		if m.sourceWritePending(o.ID) {
+			components.Muted(c.Key("pending"), tr("等待来源确认"))
 		}
 		if problem := m.liveTaskProblems[o.ID]; problem != "" {
 			components.Muted(c.Key("write-problem"), tr(problem))
@@ -143,7 +146,7 @@ func (m *mockup) canToggleSourceTask(o sourceObject) bool {
 
 func (m *mockup) toggleSourceTask(o sourceObject) {
 	if m.live != nil {
-		if !m.canToggleSourceTask(o) {
+		if !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID) {
 			return
 		}
 		state := "done"
@@ -159,25 +162,11 @@ func (m *mockup) toggleSourceTask(o sourceObject) {
 			request = common.WorkbenchTaskWrite{RequestID: common.ID(), SourceObjectID: o.ID, ConnectionVersion: o.ConnectionVersion, TargetVersion: o.TargetVersion, State: state}
 			m.liveTaskRequests[o.ID] = request
 		}
-		receipt, err := m.live.WriteWorkbenchTask(request)
-		switch {
-		case err != nil:
-			problem := common.ProtocolError(err)
-			m.liveTaskProblems[o.ID] = problem.Message
-			if problem.Code == "STALE_REVISION" || problem.Code == "INVALID_ARGUMENT" || problem.Code == "CONFLICT" {
-				delete(m.liveTaskRequests, o.ID)
-			}
-		case receipt.SyncState == "confirmed":
-			delete(m.liveTaskRequests, o.ID)
-			delete(m.liveTaskProblems, o.ID)
-		case receipt.SyncState == "conflict":
-			delete(m.liveTaskRequests, o.ID)
-			m.liveTaskProblems[o.ID] = "来源已变化，请重新核对任务"
-		default:
-			m.liveTaskProblems[o.ID] = "来源尚未确认，重试可核对本次提交"
-		}
-		m.liveGeneration++
-		m.refreshLive()
+		m.pendingTaskEdits[o.ID] = true
+		delete(m.liveTaskProblems, o.ID)
+		m.runLiveTaskWrite(request, func(receipt common.WorkbenchTaskReceipt, err error) {
+			m.finishLiveTaskToggle(o.ID, receipt, err)
+		})
 		return
 	}
 	state := "已完成"
@@ -187,6 +176,29 @@ func (m *mockup) toggleSourceTask(o sourceObject) {
 		}
 	}
 	m.setTaskState(o, state)
+}
+
+func (m *mockup) finishLiveTaskToggle(id string, receipt common.WorkbenchTaskReceipt, err error) {
+	delete(m.pendingTaskEdits, id)
+	switch {
+	case err != nil:
+		problem := common.ProtocolError(err)
+		m.liveTaskProblems[id] = problem.Message
+		if problem.Code == "STALE_REVISION" || problem.Code == "INVALID_ARGUMENT" || problem.Code == "CONFLICT" {
+			delete(m.liveTaskRequests, id)
+		}
+	case receipt.SyncState == "confirmed":
+		delete(m.liveTaskRequests, id)
+		delete(m.liveTaskProblems, id)
+	case receipt.SyncState == "conflict":
+		delete(m.liveTaskRequests, id)
+		m.liveTaskProblems[id] = receipt.Reason
+		if receipt.Reason == "" {
+			m.liveTaskProblems[id] = "来源已变化，请重新核对任务"
+		}
+	default:
+		m.liveTaskProblems[id] = "来源尚未确认，重试可核对本次提交"
+	}
 }
 
 func (m *mockup) setTaskState(o sourceObject, state string) {

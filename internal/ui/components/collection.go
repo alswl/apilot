@@ -51,6 +51,7 @@ type TableRow struct {
 	ID, Title, Icon string
 	Cells, Icons    []string
 	Leading         func(*ui.Context)
+	RenderCell      func(*ui.Context, string) bool
 	Menu            func(*ui.Menu)
 }
 
@@ -107,7 +108,7 @@ func DataTable(c *ui.Context, state *ui.ListState, columns []ui.TableColumn, row
 			if j < len(row.Icons) && row.Icons[j] != "" {
 				Symbol(c.Key("column-icon"), row.Icons[j], c.Theme().TextMuted)
 			}
-			if j < len(row.Cells) {
+			if j < len(row.Cells) && (row.RenderCell == nil || !row.RenderCell(c.Key("custom-value"), columns[j].ID)) {
 				value := row.Cells[j]
 				DataText(c.Key("value"), value).SingleLine().Ellipsis("…").Tooltip(value)
 			}
@@ -156,9 +157,12 @@ func GroupedTables(c *ui.Context, ungrouped *ui.ListState, states map[string]*ui
 				states[group.ID] = state
 			}
 			state.Sort = ungrouped.Sort
+			state.HeaderMenu = ungrouped.HeaderMenu
+			state.Columns = ungrouped.Columns
 			Heading(c.Key(group.ID+"-heading"), group.Title).Height(TableGroupHeadingHeight).SingleLine().Ellipsis("…").Tooltip(group.Title)
 		}
 		value := DataTable(c.Key(group.ID+"-table"), state, columns, group.Rows, selected, restoreFocus || revealSelection)
+		ungrouped.Columns = state.Columns
 		if value.SelectedID != "" && (result.SelectedID == "" || state.FocusWithin(c)) {
 			result.SelectedID = value.SelectedID
 		}

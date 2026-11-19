@@ -138,7 +138,7 @@ func TestCompactFiltersKeepTaskResultsAvailable(t *testing.T) {
 		t.Fatal("compact search should expose status and source filters")
 	}
 	assertRowVisible()
-	picker, _ := p.Find("全部来源")
+	picker, _ := p.Find("全部状态")
 	p.Scroll(picker.X+picker.W/2, picker.Y+picker.H/2, 0, 145)
 	click(t, p, "#refund")
 	if m.search != `label:="refund"` || m.searchExpanded || len(m.taskRows()) == 0 {

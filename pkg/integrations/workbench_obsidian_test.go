@@ -145,3 +145,13 @@ func TestWorkbenchObsidianTaskMetadataFormats(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkbenchObsidianCheckboxDistinguishesSections(t *testing.T) {
+	connection := common.WorkbenchConnection{}
+	original := "# First\n- [ ] Review\n# Second\n- [ ] Review\n"
+	tasks := parseWorkbenchNote(connection, "Release.md", original)
+	result, err := SetWorkbenchObsidianCheckbox(connection, []byte(original), tasks[1], "done")
+	if err != nil || string(result) != "# First\n- [ ] Review\n# Second\n- [x] Review\n" {
+		t.Fatalf("second section: %q %v", result, err)
+	}
+}

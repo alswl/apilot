@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/alswl/apilot/pkg/integrations"
 )
@@ -36,7 +37,7 @@ func loadNamedTaskViews(path string) ([]savedTaskView, error) {
 func (m *mockup) saveNamedTaskView(view savedTaskView) error {
 	path := m.taskViewStorePath
 	if path == "" {
-		m.savedTaskViews = append(m.savedTaskViews, view)
+		m.savedTaskViews = upsertNamedTaskView(m.savedTaskViews, view)
 		return nil
 	}
 	dir := filepath.Dir(path)
@@ -53,7 +54,7 @@ func (m *mockup) saveNamedTaskView(view savedTaskView) error {
 	if err != nil {
 		return err
 	}
-	views = append(views, view)
+	views = upsertNamedTaskView(views, view)
 	tmp, err := os.CreateTemp(dir, ".task-views-*.json")
 	if err != nil {
 		return err
@@ -69,4 +70,12 @@ func (m *mockup) saveNamedTaskView(view savedTaskView) error {
 	}
 	m.savedTaskViews = views
 	return nil
+}
+
+func upsertNamedTaskView(views []savedTaskView, view savedTaskView) []savedTaskView {
+	if i := slices.IndexFunc(views, func(existing savedTaskView) bool { return existing.ID == view.ID }); i >= 0 {
+		views[i] = view
+		return views
+	}
+	return append(views, view)
 }

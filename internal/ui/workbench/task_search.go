@@ -254,7 +254,7 @@ func (m *mockup) sourceQuickFilters(c *ui.Context) {
 		ui.Row(c.Key("quick-filters-" + conn.ID)).FillWidth().Wrap().Gap(8).Children(func() {
 			fields := conn.SearchFields[:min(2, len(conn.SearchFields))]
 			if conn.SourceKind == "obsidian_tasks" {
-				fields = []string{"file", "priority", "due", "scheduled", "recurrence", "on_completion"}
+				fields = []string{"file", "path", "section", "priority", "due", "scheduled", "recurrence", "on_completion"}
 			}
 			for _, field := range fields {
 				values := make(map[string]bool)
