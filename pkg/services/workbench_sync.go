@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"path/filepath"
 	"reflect"
@@ -328,6 +329,11 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 	if err != nil {
 		attempt.State = "failed"
 		attempt.Error = "Source could not be read completely"
+		if c.Kind == common.WorkbenchObsidianTasks {
+			if problem, ok := errors.AsType[*common.Error](err); ok {
+				attempt.Error = problem.Message
+			}
+		}
 		_ = st.RecordWorkbench(c, attempts, nil, nil, nil)
 		return
 	}

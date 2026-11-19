@@ -160,6 +160,9 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 				if a.State == "success" {
 					message += fmt.Sprintf(" (+%d ~%d −%d)", a.Added, a.Updated, a.Removed)
 				}
+				if a.Error != "" {
+					message += " · " + a.Error
+				}
 				events = append(events, syncEvent{a.Started.Local().Format(time.DateTime), message})
 			}
 			m.syncLogs[draft.ID] = events

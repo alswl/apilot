@@ -3,6 +3,8 @@ package services
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -284,4 +286,37 @@ func TestWorkbenchCapabilitiesFollowConnectionPolicy(t *testing.T) {
 	if err != nil || !local.PluginDisabled || local.Capabilities.Create {
 		t.Fatalf("disabled Local: %+v %v", local, err)
 	}
+}
+
+func TestWorkbenchObsidianSyncRecordsSafeReadFailure(t *testing.T) {
+	vault := t.TempDir()
+	if err := os.WriteFile(filepath.Join(vault, "Oversize.md"), make([]byte, (8<<20)+1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	id, err := s.SaveWorkbench(common.WorkbenchConnection{
+		Kind: common.WorkbenchObsidianTasks, Name: "Vault", Vault: vault, Scope: ".",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		snapshot, err := s.WorkbenchSyncDetails(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snapshot.Attempts) == 0 || snapshot.Attempts[0].State == "running" {
+			continue
+		}
+		attempt := snapshot.Attempts[0]
+		if attempt.State != "failed" || attempt.Error != `Read Markdown note "Oversize.md": note exceeds 8 MiB` {
+			t.Fatalf("unexpected sync diagnostic: %+v", attempt)
+		}
+		return
+	}
+	t.Fatal("sync did not finish")
 }
