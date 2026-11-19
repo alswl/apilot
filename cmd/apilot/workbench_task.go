@@ -5,8 +5,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var workbenchTaskCmd = &cobra.Command{Use: "task", Short: "Manage source tasks"}
+
 func init() {
-	group := &cobra.Command{Use: "task", Short: "Query synced source tasks"}
+	group := workbenchTaskCmd
 	var q common.WorkbenchQuery
 	list := &cobra.Command{Use: "list", Args: cobra.NoArgs, RunE: func(_ *cobra.Command, _ []string) error { return showWorkbench("workbench.task.list", q) }}
 	list.Flags().StringVar(&q.Connection, "connection", "", "Connection ID")

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -121,5 +123,57 @@ func TestLocalKeyValueLabelsCanBeSavedAndSearched(t *testing.T) {
 	m.search = "label:=area:payments"
 	if rows := m.taskRows(); !slices.Equal(rows, []int{0}) {
 		t.Fatalf("expected exact key–value label search to find the task, got %v", rows)
+	}
+}
+
+func TestLiveConnectionResultsDistinguishCancellationFromOffline(t *testing.T) {
+	m := newMockup()
+	m.live = services.NewRemote("")
+	now := time.Now()
+	connection := common.WorkbenchConnection{ID: "obsidian", Kind: common.WorkbenchObsidianTasks, Name: "Vault"}
+	var tasks = []sourceObject{{ID: "kept", ConnectionID: connection.ID, Title: "Last confirmed task"}}
+	for _, test := range []struct {
+		state  string
+		paused bool
+		status string
+	}{
+		{"cancelled", false, "同步正常"},
+		{"failed", false, "连接断开"},
+		{"success", true, "已暂停"},
+	} {
+		snapshot := common.WorkbenchSnapshot{
+			WorkbenchConnection: connection, LastSuccess: &now,
+			Attempts: []common.WorkbenchAttempt{{ID: 1, State: test.state}},
+		}
+		snapshot.Paused = test.paused
+		m.applyLive([]common.WorkbenchSnapshot{snapshot}, tasks)
+		got := m.connectionByID(connection.ID)
+		if got == nil || got.Status != test.status || got.LastConfirmedAt == "" || len(m.objects) != 1 || m.objects[0].ID != "kept" {
+			t.Fatalf("%s: connection=%+v, tasks=%+v", test.state, got, m.objects)
+		}
+	}
+}
+
+func TestSyncLogReturnsKeyboardFocusToItsTrigger(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.navigate(connectionsPage)
+	p := ui.NewTester(m.view, 640, 480)
+	label := "同步日志 · 工作 vault"
+	click(t, p, label)
+	if m.syncLogID == "" {
+		t.Fatal("sync log did not open")
+	}
+	p.Key(0, ui.KeyEscape)
+	if m.syncLogID != "" || !p.Focused(label) {
+		t.Fatalf("focus after Escape: log=%q, trigger=%t", m.syncLogID, p.Focused(label))
+	}
+	p.Key(0, ui.KeyEnter)
+	if m.syncLogID == "" {
+		t.Fatal("keyboard activation did not reopen the sync log")
+	}
+	click(t, p, "关闭")
+	if m.syncLogID != "" || !p.Focused(label) {
+		t.Fatal("closing the sync log did not return focus")
 	}
 }

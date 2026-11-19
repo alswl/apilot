@@ -9,17 +9,9 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/pkg/common"
-	"github.com/alswl/apilot/pkg/integrations"
 )
 
 type workbenchReader func(context.Context, common.WorkbenchConnection) ([]common.WorkbenchTask, error)
-
-func readWorkbench(ctx context.Context, c common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
-	if c.Mode == "mock" {
-		return integrations.ReadWorkbenchGitHubMock(c)
-	}
-	return integrations.ReadWorkbenchObsidian(ctx, c)
-}
 
 type workbenchStore interface {
 	WorkbenchConnections() ([]common.WorkbenchSnapshot, error)
@@ -45,7 +37,19 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return st.WorkbenchConnections()
+	connections, err := st.WorkbenchConnections()
+	if err != nil {
+		return nil, err
+	}
+	for i := range connections {
+		enabled, err := s.workbenchPluginEnabled(connections[i].Kind)
+		if err != nil {
+			return nil, err
+		}
+		connections[i].PluginDisabled = !enabled
+		connections[i].Capabilities = s.workbenchConnectionCapabilities(connections[i])
+	}
+	return connections, nil
 }
 
 func (s *Service) WorkbenchSnapshot(id string) (common.WorkbenchSnapshot, error) {
@@ -80,7 +84,24 @@ func (s *Service) WorkbenchTasks(q common.WorkbenchQuery) (common.WorkbenchPage,
 	if err != nil {
 		return common.WorkbenchPage{}, err
 	}
-	return st.WorkbenchPage(q)
+	page, err := st.WorkbenchPage(q)
+	if err != nil || len(page.Items) == 0 {
+		return page, err
+	}
+	connections, err := st.WorkbenchConnections()
+	if err != nil {
+		return common.WorkbenchPage{}, err
+	}
+	versions := make(map[string]int64, len(connections))
+	for _, connection := range connections {
+		versions[connection.ID] = connection.Version
+	}
+	for i := range page.Items {
+		task := &page.Items[i]
+		task.TargetVersion = workbenchFingerprint(*task)
+		task.ConnectionVersion = versions[task.ConnectionID]
+	}
+	return page, nil
 }
 
 func (s *Service) WorkbenchTask(id string) (common.WorkbenchTask, error) {
@@ -88,10 +109,24 @@ func (s *Service) WorkbenchTask(id string) (common.WorkbenchTask, error) {
 	if err != nil {
 		return common.WorkbenchTask{}, err
 	}
-	return st.WorkbenchObject(id)
+	task, err := st.WorkbenchObject(id)
+	if err != nil {
+		return task, err
+	}
+	connection, err := s.WorkbenchSnapshot(task.ConnectionID)
+	if err != nil {
+		return common.WorkbenchTask{}, err
+	}
+	task.TargetVersion = workbenchFingerprint(task)
+	task.ConnectionVersion = connection.Version
+	return task, nil
 }
 
 func (s *Service) SaveWorkbench(c common.WorkbenchConnection) (string, error) {
+	return s.ConfigureWorkbench(c, common.WorkbenchBridgeInput{})
+}
+
+func (s *Service) ConfigureWorkbench(c common.WorkbenchConnection, input common.WorkbenchBridgeInput) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.stopping {
@@ -99,6 +134,9 @@ func (s *Service) SaveWorkbench(c common.WorkbenchConnection) (string, error) {
 	}
 	st, err := s.workbenchStore()
 	if err != nil {
+		return "", err
+	}
+	if err := s.workbenchPluginAvailable(c.Kind); err != nil {
 		return "", err
 	}
 	c.Name = strings.TrimSpace(c.Name)
@@ -138,6 +176,7 @@ func (s *Service) SaveWorkbench(c common.WorkbenchConnection) (string, error) {
 		}
 	}
 	reset := false
+	var prior common.WorkbenchConnection
 	trigger := "saved"
 	if c.ID == "" {
 		c.ID = common.ID()
@@ -153,44 +192,82 @@ func (s *Service) SaveWorkbench(c common.WorkbenchConnection) (string, error) {
 		if c.Version != old.Version {
 			return "", common.Err("STALE_REVISION", "Connection configuration changed")
 		}
+		prior = old.WorkbenchConnection
+		c.Paused = old.Paused
 		reset = c.Vault != old.Vault || c.Scope != old.Scope || c.Repository != old.Repository || !maps.Equal(c.Statuses, old.Statuses)
-		if reset {
-			c.Version++
-			trigger = "configuration"
-		}
+
 	}
-	if err := st.SaveWorkbench(c, reset); err != nil {
+	bridge, err := s.prepareWorkbenchBridge(&c, prior, input)
+	if err != nil {
 		return "", err
 	}
-	if reset && s.workbenchActive[c.ID] != nil {
+	changed := reset || prior.WriteEnabled != c.WriteEnabled || bridge != nil
+	if prior.ID != "" && changed {
+		c.Version++
+		trigger = "configuration"
+	}
+	if bridge != nil {
+		err = s.store.(workbenchBridgeStore).SaveWorkbenchBridge(c, reset, bridge)
+	} else {
+		err = st.SaveWorkbench(c, reset)
+	}
+	if err != nil {
+		return "", err
+	}
+	if changed && s.workbenchActive[c.ID] != nil {
 		s.workbenchActive[c.ID]()
+	}
+
+	if c.Paused {
+		return c.ID, nil
 	}
 	return c.ID, s.startWorkbenchLocked(st, c.ID, trigger)
 }
 
 func (s *Service) SyncWorkbench(id string) error {
+	_, err := s.RunWorkbenchSync(id)
+	return err
+}
+
+func (s *Service) RunWorkbenchSync(id string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	st, err := s.workbenchStore()
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return s.startWorkbenchLocked(st, id, "manual")
+	if err := s.startWorkbenchLocked(st, id, "manual"); err != nil {
+		return 0, err
+	}
+	snapshot, err := s.WorkbenchSnapshot(id)
+	if err != nil {
+		return 0, err
+	}
+	if len(snapshot.Attempts) == 0 {
+		return 0, common.Err("INTERNAL", "Sync attempt was not recorded")
+	}
+	return snapshot.Attempts[0].ID, nil
 }
 
 func (s *Service) startWorkbenchLocked(st workbenchStore, id, trigger string) error {
 	if s.stopping {
 		return common.Err("CONFLICT", "App is stopping")
 	}
-	if s.workbenchActive[id] != nil {
-		return nil
-	}
 	snapshot, err := s.WorkbenchSnapshot(id)
 	if err != nil {
 		return err
 	}
-	if snapshot.Kind == common.WorkbenchLocal {
-		return common.Err("INVALID_ARGUMENT", "Update imported tasks with workbench task import")
+	if err := s.workbenchPluginAvailable(snapshot.Kind); err != nil {
+		return err
+	}
+	if snapshot.Paused {
+		return common.Err("CONFLICT", "Connection is paused")
+	}
+	if s.workbenchActive[id] != nil {
+		return nil
+	}
+	if !snapshot.Capabilities.Refresh {
+		return common.Err("INVALID_ARGUMENT", "Connector does not support source refresh")
 	}
 	now := time.Now().UTC()
 	for i := range snapshot.Attempts {
@@ -230,20 +307,20 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 	now := time.Now().UTC()
 	attempt := &attempts[0]
 	attempt.Finished = &now
-	if currentErr != nil {
+	if currentErr != nil || len(current.Attempts) == 0 || current.Attempts[0].ID != attempt.ID {
 		return
 	}
 	if current.Version != c.Version {
 		attempt.State = "superseded"
 		attempts = attempts[:min(20, len(attempts))]
 		_ = st.RecordWorkbench(current.WorkbenchConnection, attempts, nil, nil, nil)
-		if !s.stopping {
+		if !s.stopping && !current.Paused {
 			_ = s.startWorkbenchLocked(st, c.ID, "configuration")
 		}
 		return
 	}
 	attempts = attempts[:min(20, len(attempts))]
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || current.PluginDisabled {
 		attempt.State = "cancelled"
 		_ = st.RecordWorkbench(c, attempts, nil, nil, nil)
 		return
@@ -277,7 +354,7 @@ func (s *Service) tickWorkbench(st workbenchStore) {
 			connections, err := st.WorkbenchConnections()
 			if err == nil {
 				for _, c := range connections {
-					if c.Kind == common.WorkbenchLocal {
+					if !s.workbenchPlugins[c.Kind].capabilities.Refresh {
 						continue
 					}
 					s.mu.Lock()

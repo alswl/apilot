@@ -43,7 +43,7 @@ func (m *mockup) taskStateMenu(o sourceObject, menu *ui.Menu) {
 		return
 	}
 	current := sourceState(o, conn.SourceKind)
-	disabled := !m.editableSource(o) || m.sourceWritePending(o.ID)
+	disabled := !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID)
 	for _, state := range conn.stateMappings() {
 		if menu.Item(conn.displayState(state.label)).Radio(state.label == current).Disabled(disabled).Chosen() {
 			m.setTaskState(o, state.label)
@@ -54,7 +54,7 @@ func (m *mockup) taskStateMenu(o sourceObject, menu *ui.Menu) {
 func (m *mockup) taskStatusCheckbox(c *ui.Context, o sourceObject) {
 	checked := taskClosed(o)
 	label := tr(m.sourceToggleLabel(o))
-	box := ui.Checkbox(c, &checked, "").Label(label).Tooltip(label).Disabled(!m.editableSource(o) || m.sourceWritePending(o.ID))
+	box := ui.Checkbox(c, &checked, "").Label(label).Tooltip(label).Disabled(!m.canToggleSourceTask(o) || m.sourceWritePending(o.ID))
 	box.ContextMenu(func(menu *ui.Menu) { m.taskStateMenu(o, menu) })
 	if box.Changed() {
 		m.toggleSourceTask(o)

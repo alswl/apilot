@@ -41,6 +41,10 @@ func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 }
 
 func (s *Store) SaveWorkbench(c common.WorkbenchConnection, reset bool) error {
+	return s.SaveWorkbenchBridge(c, reset, nil)
+}
+
+func (s *Store) SaveWorkbenchBridge(c common.WorkbenchConnection, reset bool, bridge *common.WorkbenchBridgeInput) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -60,6 +64,14 @@ func (s *Store) SaveWorkbench(c common.WorkbenchConnection, reset bool) error {
 			return err
 		}
 	}
+	if bridge != nil {
+		if _, err := tx.Exec(`INSERT INTO workbench_obsidian_bridges(connection_id,endpoint,token,certificate)
+			VALUES(?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET endpoint=excluded.endpoint,
+			token=excluded.token, certificate=excluded.certificate`, c.ID, bridge.Endpoint, bridge.Token, bridge.Certificate); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
 }
 

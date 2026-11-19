@@ -17,6 +17,7 @@ import (
 type connectorEdit struct {
 	connection
 	problem string
+	bridge  common.WorkbenchBridgeInput
 }
 
 type syncEvent struct {
@@ -71,8 +72,16 @@ func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
 				components.Heading(c, tr(conn.Name))
 				components.Muted(c, tr(conn.ConnectorID)+" · "+tr(conn.Scope))
 			})
-			if components.IconButton(c.Key("log"), "list.bullet.rectangle", m.connectorLogTitle(conn)+" · "+tr(conn.Name), false).Clicked() {
+			log := components.IconButton(c.Key("log"), "list.bullet.rectangle", m.connectorLogTitle(conn)+" · "+tr(conn.Name), false)
+			if m.syncLogRestoreFocus == conn.ID {
+				log.Focus()
+				m.syncLogRestoreFocus = ""
+			}
+			if log.Clicked() {
 				m.syncLogID = conn.ID
+				m.syncDetail = common.WorkbenchSnapshot{}
+				m.syncDetailProblem = ""
+				m.refreshLive()
 			}
 			if conn.SourceKind == common.WorkbenchLocal {
 				return
@@ -84,7 +93,7 @@ func (m *mockup) connectorSummary(c *ui.Context, conn *connection) {
 			if conn.Status == "连接断开" {
 				label, icon = "重新连接", "bolt.horizontal"
 			}
-			if components.IconButton(c.Key("sync"), icon, tr(label)+" · "+tr(conn.Name), (m.framework && m.live == nil) || m.pendingSync[conn.ID]).Clicked() {
+			if components.IconButton(c.Key("sync"), icon, tr(label)+" · "+tr(conn.Name), (m.framework && m.live == nil) || conn.Paused || conn.PluginDisabled || m.pendingSync[conn.ID]).Clicked() {
 				m.syncConnection(conn, m.after)
 			}
 		})
@@ -168,7 +177,9 @@ func (m *mockup) connectorLogTitle(conn *connection) string {
 }
 
 func (m *mockup) syncLogDialog(c *ui.Context) {
-	open := m.syncLogID != ""
+	id := m.syncLogID
+	open := id != ""
+	_, height := c.Size()
 	ui.Modal(c, &open, func() {
 		conn := m.connectionByID(m.syncLogID)
 		if conn == nil {
@@ -179,13 +190,45 @@ func (m *mockup) syncLogDialog(c *ui.Context) {
 			components.Title(c, m.connectorLogTitle(conn))
 			components.Muted(c, tr(conn.Name)+" · "+tr(conn.ConnectorID))
 			m.syncProgressView(c.Key("status"), conn)
+			if m.live != nil && conn.SourceKind != common.WorkbenchLocal {
+				label := "暂停同步"
+				if conn.Paused {
+					label = "恢复同步"
+				}
+				ui.Row(c.Key("sync-actions")).Gap(8).Children(func() {
+					if ui.Button(c.Key("pause"), tr(label)).Clicked() {
+						if err := m.live.PauseWorkbench(conn.ID, conn.Version, !conn.Paused); err != nil {
+							m.liveError = true
+						} else {
+							m.refreshLive()
+						}
+					}
+					if conn.ActiveAttempt != 0 && ui.Button(c.Key("cancel-sync"), tr("取消同步")).Clicked() {
+						if err := m.live.CancelWorkbenchSync(conn.ID, conn.ActiveAttempt); err != nil {
+							m.liveError = true
+						} else {
+							m.refreshLive()
+						}
+					}
+				})
+			}
+
+			if m.live != nil {
+				if conn.ID != common.DefaultWorkbenchLocalID {
+					m.removeConnectionControl(c.Key("remove"), conn)
+				}
+			}
+
 			ui.Divider(c)
 			events := m.syncLogs[conn.ID]
 			if len(events) == 0 {
 				components.Muted(c, tr("本次会话暂无同步记录"))
 			}
-			ui.Scroll(c.Key("events")).FillWidth().MaxHeight(240).Children(func() {
+			ui.Scroll(c.Key("events")).FillWidth().MaxHeight(max(64, min(240, height-315))).Children(func() {
 				ui.Column(c).FillWidth().Gap(8).Children(func() {
+					if m.live != nil {
+						m.liveSyncResults(c.Key("write-results"), conn)
+					}
 					for i := len(events) - 1; i >= 0; i-- {
 						components.ActivityRow(c.Key(i), events[i].at, tr(events[i].message))
 					}
@@ -197,8 +240,57 @@ func (m *mockup) syncLogDialog(c *ui.Context) {
 		})
 	})
 	if !open {
+		if id != "" && m.syncLogID == id {
+			m.syncLogRestoreFocus = id
+			c.Invalidate()
+		}
 		m.syncLogID = ""
+		m.removeConnectionID = ""
 	}
+}
+
+func (m *mockup) liveSyncResults(c *ui.Context, conn *connection) {
+	if m.syncDetailProblem != "" {
+		components.Muted(c.Key("error"), m.syncDetailProblem)
+	}
+	if m.syncDetail.ID != conn.ID {
+		return
+	}
+	for _, receipt := range m.syncDetail.PendingWrites {
+		label := "来源尚未确认，重试可核对本次提交"
+		if receipt.SyncState == "conflict" {
+			label = "来源已变化，请刷新写入位置"
+		}
+		components.ActivityRow(c.Key(receipt.RequestID), receipt.RequestID, tr(label))
+	}
+}
+
+func (m *mockup) removeConnectionControl(c *ui.Context, conn *connection) {
+	if m.removeConnectionID != conn.ID {
+		if ui.Button(c.Key("start"), tr("解除连接")).Clicked() {
+			m.removeConnectionID = conn.ID
+		}
+		return
+	}
+	if conn.SourceKind == obsidianTasks {
+		components.Muted(c.Key("scope"), tr("解除连接会移除工作台中的来源任务，保留原笔记。"))
+	} else {
+		components.Muted(c.Key("scope"), tr("解除连接会移除此连接及其任务。"))
+	}
+	ui.Row(c.Key("confirm")).Gap(8).Children(func() {
+		if ui.Button(c.Key("cancel"), tr("取消")).Clicked() {
+			m.removeConnectionID = ""
+		}
+		if ui.Button(c.Key("remove"), tr("解除连接")).Clicked() {
+			if err := m.live.RemoveWorkbench(conn.ID); err != nil {
+				m.syncDetailProblem = common.ProtocolError(err).Message
+				return
+			}
+			m.syncLogID, m.removeConnectionID = "", ""
+			m.liveGeneration++
+			m.refreshLive()
+		}
+	})
 }
 
 func (m *mockup) connectorDraft(connector services.WorkbenchConnector) connection {
@@ -281,6 +373,7 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 					if m.live != nil {
 						if edit.SourceKind != githubIssues {
 							m.connectorMappingFields(c.Key("mapping"), edit)
+							m.obsidianBridgeFields(c.Key("bridge"), edit)
 						}
 						return
 					}
@@ -309,7 +402,12 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 					open = false
 				}
 				if ui.PrimaryButton(c.Key("save"), tr("保存配置")).Clicked() {
-					edit.problem = m.saveConnector(edit.connection)
+					if m.live != nil && edit.SourceKind == obsidianTasks {
+						edit.bridge.WriteEnabled = &edit.WriteEnabled
+						edit.problem = m.saveLiveConnection(edit.connection, edit.bridge)
+					} else {
+						edit.problem = m.saveConnector(edit.connection)
+					}
 					open = edit.problem != ""
 				}
 			})
@@ -318,6 +416,21 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 	if !open {
 		m.connectorEditor = nil
 	}
+}
+
+func (m *mockup) obsidianBridgeFields(c *ui.Context, edit *connectorEdit) {
+	ui.Checkbox(c.Key("writable"), &edit.WriteEnabled, tr("允许回写"))
+	if !edit.WriteEnabled {
+		return
+	}
+	if edit.BridgeConfigured {
+		components.Muted(c, tr("已保存桥接凭据。留空以继续使用。"))
+	}
+	components.TextField(c.Key("endpoint"), tr("桥接地址"), &edit.bridge.Endpoint).Placeholder("https://127.0.0.1:27124")
+	ui.TextInput(c.Key("token"), &edit.bridge.Token).Label(tr("桥接令牌")).Password().FillWidth()
+	ui.Field(c.Key("certificate"), tr("桥接证书"), func() {
+		ui.TextArea(c, &edit.bridge.Certificate).Label(tr("桥接证书")).FillWidth().Height(75)
+	})
 }
 
 func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
@@ -378,7 +491,7 @@ func (m *mockup) connectorMappingFields(c *ui.Context, edit *connectorEdit) {
 
 func (m *mockup) saveConnector(config connection) string {
 	if m.live != nil {
-		return m.saveLiveConnection(config)
+		return m.saveLiveConnection(config, common.WorkbenchBridgeInput{})
 	}
 	config.CheckboxMapping = maps.Clone(config.CheckboxMapping)
 	if config.CheckboxMapping == nil {

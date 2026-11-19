@@ -27,18 +27,24 @@ func (m *mockup) pollLive() {
 }
 
 func (m *mockup) refreshLive() {
-	if m.liveBusy {
+	remote := m.live
+	if remote == nil || m.liveBusy {
 		return
 	}
 	m.liveBusy = true
 	generation := m.liveGeneration
+	syncID := m.syncLogID
 	go func() {
-		connections, err := m.live.WorkbenchConnections()
+		connections, err := remote.WorkbenchConnections()
+		var plugins []services.WorkbenchPlugin
+		if err == nil {
+			plugins, err = remote.WorkbenchPlugins()
+		}
 		var tasks []sourceObject
 		if err == nil {
 			q := common.WorkbenchQuery{Limit: 100}
 			for {
-				page, readErr := m.live.WorkbenchTasks(q)
+				page, readErr := remote.WorkbenchTasks(q)
 				if readErr != nil {
 					err = readErr
 					break
@@ -50,6 +56,11 @@ func (m *mockup) refreshLive() {
 				q.Offset, q.Revision = len(tasks), page.Revision
 			}
 		}
+		var detail common.WorkbenchSnapshot
+		var detailErr error
+		if syncID != "" {
+			detail, detailErr = remote.WorkbenchSyncDetails(syncID)
+		}
 		mygo.RunOnMain(func() {
 			if m.win == nil || m.win.IsDestroyed() {
 				return
@@ -59,13 +70,19 @@ func (m *mockup) refreshLive() {
 				m.refreshLive()
 				return
 			}
+			detailChanged := false
+			if syncID != "" && syncID == m.syncLogID && detailErr == nil {
+				detailChanged = !reflect.DeepEqual(detail, m.syncDetail)
+				m.syncDetail = detail
+			}
 			hadError := m.liveError
 			m.liveError = err != nil
-			if err == nil && (!reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(tasks, m.objects)) {
+			if err == nil && (!reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(tasks, m.objects)) {
 				m.liveConnections = connections
+				m.livePlugins = plugins
 				m.applyLive(connections, tasks)
 				m.win.Invalidate()
-			} else if hadError != m.liveError {
+			} else if hadError != m.liveError || detailChanged {
 				m.win.Invalidate()
 			}
 		})
@@ -82,13 +99,20 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			}
 			draft := m.connectorDraft(kind)
 			draft.ID, draft.Name, draft.Version = snapshot.ID, snapshot.Name, snapshot.Version
+			draft.Paused = snapshot.Paused
+			draft.PluginDisabled = snapshot.PluginDisabled
+			draft.WriteEnabled, draft.BridgeConfigured = snapshot.WriteEnabled, snapshot.BridgeConfigured
 			if existing := m.connectionByID(draft.ID); existing != nil && existing.Name != draft.Name && m.sourceFilter == existing.Name {
 				m.sourceFilter = draft.Name
 			}
 			draft.Scope, draft.VaultPath, draft.Repository = snapshot.Scope, snapshot.Vault, snapshot.Repository
 			draft.Status, draft.Capabilities, draft.Identity = "等待首次同步", "只读", "本地"
+			if snapshot.Kind == common.WorkbenchObsidianTasks && snapshot.Capabilities.Create {
+				draft.Writable = true
+				draft.Capabilities = "读写"
+			}
 			if snapshot.Kind == common.WorkbenchLocal {
-				draft.Scope, draft.Capabilities = "由 Apilot 管理", "CLI 导入"
+				draft.Scope, draft.Capabilities = "由 Apilot 管理", "读写"
 			}
 			if snapshot.Mode == "mock" {
 				draft.Scope, draft.Identity = snapshot.Repository, "模拟数据"
@@ -104,15 +128,28 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			if len(snapshot.Attempts) > 0 {
 				switch snapshot.Attempts[0].State {
 				case "running":
+					draft.ActiveAttempt = snapshot.Attempts[0].ID
 					m.pendingSync[draft.ID] = true
 				case "success":
 					draft.Status = "同步正常"
-				default:
+				case "failed":
 					draft.Status = "连接断开"
+				default:
+					if snapshot.LastSuccess != nil {
+						draft.Status = "同步正常"
+					}
 				}
 			}
 			if snapshot.Kind == common.WorkbenchLocal {
 				draft.Status = "可用"
+				draft.Writable = snapshot.Capabilities.Create
+			}
+			if draft.Paused {
+				draft.Status = "已暂停"
+			}
+			if draft.PluginDisabled {
+				draft.Status = "插件已停用"
+				draft.Writable = false
 			}
 			events := make([]syncEvent, 0, len(snapshot.Attempts))
 			for _, a := range slices.Backward(snapshot.Attempts) {
@@ -151,7 +188,7 @@ func (m *mockup) replaceLiveTasks(tasks []sourceObject) {
 	}
 }
 
-func (m *mockup) saveLiveConnection(config connection) string {
+func (m *mockup) saveLiveConnection(config connection, bridge common.WorkbenchBridgeInput) string {
 	c := common.WorkbenchConnection{ID: config.ID, Version: config.Version, Kind: config.SourceKind, Name: config.Name, Vault: config.VaultPath, Scope: config.Scope, Repository: config.Repository}
 	if c.Kind == githubIssues {
 		c.Repository = "alswl/issues"
@@ -168,7 +205,7 @@ func (m *mockup) saveLiveConnection(config connection) string {
 			c.Statuses[state.native] = normalized
 		}
 	}
-	snapshot, err := m.live.SaveWorkbench(c)
+	snapshot, err := m.live.ConfigureWorkbench(c, bridge)
 	if err != nil {
 		return common.ProtocolError(err).Message
 	}

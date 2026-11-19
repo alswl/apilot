@@ -23,7 +23,11 @@ func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, erro
 			return dialer.DialContext(ctx, "unix", socket)
 		},
 	}
-	client, err := NewClient("http://apilot", WithHTTPClient(&http.Client{Transport: transport, Timeout: 3 * time.Second}))
+	client, err := NewClient("http://apilot", WithHTTPClient(&http.Client{Transport: transport, Timeout: 3 * time.Second}),
+		WithRequestEditorFn(func(_ context.Context, request *http.Request) error {
+			request.Header.Set(common.WorkbenchAPIVersionHeader, common.WorkbenchAPIVersion)
+			return nil
+		}))
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +78,8 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return nil, common.Err("INVALID_ARGUMENT", "Invalid workbench request")
 	}
 	switch method {
+	case "workbench.plugin.list":
+		return client.ListWorkbenchPlugins(ctx)
 	case "workbench.task.list":
 		var q common.WorkbenchQuery
 		if err := json.Unmarshal(input, &q); err != nil {
@@ -101,11 +107,32 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return client.ListWorkbenchTasks(ctx, mapped)
 	case "workbench.connection.save":
 		return client.SaveWorkbenchConnectionWithBody(ctx, "application/json", bytes.NewReader(input))
+	case "workbench.task.create":
+		return client.CreateWorkbenchTaskWithBody(ctx, "application/json", bytes.NewReader(input))
+	case "workbench.task.complete", "workbench.task.reopen":
+		var task common.WorkbenchTaskWrite
+		if err := json.Unmarshal(input, &task); err != nil || task.SourceObjectID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "Task source object ID is required")
+		}
+		task.State = "open"
+		if method == "workbench.task.complete" {
+			task.State = "done"
+		}
+		body, err := json.Marshal(task)
+		if err != nil {
+			return nil, err
+		}
+		return client.SetWorkbenchTaskStateWithBody(ctx, task.SourceObjectID, "application/json", bytes.NewReader(body))
 	case "workbench.task.import":
 		return client.ImportWorkbenchTasksWithBody(ctx, "application/json", bytes.NewReader(input))
 	}
 	var p struct {
-		ID string `json:"id"`
+		ID        string `json:"id"`
+		Version   int64  `json:"version"`
+		Paused    bool   `json:"paused"`
+		Enabled   bool   `json:"enabled"`
+		NotePath  string `json:"note_path"`
+		AttemptID int64  `json:"attempt_id"`
 	}
 	if err := json.Unmarshal(input, &p); err != nil || p.ID == "" {
 		return nil, common.Err("INVALID_ARGUMENT", "A workbench ID is required")
@@ -119,6 +146,16 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return client.RemoveWorkbenchConnection(ctx, p.ID)
 	case "workbench.sync.show":
 		return client.GetWorkbenchSync(ctx, p.ID)
+	case "workbench.plugin.set":
+		return client.SetWorkbenchPluginEnabled(ctx, p.ID, SetWorkbenchPluginEnabledJSONRequestBody{Enabled: p.Enabled})
+	case "workbench.connection.notes":
+		return client.ListWorkbenchNotes(ctx, p.ID)
+	case "workbench.connection.headings":
+		return client.ListWorkbenchHeadings(ctx, p.ID, &ListWorkbenchHeadingsParams{NotePath: p.NotePath})
+	case "workbench.connection.pause":
+		return client.PauseWorkbenchConnection(ctx, p.ID, PauseWorkbenchConnectionJSONRequestBody{Paused: p.Paused, Version: p.Version})
+	case "workbench.sync.cancel":
+		return client.CancelWorkbenchSync(ctx, p.ID, p.AttemptID)
 	case "workbench.sync.run":
 		return client.RunWorkbenchSync(ctx, p.ID)
 	default:

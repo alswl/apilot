@@ -1,6 +1,7 @@
 package integrations
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -11,13 +12,11 @@ import (
 )
 
 var wbCheckbox = regexp.MustCompile(`^\s*(?:[-+*]|[0-9]+[.)])\s+\[([^\]\r\n])\]\s+(.+)$`)
-var wbHeading = regexp.MustCompile(`^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$`)
+var wbHeading = regexp.MustCompile(`^ {0,3}(#{1,6})[ \t]+(.+?)(?:[ \t]+#+)?[ \t\r]*$`)
 var wbTag = regexp.MustCompile(`(?:^|\s)(#[\pL\pN_/-]+)`)
 var wbField = regexp.MustCompile(`(?:^|\s)(🆔\s*[A-Za-z0-9_-]+|[📅⏳🛫✅]\s*\d{4}-\d{2}-\d{2}|[🔺⏫🔼🔽⏬])`)
 
-func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []common.WorkbenchTask {
-	var out []common.WorkbenchTask
-	var section string
+func scanWorkbenchMarkdown(content string, visit func(int, string)) {
 	var fence byte
 	var fenceLength int
 	var comment, frontmatter bool
@@ -47,14 +46,31 @@ func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []co
 		if fence != 0 {
 			continue
 		}
-		raw = workbenchWithoutComments(raw, &comment)
+		visit(i, workbenchWithoutComments(raw, &comment))
+	}
+}
+
+func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []common.WorkbenchTask {
+	var out []common.WorkbenchTask
+	var sections []string
+	var levels []int
+	headingPath := ""
+	scanWorkbenchMarkdown(content, func(i int, raw string) {
 		if h := wbHeading.FindStringSubmatch(raw); h != nil {
-			section = h[1]
-			continue
+			level := len(h[1])
+			for len(levels) > 0 && levels[len(levels)-1] >= level {
+				levels = levels[:len(levels)-1]
+				sections = sections[:len(sections)-1]
+			}
+			levels = append(levels, level)
+			sections = append(sections, h[2])
+			encoded, _ := json.Marshal(sections)
+			headingPath = string(encoded)
+			return
 		}
 		m := wbCheckbox.FindStringSubmatch(raw)
 		if m == nil {
-			continue
+			return
 		}
 		state := "unknown"
 		switch strings.ToLower(m[1]) {
@@ -67,7 +83,11 @@ func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []co
 				state = v
 			}
 		}
-		fields := map[string]string{"path": path, "line": strconv.Itoa(i + 1), "section": section, "checkbox": m[1], "status": state}
+		fields := map[string]string{"path": path, "line": strconv.Itoa(i + 1), "section": "", "checkbox": m[1], "status": state}
+		if len(sections) != 0 {
+			fields["section"] = sections[len(sections)-1]
+			fields["heading_path"] = headingPath
+		}
 		body := m[2]
 		var id string
 		title := wbField.ReplaceAllStringFunc(body, func(match string) string {
@@ -102,7 +122,7 @@ func parseWorkbenchNote(c common.WorkbenchConnection, path, content string) []co
 			key = "task:" + id
 		}
 		out = append(out, common.WorkbenchTask{SourceKey: key, NativeID: id, Title: title, State: state, Locator: fmt.Sprintf("%s:%d", path, i+1), Labels: tags, Summary: body, NativeFields: fields})
-	}
+	})
 	return out
 }
 

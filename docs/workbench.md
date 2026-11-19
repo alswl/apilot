@@ -1,15 +1,23 @@
 # macOS 工作台使用指南
 
-从仓库启动只读工作台，或给已安装的 Apilot 传入同样的参数。
+从仓库启动工作台，或给已安装的 Apilot 传入同样的参数。
 
 ```sh
 go run ./cmd/apilot-app --workbench
 open -n -a Apilot --args --workbench
 ```
 
-第一次打开时任务列表为空。在「连接 → 添加连接」选择 Obsidian Tasks，填写 vault 的绝对路径，可选填相对目录作为同步范围。Apilot 在保存后首次同步，运行期间每分钟刷新，也可点击连接的同步按钮。同一数据目录由一个本地服务持有。工作台可连接已运行的服务。任务和连接配置保存在 Apilot 的本地数据库中。来源不可读时仍可查看上次成功结果，连接页保留成功时间及最近的同步日志。改变范围后，旧范围数据会退出查询。Apilot 只读 Markdown 文件，隐藏目录、链接和代码示例中的任务不导入。
+第一次打开时任务列表为空。在「连接 → 添加连接」选择 Obsidian Tasks，填写 vault 的绝对路径，可选填相对目录作为同步范围。Apilot 在保存后首次同步，运行期间每分钟刷新，也可点击连接的同步按钮。同一数据目录由一个本地服务持有。工作台可连接已运行的服务。任务和连接配置保存在 Apilot 的本地数据库中。来源不可读时仍可查看上次成功结果，连接页保留成功时间及最近的同步日志。改变范围后，旧范围数据会退出查询。Obsidian 连接默认只读。隐藏目录、链接和代码示例中的任务不导入。
 
 要离线体验第二种来源，在连接页主动添加 GitHub Issues。此连接使用标明「模拟数据」的 `alswl/issues` 示例，开放和关闭的 issue 均可浏览。该连接无需 GitHub 账号。
+
+## 启用 Obsidian 回写
+
+在目标 vault 安装并启用带原子条件写入补丁的 Obsidian Local REST API 5.5.2。Apilot 仅在桥接声明支持此能力时启用回写。已用 Obsidian 1.15.1 运行实测。[构建与安装步骤](../packaging/obsidian/README.md)连接配置中勾选「允许回写」，填入本机 HTTPS 地址、该实例令牌和信任的 PEM 证书。Apilot 通过临时验证笔记核对端点是否属于当前 vault。改变 vault 或范围时需重新核验。插件停用或连接暂停时禁止新写入，已同步任务仍可查询。
+
+在工作台新建任务时选择连接、笔记和已有章节。点击任务复选框可完成或重开。工作台以读回的 Obsidian 值确认操作。若创建结果待核对，请在同一表单重试，以保留请求标识。点连接的日志按钮可以查看待核对或冲突的提交，也可以取消本轮、暂停、恢复或解除连接。
+
+「设置 → 扩展」管理任务来源插件。Local 默认启用，可直接在工作台新建本地任务。停用后保留既有任务，重新启用即可继续操作。
 
 ## 用 CLI 配置、导入和查询
 
@@ -41,9 +49,12 @@ apilot workbench sync run CONNECTION_ID --json
 apilot workbench task list --connection CONNECTION_ID --state open --json
 apilot workbench task show TASK_ID --json
 apilot workbench sync show CONNECTION_ID --json
+apilot workbench sync cancel CONNECTION_ID ATTEMPT_ID --json
+apilot workbench connection pause CONNECTION_ID VERSION --json
+apilot workbench connection resume CONNECTION_ID VERSION --json
 ```
 
-`apilot workbench connection remove CONNECTION_ID` 可删除用户创建的连接及本地快照。默认 Local 连接可用空的 `tasks` 数组清空。Obsidian 和 GitHub 来源始终只读。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
+`apilot workbench connection remove CONNECTION_ID` 可删除用户创建的连接及本地快照。默认 Local 连接可用空的 `tasks` 数组清空。GitHub 样例来源只读。Obsidian 可在配置桥接后启用回写。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
 
 ```sh
 go run ./cmd/apilot-app --mock

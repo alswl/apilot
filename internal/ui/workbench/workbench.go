@@ -32,6 +32,13 @@ type mockup struct {
 	hosted                               bool
 	hostPanels                           HostPanels
 	liveConnections                      []common.WorkbenchSnapshot
+	livePlugins                          []services.WorkbenchPlugin
+	liveTaskRequests                     map[string]common.WorkbenchTaskWrite
+	liveTaskProblems                     map[string]string
+	livePluginProblem                    string
+	syncDetail                           common.WorkbenchSnapshot
+	syncDetailProblem                    string
+	removeConnectionID                   string
 	live                                 *services.Remote
 	liveBusy, liveError                  bool
 	liveGeneration                       uint64
@@ -60,6 +67,8 @@ type mockup struct {
 	keyboard                             keyboardState
 	newTaskOpen                          bool
 	newTaskDraft, newTaskSource          string
+	newTaskTargets                       taskDestinations
+	newTaskRequest                       common.WorkbenchTaskWrite
 	page, selected                       int
 	variant, state                       int
 	writeGeneration                      uint64
@@ -69,6 +78,7 @@ type mockup struct {
 	syncLogs                             map[string][]syncEvent
 	connectorEditor                      *connectorEdit
 	syncLogID                            string
+	syncLogRestoreFocus                  string
 	pageScroll                           [len(pages)]ui.ScrollState
 	refundConfirmedAt                    string
 	nowSessions                          []nowSession

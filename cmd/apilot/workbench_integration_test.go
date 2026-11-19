@@ -227,3 +227,89 @@ func TestWorkbenchReadPath(t *testing.T) {
 	call(5, "workbench", "connection", "remove", common.DefaultWorkbenchLocalID)
 
 }
+
+func TestWorkbenchLocalTaskCommandsAcrossServiceRestart(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("APILOT_DATA_DIR", dir)
+	runtime, err := server.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = runtime.Close() }()
+	call := func(want int, result any, args ...string) {
+		t.Helper()
+		var out, stderr bytes.Buffer
+		if code := execute(append([]string{"workbench"}, append(args, "--json")...), &out, &stderr); code != want {
+			t.Fatalf("%v: code=%d stdout=%s stderr=%s", args, code, &out, &stderr)
+		}
+		if result != nil {
+			envelope := struct{ Data any }{Data: result}
+			if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	file := filepath.Join(t.TempDir(), "task.json")
+	write := func(input common.WorkbenchTaskWrite) {
+		t.Helper()
+		body, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var plugins struct{ Items []services.WorkbenchPlugin }
+	call(0, &plugins, "plugin", "list")
+	localEnabled := false
+	for _, plugin := range plugins.Items {
+		if plugin.ID == common.WorkbenchLocal {
+			localEnabled = plugin.Enabled
+		}
+	}
+	if !localEnabled {
+		t.Fatal("Local plugin should be present and enabled by default")
+	}
+	create := common.WorkbenchTaskWrite{RequestID: "create-1", ConnectionID: common.DefaultWorkbenchLocalID, ConnectionVersion: 1, Title: "CLI creates it"}
+	write(create)
+	var created common.WorkbenchTaskReceipt
+	call(0, &created, "task", "create", file)
+	if created.SyncState != "confirmed" || created.SourceObjectID == "" {
+		t.Fatalf("create: %+v", created)
+	}
+	call(0, nil, "plugin", "disable", common.WorkbenchLocal)
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := server.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime = restarted
+	write(common.WorkbenchTaskWrite{RequestID: "disabled-write", ConnectionID: common.DefaultWorkbenchLocalID, ConnectionVersion: 1, Title: "Must not create"})
+	call(5, nil, "task", "create", file)
+	call(0, nil, "plugin", "enable", common.WorkbenchLocal)
+	write(create)
+	var replay common.WorkbenchTaskReceipt
+	call(0, &replay, "task", "create", file)
+	if replay != created {
+		t.Fatalf("replay: %+v, original: %+v", replay, created)
+	}
+	for _, action := range []struct{ verb, state string }{{"complete", "done"}, {"reopen", "open"}} {
+		var before, after common.WorkbenchTask
+		call(0, &before, "task", "show", created.SourceObjectID)
+		write(common.WorkbenchTaskWrite{RequestID: action.verb, SourceObjectID: before.ID, ConnectionVersion: before.ConnectionVersion, TargetVersion: before.TargetVersion})
+		var receipt common.WorkbenchTaskReceipt
+		call(0, &receipt, "task", action.verb, file)
+		call(0, &after, "task", "show", created.SourceObjectID)
+		if receipt.SyncState != "confirmed" || after.State != action.state || after.ID != before.ID {
+			t.Fatalf("%s: %+v %+v", action.verb, receipt, after)
+		}
+	}
+	var page common.WorkbenchPage
+	call(0, &page, "task", "list", "--connection", common.DefaultWorkbenchLocalID)
+	if page.Total != 1 {
+		t.Fatalf("Local writes produced %d tasks", page.Total)
+	}
+}

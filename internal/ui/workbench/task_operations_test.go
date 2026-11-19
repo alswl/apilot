@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -116,5 +118,33 @@ func TestExtendedFixtureSupportsSourceEditingAndCrossLinks(t *testing.T) {
 	rows := m.taskRows()
 	if len(rows) != 1 || m.objects[rows[0]].NativeID != "109" {
 		t.Fatal("expected the realistic unassigned GitHub retry issue")
+	}
+}
+
+func TestLiveTaskToggleFollowsConfirmedConnectionCapabilities(t *testing.T) {
+	m := newMockup()
+	m.live = services.NewRemote("")
+	now := time.Now()
+	task := sourceObject{ID: "task", ConnectionID: "vault", Kind: common.WorkbenchObsidianTasks, TargetVersion: "observed", State: "open"}
+	connection := common.WorkbenchConnection{ID: "vault", Name: "Vault", Kind: common.WorkbenchObsidianTasks, WriteEnabled: true}
+	snapshot := common.WorkbenchSnapshot{
+		WorkbenchConnection: connection, LastSuccess: &now,
+		Attempts:     []common.WorkbenchAttempt{{State: "success"}},
+		Capabilities: common.WorkbenchCapabilities{Create: true, SetState: true},
+	}
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+	if !m.canToggleSourceTask(task) || m.editableSource(task) {
+		t.Fatal("live task should allow status changes and reject mock editor")
+	}
+	snapshot.Attempts[0].State = "failed"
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+	if m.canToggleSourceTask(task) || m.objects[0].State != "open" {
+		t.Fatal("an offline connection should retain confirmed status and suspend toggles")
+	}
+	snapshot.Attempts[0].State = "success"
+	snapshot.Capabilities = common.WorkbenchCapabilities{Read: true}
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+	if m.canToggleSourceTask(task) {
+		t.Fatal("read-only connection exposed a status toggle")
 	}
 }

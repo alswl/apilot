@@ -64,7 +64,7 @@ func TestWorkbenchMigratesV2(t *testing.T) {
 	if err := s.SaveTask(common.Task{ID: "keep", Name: "Keep", Executable: "/bin/echo", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.db.Exec("DROP TABLE workbench_objects; DROP TABLE workbench_connections; DROP TABLE workbench_revision; PRAGMA user_version=2")
+	_, err = s.db.Exec("DROP TABLE workbench_objects; DROP TABLE workbench_connections; DROP TABLE workbench_revision; DROP TABLE workbench_plugin_settings; DROP TABLE workbench_task_writes; DROP TABLE workbench_obsidian_bridges; PRAGMA user_version=2")
 	s.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestWorkbenchMigratesImportedConnection(t *testing.T) {
 	if err := s.CommitWorkbenchImport(c, attempts, nil, []common.WorkbenchTask{task}, &now); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec("DELETE FROM workbench_connections WHERE id='local'; PRAGMA user_version=3"); err != nil {
+	if _, err := s.db.Exec("DELETE FROM workbench_connections WHERE id='local'; DROP TABLE workbench_plugin_settings; DROP TABLE workbench_task_writes; DROP TABLE workbench_obsidian_bridges; PRAGMA user_version=3"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -120,5 +120,42 @@ func TestWorkbenchMigratesImportedConnection(t *testing.T) {
 	if err != nil || obj.ConnectionID != c.ID || obj.SourceKey != task.SourceKey ||
 		obj.Kind != common.WorkbenchLocal || obj.Mode != "local" {
 		t.Fatalf("task=%+v err=%v", obj, err)
+	}
+}
+
+func TestWorkbenchMigratesV4PluginAndTaskIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection := common.WorkbenchConnection{ID: "named", Kind: common.WorkbenchLocal, Mode: "local", Name: "Named", Version: 1}
+	task := common.WorkbenchTask{ID: "task-v4", ConnectionID: connection.ID, Kind: connection.Kind, Mode: connection.Mode, SourceKey: "key\x000", Title: "Keep", State: "open"}
+	now := time.Now().UTC()
+	attempts := []common.WorkbenchAttempt{{ID: 42, State: "success", Trigger: "import", Started: now, Finished: &now}}
+	if err := s.CommitWorkbenchImport(connection, attempts, nil, []common.WorkbenchTask{task}, &now); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.db.Exec("DROP TABLE workbench_plugin_settings; DROP TABLE workbench_task_writes; DROP TABLE workbench_obsidian_bridges; PRAGMA user_version=4")
+	if closeErr := s.Close(); err != nil || closeErr != nil {
+		t.Fatalf("fixture: %v %v", err, closeErr)
+	}
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	got, err := s.WorkbenchObject(task.ID)
+	if err != nil || got.SourceKey != task.SourceKey || got.ConnectionID != connection.ID {
+		t.Fatalf("task: %+v %v", got, err)
+	}
+	enabled, err := s.WorkbenchPluginEnabled(common.WorkbenchLocal)
+	if err != nil || !enabled {
+		t.Fatalf("Local enablement: %t %v", enabled, err)
+	}
+	connections, err := s.WorkbenchConnections()
+	if err != nil || len(connections) != 2 || connections[0].ID != common.DefaultWorkbenchLocalID ||
+		connections[1].ID != connection.ID || len(connections[1].Attempts) != 1 || connections[1].Attempts[0].ID != 42 {
+		t.Fatalf("connections: %+v %v", connections, err)
 	}
 }

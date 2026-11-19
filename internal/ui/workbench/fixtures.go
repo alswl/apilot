@@ -18,9 +18,14 @@ type taskResource = common.WorkbenchTaskResource
 type taskEvent = common.WorkbenchTaskEvent
 
 type connection struct {
-	Version int64  `json:"-"`
-	ID      string `json:"connection_id"`
-	Name    string `json:"name"`
+	PluginDisabled   bool
+	WriteEnabled     bool
+	BridgeConfigured bool
+	Paused           bool
+	ActiveAttempt    int64
+	Version          int64  `json:"-"`
+	ID               string `json:"connection_id"`
+	Name             string `json:"name"`
 
 	SourceKind      string            `json:"source_kind"`
 	Repository      string            `json:"repository"`

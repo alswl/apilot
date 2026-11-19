@@ -136,8 +136,11 @@ func (m *mockup) activeCommands() []command {
 		items = append(items,
 			command{"task.edit", tr("编辑任务"), func() { m.openSourceEdit(object) }},
 			command{"task.labels", tr("管理标签"), func() { m.openLabels(object) }},
-			command{"task.toggle", tr(m.sourceToggleLabel(object)), func() { m.toggleSourceTask(object) }},
 		)
+	}
+
+	if m.canToggleSourceTask(object) && !m.sourceWritePending(object.ID) {
+		items = append(items, command{"task.toggle", tr(m.sourceToggleLabel(object)), func() { m.toggleSourceTask(object) }})
 	}
 
 	if m.objects[index].NativeFields["excerpt"] != "" {

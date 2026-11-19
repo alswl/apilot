@@ -50,3 +50,69 @@ func (r *Remote) SyncWorkbench(id string) error {
 	_, err := r.Call("workbench.sync.run", map[string]string{"id": id})
 	return err
 }
+
+func (r *Remote) PauseWorkbench(id string, version int64, paused bool) error {
+	_, err := remoteResult[common.WorkbenchSnapshot](r, "workbench.connection.pause", map[string]any{"id": id, "version": version, "paused": paused})
+	return err
+}
+
+func (r *Remote) CancelWorkbenchSync(id string, attemptID int64) error {
+	_, err := remoteResult[common.WorkbenchSnapshot](r, "workbench.sync.cancel", map[string]any{"id": id, "attempt_id": attemptID})
+	return err
+}
+
+func (r *Remote) WriteWorkbenchTask(input common.WorkbenchTaskWrite) (common.WorkbenchTaskReceipt, error) {
+	method := "workbench.task.create"
+	if input.SourceObjectID != "" {
+		method = "workbench.task.reopen"
+		if input.State == "done" {
+			method = "workbench.task.complete"
+		}
+	}
+	return remoteResult[common.WorkbenchTaskReceipt](r, method, input)
+}
+
+func (r *Remote) ConfigureWorkbench(c common.WorkbenchConnection, bridge common.WorkbenchBridgeInput) (common.WorkbenchSnapshot, error) {
+	return remoteResult[common.WorkbenchSnapshot](r, "workbench.connection.save", struct {
+		common.WorkbenchConnection
+		Endpoint     string `json:"bridge_endpoint,omitempty"`
+		Token        string `json:"bridge_token,omitempty"`
+		Certificate  string `json:"bridge_certificate,omitempty"`
+		WriteEnabled *bool  `json:"write_enabled,omitempty"`
+	}{c, bridge.Endpoint, bridge.Token, bridge.Certificate, bridge.WriteEnabled})
+}
+
+func (r *Remote) WorkbenchNotes(id string) ([]common.WorkbenchNote, error) {
+	result, err := remoteResult[struct {
+		Items []common.WorkbenchNote `json:"items"`
+	}](r, "workbench.connection.notes", map[string]string{"id": id})
+	return result.Items, err
+}
+
+func (r *Remote) WorkbenchHeadings(id, path string) ([]common.WorkbenchHeading, error) {
+	result, err := remoteResult[struct {
+		Items []common.WorkbenchHeading `json:"items"`
+	}](r, "workbench.connection.headings", map[string]string{"id": id, "note_path": path})
+	return result.Items, err
+}
+
+func (r *Remote) WorkbenchPlugins() ([]WorkbenchPlugin, error) {
+	result, err := remoteResult[struct {
+		Items []WorkbenchPlugin `json:"items"`
+	}](r, "workbench.plugin.list", nil)
+	return result.Items, err
+}
+
+func (r *Remote) SetWorkbenchPluginEnabled(id string, enabled bool) error {
+	_, err := r.Call("workbench.plugin.set", map[string]any{"id": id, "enabled": enabled})
+	return err
+}
+
+func (r *Remote) RemoveWorkbench(id string) error {
+	_, err := r.Call("workbench.connection.remove", map[string]string{"id": id})
+	return err
+}
+
+func (r *Remote) WorkbenchSyncDetails(id string) (common.WorkbenchSnapshot, error) {
+	return remoteResult[common.WorkbenchSnapshot](r, "workbench.sync.show", map[string]string{"id": id})
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/alswl/apilot/pkg/common"
@@ -49,5 +50,75 @@ func TestWorkbenchObsidianScopeAndParse(t *testing.T) {
 	c.Scope = "Work"
 	if _, err := ReadWorkbenchObsidian(ctx, c); err == nil {
 		t.Fatal("accepted cancelled scan")
+	}
+}
+
+func TestWorkbenchObsidianHeadingTargets(t *testing.T) {
+	vault := t.TempDir()
+	work := filepath.Join(vault, "Work")
+	if err := os.Mkdir(work, 0700); err != nil {
+		t.Fatal(err)
+	}
+	note := []byte("---\n# Metadata\n---\n# Customer A\n## Tasks\n~~~\n# Example\n~~~\n# Customer B\n## Tasks ###\n### C#\n# Duplicate\n## Nested\n# Duplicate\n")
+	if err := os.WriteFile(filepath.Join(work, "Empty.md"), note, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(vault, "Outside.md"), note, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../Outside.md", filepath.Join(work, "Alias.md")); err != nil {
+		t.Fatal(err)
+	}
+	connection := common.WorkbenchConnection{Vault: vault, Scope: "Work"}
+	notes, err := ListWorkbenchObsidianNotes(context.Background(), connection)
+	if err != nil || len(notes) != 1 || notes[0].NotePath != "Work/Empty.md" {
+		t.Fatalf("notes: %+v %v", notes, err)
+	}
+	for _, path := range []string{"Outside.md", "Work/../Outside.md", "Work/Alias.md"} {
+		if _, err := ReadWorkbenchObsidianNote(connection, path); err == nil {
+			t.Fatalf("read out-of-scope target %s", path)
+		}
+	}
+	data, err := ReadWorkbenchObsidianNote(connection, notes[0].NotePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headings := WorkbenchObsidianHeadings(data)
+	if len(headings) != 8 || headings[3].HeadingPath[0] != "Customer B" ||
+		headings[3].HeadingPath[1] != "Tasks" || headings[4].HeadingPath[2] != "C#" ||
+		headings[3].TargetVersion == "" || headings[6].TargetVersion != "" || headings[6].Reason == "" {
+		t.Fatalf("headings: %+v", headings)
+	}
+}
+
+func TestWorkbenchObsidianInsertsInDirectHeadingBody(t *testing.T) {
+	content := []byte("\xef\xbb\xbf# A\r\n## Tasks\r\n\r\n### Child\r\n- [ ] Existing\r\n# B\r\n## Tasks\r\n")
+	headings := WorkbenchObsidianHeadings(content)
+	result, err := InsertWorkbenchObsidianTask(content, []string{"A", "Tasks"}, headings[1].TargetVersion, "New task", "apilot-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "\xef\xbb\xbf# A\r\n## Tasks\r\n- [ ] New task 🆔 apilot-test\r\n\r\n### Child\r\n- [ ] Existing\r\n# B\r\n## Tasks\r\n"
+	if string(result) != want {
+		t.Fatalf("result:\n%q\nwant:\n%q", result, want)
+	}
+	if _, err := InsertWorkbenchObsidianTask(result, []string{"A", "Tasks"}, headings[1].TargetVersion, "New task", "apilot-test"); err == nil {
+		t.Fatal("accepted stale heading version")
+	}
+}
+
+func TestWorkbenchObsidianCheckboxKeepsOtherBytes(t *testing.T) {
+	connection := common.WorkbenchConnection{}
+	original := "\xef\xbb\xbf# Tasks\r\n  2. [ ] Ship #release 📅 2026-11-20 🆔 release\r\n- [ ] Keep\r\n"
+	task := parseWorkbenchNote(connection, "Release.md", original)[0]
+	edited := "Extra paragraph\r\n" + original
+	data, err := SetWorkbenchObsidianCheckbox(connection, []byte(edited), task, "done")
+	want := strings.Replace(edited, "2. [ ]", "2. [x]", 1)
+	if err != nil || string(data) != want {
+		t.Fatalf("result: %q, %v", data, err)
+	}
+	duplicate := original + "  2. [ ] Ship #release 📅 2026-11-20 🆔 release\r\n"
+	if _, err := SetWorkbenchObsidianCheckbox(connection, []byte(duplicate), task, "done"); err == nil {
+		t.Fatal("accepted a duplicate target")
 	}
 }
