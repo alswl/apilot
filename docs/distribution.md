@@ -13,16 +13,26 @@ macOS arm64. Linux/Windows application builds are not yet supported.
 
 ## Install and first launch
 
-Open the DMG, drag apilot to Applications, eject the image, and open the installed
-App. It resides in the menu bar; the Workbench window opens on demand. Settings → Command Line offers to link the bundled CLI to `~/.local/bin/apilot`. It requires no
-administrator password and never overwrites an existing file or a different
-symlink. Launching from a DMG or an App Translocation path disables installation;
-move the App to `/Applications` or `~/Applications` first.
+Open the DMG, drag Apilot to Applications, eject the image, and open the installed
+App. It resides in the menu bar and opens the Workbench window on demand. In
+Settings → Command Line, link the bundled CLI to `~/.local/bin/apilot`. The
+installer requires no administrator password and never overwrites an existing
+file or a different symlink. Installation is disabled while running from the
+DMG or an App Translocation path. Move the App to `/Applications` or
+`~/Applications` before installing the link.
 
-If needed, copy `export PATH="$HOME/.local/bin:$PATH"` into `~/.zshrc` and open a
-new terminal. Verify with `apilot status --json`. The App must be running. Settings can be opened from the menu bar. Remove the link to uninstall the CLI. Moving
-or deleting the App also breaks the link; reinstall after relocating the bundle.
-There is no daemon and no automatic shell configuration change.
+If needed, add `export PATH="$HOME/.local/bin:$PATH"` to `~/.zshrc` and open a
+new terminal. Verify the connection with `apilot status --json`. The CLI
+requires a running local service. Apilot starts it when needed, or you can run
+it in the foreground without opening a window. Quit the existing App first
+if it owns the same data directory.
+
+```sh
+"/Applications/Apilot.app/Contents/MacOS/Apilot" --serve
+```
+
+Remove the link to uninstall the CLI. Moving or deleting the App breaks the
+link. Reinstall it after relocating the bundle.
 
 ## Developer ID signing and notarization
 

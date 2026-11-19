@@ -13,7 +13,7 @@ open -n -a Apilot --args --workbench
 
 ## 用 CLI 配置、导入和查询
 
-可以先在独立终端启动本地服务。CLI 和工作台使用同一个通过当前用户 Unix Socket 提供的 HTTP API，并使用相同的 `APILOT_DATA_DIR`。升级前若本地服务已在运行，先重启服务。工作台单独启动时也可为自己启动本地服务。
+可以先在独立终端启动本地服务。CLI 和工作台使用同一个通过当前用户 Unix Socket 提供的 HTTP API。工作台单独启动时也可为自己启动本地服务。
 
 ```sh
 go run ./cmd/apilot-app --serve
@@ -51,6 +51,12 @@ open -n -a Apilot --args --mock
 ```
 
 模拟模式启动时默认跟随系统。在「设置 → 常规」可选跟随系统、简体中文或 English，选择立即生效。启动时也可加 `--language zh-Hans` 或 `--language en` 指定本次显示。助理模型和资料、扩展、快捷键各有设置标签。自定义按键见[快捷键与任务查询](keyboard-first.md)。
+
+## 排查连接失败或数据不一致
+
+- 升级后若收到「Restart the existing Apilot service」提示，先退出旧 Apilot，或停止旧的 `--serve` 进程，再用新版启动。同一个数据目录由一个服务持有。
+- CLI 能连上但看不到工作台里的任务时，检查两个进程是否使用同一数据目录。使用自定义目录时，在启动服务、CLI 和 UI 的终端中设定同一个绝对路径。都省略 `APILOT_DATA_DIR` 时，使用当前用户的默认目录。
+- 从 CLI 执行 `apilot doctor --json` 查看所连接服务报告的 `data_dir`。执行 `apilot workbench connection list --json` 可核对连接名称。
 
 ## 管理自动化
 
