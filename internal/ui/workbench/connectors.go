@@ -11,6 +11,7 @@ import (
 	"github.com/alswl/apilot/internal/ui/components"
 	"github.com/alswl/apilot/pkg/common"
 	"github.com/alswl/apilot/pkg/services"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -213,9 +214,11 @@ func (m *mockup) syncLogDialog(c *ui.Context) {
 				})
 			}
 
-			if m.live != nil {
-				if conn.ID != common.DefaultWorkbenchLocalID {
-					m.removeConnectionControl(c.Key("remove"), conn)
+			if m.live != nil && conn.ID != common.DefaultWorkbenchLocalID {
+				if m.removeConnectionControl(c.Key("remove"), conn, &m.syncDetailProblem) {
+					m.syncLogID = ""
+					open = false
+					return
 				}
 			}
 
@@ -239,8 +242,8 @@ func (m *mockup) syncLogDialog(c *ui.Context) {
 			}
 		})
 	})
-	if !open {
-		if id != "" && m.syncLogID == id {
+	if !open && id != "" {
+		if m.syncLogID == id && m.connectionByID(id) != nil {
 			m.syncLogRestoreFocus = id
 			c.Invalidate()
 		}
@@ -265,32 +268,40 @@ func (m *mockup) liveSyncResults(c *ui.Context, conn *connection) {
 	}
 }
 
-func (m *mockup) removeConnectionControl(c *ui.Context, conn *connection) {
+func (m *mockup) removeConnectionControl(c *ui.Context, conn *connection, problem *string) bool {
 	if m.removeConnectionID != conn.ID {
 		if ui.Button(c.Key("start"), tr("解除连接")).Clicked() {
 			m.removeConnectionID = conn.ID
+			*problem = ""
+			c.Invalidate()
 		}
-		return
+		return false
 	}
 	if conn.SourceKind == obsidianTasks {
 		components.Muted(c.Key("scope"), tr("解除连接会移除工作台中的来源任务，保留原笔记。"))
 	} else {
 		components.Muted(c.Key("scope"), tr("解除连接会移除此连接及其任务。"))
 	}
+	removed := false
 	ui.Row(c.Key("confirm")).Gap(8).Children(func() {
-		if ui.Button(c.Key("cancel"), tr("取消")).Clicked() {
+		if ui.Button(c.Key("cancel"), tr("保留连接")).Clicked() {
 			m.removeConnectionID = ""
+			*problem = ""
+			c.Invalidate()
 		}
-		if ui.Button(c.Key("remove"), tr("解除连接")).Clicked() {
+		if ui.Button(c.Key("remove"), tr("确认解除连接")).Clicked() {
 			if err := m.live.RemoveWorkbench(conn.ID); err != nil {
-				m.syncDetailProblem = common.ProtocolError(err).Message
+				*problem = common.ProtocolError(err).Message
+				c.Invalidate()
 				return
 			}
-			m.syncLogID, m.removeConnectionID = "", ""
+			m.removeConnectionID = ""
 			m.liveGeneration++
 			m.refreshLive()
+			removed = true
 		}
 	})
+	return removed
 }
 
 func (m *mockup) connectorDraft(connector services.WorkbenchConnector) connection {
@@ -394,8 +405,18 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 					m.connectorMappingFields(c.Key("mapping"), edit)
 				})
 			})
+			confirmingRemoval := m.removeConnectionID != "" && m.removeConnectionID == edit.ID
+			if m.live != nil && edit.ID != "" && edit.ID != common.DefaultWorkbenchLocalID {
+				if m.removeConnectionControl(c.Key("remove"), &edit.connection, &edit.problem) {
+					open = false
+					return
+				}
+			}
 			if edit.problem != "" {
 				components.Muted(c, tr(edit.problem))
+			}
+			if confirmingRemoval {
+				return
 			}
 			ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
 				if ui.Button(c.Key("cancel"), tr("取消")).Clicked() {
@@ -417,7 +438,10 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 			})
 		})
 	})
-	if !open {
+	if !open && m.connectorEditor != nil {
+		if m.removeConnectionID == m.connectorEditor.ID {
+			m.removeConnectionID = ""
+		}
 		m.connectorEditor = nil
 	}
 }
@@ -465,7 +489,14 @@ func (m *mockup) obsidianConnectorFields(c *ui.Context, edit *connectorEdit) {
 			components.TextField(c, tr("同步范围"), &edit.Scope)
 		})
 	})
-	components.TextField(c.Key("vault"), tr("Vault 路径"), &edit.VaultPath)
+	ui.Row(c.Key("vault")).FillWidth().Gap(8).AlignItems(ui.End).Children(func() {
+		ui.Column(c.Key("path")).Grow(1).MinWidth(0).Children(func() {
+			components.TextField(c, tr("Vault 路径"), &edit.VaultPath)
+		})
+		if m.live != nil && m.win != nil && ui.Button(c.Key("choose"), tr("选择文件夹…")).Clicked() {
+			m.chooseObsidianVault(edit)
+		}
+	})
 	if m.live != nil {
 		method := "直接读取 Markdown"
 		if edit.ReadMethod == common.WorkbenchObsidianCLI {
@@ -477,6 +508,31 @@ func (m *mockup) obsidianConnectorFields(c *ui.Context, edit *connectorEdit) {
 			edit.ReadMethod = common.WorkbenchObsidianCLI
 		}
 	}
+}
+
+func (m *mockup) chooseObsidianVault(edit *connectorEdit) {
+	win := m.win
+	options := mygo.OpenDialogOptions{
+		Parent: win, Directory: true, DefaultPath: strings.TrimSpace(edit.VaultPath),
+		Title: tr("选择 Obsidian vault"),
+	}
+	go func() {
+		paths, err := mygo.Dialog.Open(options)
+		mygo.RunOnMain(func() {
+			if m.win != win || win.IsDestroyed() || m.connectorEditor != edit {
+				return
+			}
+			if err != nil {
+				edit.problem = "无法打开文件夹选择器"
+			} else if len(paths) > 0 {
+				edit.VaultPath = paths[0]
+				edit.problem = ""
+			} else {
+				return
+			}
+			win.Invalidate()
+		})
+	}()
 }
 
 func (m *mockup) connectorMappingFields(c *ui.Context, edit *connectorEdit) {

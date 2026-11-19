@@ -1,6 +1,8 @@
 {
   "来源已变化，请重新核对任务": "The source changed. Review the task again.",
   "插件已停用": "Plugin Disabled",
+  "保留连接": "Keep connection",
+  "确认解除连接": "Confirm disconnect",
   "解除连接": "Disconnect",
   "解除连接会移除工作台中的来源任务，保留原笔记。": "Disconnecting removes source tasks from the workbench and keeps the original notes.",
   "解除连接会移除此连接及其任务。": "Disconnecting removes this connection and its tasks.",
@@ -516,6 +518,9 @@
   "复选框字符": "Checkbox character",
   "读取方式": "Read method",
   "直接读取 Markdown": "Read Markdown directly",
+  "选择文件夹…": "Choose Folder…",
+  "选择 Obsidian vault": "Choose an Obsidian Vault",
+  "无法打开文件夹选择器": "Could not open the folder picker",
   "Vault 路径": "Vault path",
   "同步范围": "Sync scope",
   "文件变化": "File changes",
