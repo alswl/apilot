@@ -215,7 +215,7 @@ func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 		return
 	}
 	for _, item := range k.bindings {
-		if item.plain && (k.editingText || m.editingDue) {
+		if item.plain && (k.editingText || m.editingDue || (m.page == scheduledPage && m.hostPanels.Automation != nil)) {
 			continue
 		}
 		index := slices.IndexFunc(commands, func(cmd command) bool { return item.command == cmd.id })

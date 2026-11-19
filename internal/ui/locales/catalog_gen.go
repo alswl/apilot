@@ -34,6 +34,16 @@ type Messages struct{ locale string }
 // source language.
 func In(locale string) Messages { return Messages{locale} }
 
+// AutomationSettings says "Automation"
+// in the language the app shows.
+func AutomationSettings() string { return In(i18n.Locale()).AutomationSettings() }
+
+// AutomationSettings says "Automation"
+// in the language of msgs.
+func (msgs Messages) AutomationSettings() string {
+	return Catalog.Format(msgs.locale, "automationSettings", nil)
+}
+
 // Next says " · Next "
 // in the language the app shows.
 func Next() string { return In(i18n.Locale()).Next() }

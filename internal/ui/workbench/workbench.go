@@ -29,6 +29,8 @@ const (
 var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 
 type mockup struct {
+	hosted                               bool
+	hostPanels                           HostPanels
 	liveConnections                      []common.WorkbenchSnapshot
 	live                                 *services.Remote
 	liveBusy, liveError                  bool
@@ -212,6 +214,7 @@ func runWorkspace(m *mockup, capture, keybindingsPath, language string) error {
 func (m *mockup) setMenu() {
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "Apilot", Submenu: []*mygo.MenuItem{
+			{Role: mygo.RoleAbout},
 			{Label: tr("设置"), Accelerator: "CmdOrCtrl+,", Click: func(*mygo.MenuItem, *mygo.Window) { m.openSettings() }},
 			mygo.Separator(), {Role: mygo.RoleQuit},
 		}},
@@ -574,6 +577,10 @@ func (m *mockup) sidebar(c *ui.Context) {
 
 func (m *mockup) pageContent(c *ui.Context) {
 	ui.Column(c).Grow(1).MinWidth(0).FillHeight().Padding(16).Gap(12).Background(c.Theme().Surface).Children(func() {
+		if m.page == scheduledPage && m.hostPanels.Automation != nil {
+			m.hostPanels.Automation(c.Key("automation"))
+			return
+		}
 		if m.page == nowPage {
 			if m.nowLibraryOpen {
 				m.nowLibrary(c.Key("library"))

@@ -12,15 +12,16 @@ import (
 type handler func(*services.Service, Request) (any, error)
 
 var routes = map[string]handler{
-	"task":      dispatchTask,
-	"workbench": dispatchWorkbench,
-	"run":       dispatchRun,
-	"logs":      dispatchRun,
-	"observer":  dispatchObserver,
-	"settings":  dispatchSettings,
-	"event":     dispatchAttentionEvent,
-	"status":    dispatchSystem,
-	"doctor":    dispatchSystem,
+	"automation": dispatchAutomation,
+	"task":       dispatchTask,
+	"workbench":  dispatchWorkbench,
+	"run":        dispatchRun,
+	"logs":       dispatchRun,
+	"observer":   dispatchObserver,
+	"settings":   dispatchSettings,
+	"event":      dispatchAttentionEvent,
+	"status":     dispatchSystem,
+	"doctor":     dispatchSystem,
 }
 
 func Dispatch(s *services.Service, r Request) (any, error) {

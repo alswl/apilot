@@ -21,7 +21,7 @@ func (r *Remote) Call(method string, params any) (json.RawMessage, error) {
 	return integrations.Call(r.socket, method, params)
 }
 
-func remoteWorkbench[T any](r *Remote, method string, input any) (T, error) {
+func remoteResult[T any](r *Remote, method string, input any) (T, error) {
 	var result T
 	raw, err := r.Call(method, input)
 	if err != nil {
@@ -32,18 +32,18 @@ func remoteWorkbench[T any](r *Remote, method string, input any) (T, error) {
 }
 
 func (r *Remote) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
-	result, err := remoteWorkbench[struct {
+	result, err := remoteResult[struct {
 		Items []common.WorkbenchSnapshot `json:"items"`
 	}](r, "workbench.connection.list", nil)
 	return result.Items, err
 }
 
 func (r *Remote) WorkbenchTasks(q common.WorkbenchQuery) (common.WorkbenchPage, error) {
-	return remoteWorkbench[common.WorkbenchPage](r, "workbench.task.list", q)
+	return remoteResult[common.WorkbenchPage](r, "workbench.task.list", q)
 }
 
 func (r *Remote) SaveWorkbench(c common.WorkbenchConnection) (common.WorkbenchSnapshot, error) {
-	return remoteWorkbench[common.WorkbenchSnapshot](r, "workbench.connection.save", c)
+	return remoteResult[common.WorkbenchSnapshot](r, "workbench.connection.save", c)
 }
 
 func (r *Remote) SyncWorkbench(id string) error {

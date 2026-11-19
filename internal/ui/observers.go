@@ -120,7 +120,7 @@ func (s *windowState) editObserver(v *common.Observer) {
 	if s.focusEditor() {
 		return
 	}
-	s.show()
+	s.showAutomation()
 	s.tab = 2
 	s.selectedTask, s.selectedRun, s.selectedObserver = "", "", ""
 	if v != nil {

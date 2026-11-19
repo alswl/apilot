@@ -11,21 +11,15 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func RunLive(service *services.Remote, keybindingsPath, language string) error {
-	m := newFramework()
-	m.connectionsData = nil
-	m.live = service
-	return runWorkspace(m, "", keybindingsPath, language)
-}
-
 func (m *mockup) pollLive() {
 	if m.live == nil {
 		return
 	}
 	m.refreshLive()
+	window := m.win
 	time.AfterFunc(time.Second, func() {
 		mygo.RunOnMain(func() {
-			if m.win != nil && !m.win.IsDestroyed() {
+			if m.win == window && window != nil && !window.IsDestroyed() {
 				m.pollLive()
 			}
 		})

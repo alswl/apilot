@@ -10,13 +10,13 @@ import (
 )
 
 func (s *windowState) sendNotification(candidate presentation.NotificationCandidate) {
-	allowed, err := s.service.AllowNotification(candidate.Key)
-	if err != nil || !allowed {
-		return
-	}
 	s.workers.Add(1)
 	go func() {
 		defer s.workers.Done()
+		allowed, err := s.service.AllowNotification(candidate.Key)
+		if err != nil || !allowed {
+			return
+		}
 		ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
 		defer cancel()
 		notification := mygo.NewNotification(mygo.NotificationOptions{Title: presentationMessage(candidate.TitleKey), Body: candidate.Body, Group: "apilot", ID: candidate.Key})
@@ -30,7 +30,7 @@ func (s *windowState) sendNotification(candidate presentation.NotificationCandid
 				} else {
 					s.tab = 1
 				}
-				s.show()
+				s.showAutomation()
 			})
 		})
 		if err := notification.ShowContext(ctx); err != nil {

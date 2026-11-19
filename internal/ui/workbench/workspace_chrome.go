@@ -93,6 +93,9 @@ func (m *mockup) statusBar(c *ui.Context) {
 			activeRuns++
 		}
 	}
+	if m.hostPanels.RunningAutomation != nil {
+		activeRuns = m.hostPanels.RunningAutomation()
+	}
 	ui.Row(c).FillWidth().Height(statusBarHeight).Shrink(0).Padding(0, 12).Gap(12).AlignItems(ui.Center).
 		Background(c.Theme().Background).Children(func() {
 		for _, item := range []struct {
