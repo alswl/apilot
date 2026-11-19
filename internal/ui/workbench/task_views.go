@@ -1,39 +1,40 @@
 package workbench
 
 import (
-	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
 	"github.com/egoist/mygo/ui"
 )
 
 type taskViewState struct {
-	query, status, source, grouping string
-	sort                            ui.SortOrder
-	columns                         map[string]bool
-	watchOnly                       bool
-	page, pageSize                  int
-	pageSizeOverride                int
+	Query, Status, Source, Grouping string
+	Sort                            ui.SortOrder
+	Columns                         map[string]bool
+	WatchOnly                       bool
+	Page, PageSize                  int
+	PageSizeOverride                int
 }
 
 type savedTaskView struct {
-	id, name string
-	state    taskViewState
+	ID    string        `json:"id"`
+	Name  string        `json:"name"`
+	State taskViewState `json:"state"`
 }
 
 func (m *mockup) viewState() taskViewState {
-	return taskViewState{query: m.search, status: m.statusFilter, source: m.sourceFilter, grouping: m.taskGrouping, sort: m.taskSort, columns: maps.Clone(m.taskColumnsHidden), watchOnly: m.taskWatchOnly, page: m.taskPageIndex, pageSize: m.taskPageSize, pageSizeOverride: m.taskPageSizeOverride}
+	return taskViewState{Query: m.search, Status: m.statusFilter, Source: m.sourceFilter, Grouping: m.taskGrouping, Sort: m.taskSort, Columns: maps.Clone(m.taskColumnsHidden), WatchOnly: m.taskWatchOnly, Page: m.taskPageIndex, PageSize: m.taskPageSize, PageSizeOverride: m.taskPageSizeOverride}
 }
 
 func (m *mockup) restoreView(state taskViewState) {
-	m.search, m.statusFilter, m.sourceFilter, m.taskGrouping = state.query, state.status, state.source, state.grouping
-	m.taskWatchOnly = state.watchOnly
-	m.taskSort, m.taskColumnsHidden = state.sort, maps.Clone(state.columns)
-	m.taskPageIndex, m.taskPageSize = state.page, state.pageSize
-	m.taskPageSizeOverride = state.pageSizeOverride
+	m.search, m.statusFilter, m.sourceFilter, m.taskGrouping = state.Query, state.Status, state.Source, state.Grouping
+	m.taskWatchOnly = state.WatchOnly
+	m.taskSort, m.taskColumnsHidden = state.Sort, maps.Clone(state.Columns)
+	m.taskPageIndex, m.taskPageSize = state.Page, state.PageSize
+	m.taskPageSizeOverride = state.PageSizeOverride
 	if m.taskPageSize == 0 {
 		m.taskPageSize = defaultTaskPageSize
 	}
@@ -47,13 +48,13 @@ func (m *mockup) selectTaskView(id string) {
 	}
 	m.taskViewDrafts[m.taskView] = m.viewState()
 	m.taskView = id
-	state := taskViewState{watchOnly: id == "watching", columns: map[string]bool{"priority": true, "labels": true, "assignee": true}, status: "全部状态", source: "全部来源", grouping: "不分组", sort: ui.SortOrder{Column: "title"}}
+	state := taskViewState{WatchOnly: id == "watching", Columns: map[string]bool{"priority": true, "labels": true, "assignee": true}, Status: "全部状态", Source: "全部来源", Grouping: "不分组", Sort: ui.SortOrder{Column: "title"}}
 	if draft, ok := m.taskViewDrafts[id]; ok {
 		state = draft
 	} else {
 		for _, saved := range m.savedTaskViews {
-			if saved.id == id {
-				state = saved.state
+			if saved.ID == id {
+				state = saved.State
 				break
 			}
 		}
@@ -68,7 +69,7 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 		ui.Column(c.Key("view-list")).Grow(1).MinWidth(0).Children(func() {
 			items := []components.ViewItem{{ID: "all", Title: tr("全部任务")}, {ID: "watching", Title: tr("关注中")}}
 			for _, saved := range m.savedTaskViews {
-				items = append(items, components.ViewItem{ID: saved.id, Title: saved.name})
+				items = append(items, components.ViewItem{ID: saved.ID, Title: saved.Name})
 			}
 			current := m.taskView
 			if current == "" {
@@ -90,7 +91,14 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 				m.taskDisplayOptions(c.Key("display-options"))
 			})
 		}
-		save := components.IconButton(c.Key("save"), "bookmark", tr("保存视图"), false)
+		columns := ui.Button(c.Key("columns"), tr("列")).Selected(m.taskColumnsOpen)
+		if columns.Clicked() {
+			m.taskColumnsOpen = !m.taskColumnsOpen
+		}
+		m.taskControlsPopover(c.Key("columns-panel"), columns, &m.taskColumnsOpen, func() {
+			m.taskColumnOptions(c.Key("column-options"))
+		})
+		save := ui.Button(c.Key("save"), tr("保存视图"))
 		if shortcut := m.keyboard.display("view.save"); shortcut != "" {
 			save.Tooltip(tr("保存视图") + " · " + shortcut)
 		}
@@ -105,11 +113,14 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 }
 
 func (m *mockup) taskDisplayOptions(c *ui.Context) {
-	ui.Row(c).FillWidth().Wrap().AlignItems(ui.Center).Gap(8).Children(func() {
-		localizedSelect(c.Key("group"), &m.taskGrouping, []string{"不分组", "按状态分组", "按来源分组"}, 132)
-		for _, column := range taskColumns[1:] {
-			shown := !m.taskColumnsHidden[column.ID]
-			if ui.Checkbox(c.Key(column.ID), &shown, tr(column.Title)).Changed() {
+	localizedSelect(c.Key("group"), &m.taskGrouping, []string{"不分组", "按状态分组", "按来源分组"}, 132)
+}
+
+func (m *mockup) taskColumnOptions(c *ui.Context) {
+	ui.Column(c).FillWidth().Gap(8).Children(func() {
+		for i, column := range taskColumns {
+			shown := i == 0 || m.taskColumnVisible(column.ID)
+			if ui.Checkbox(c.Key(column.ID), &shown, tr(column.Title)).Disabled(i == 0).Changed() && i != 0 {
 				if m.taskColumnsHidden == nil {
 					m.taskColumnsHidden = make(map[string]bool)
 				}
@@ -120,7 +131,7 @@ func (m *mockup) taskDisplayOptions(c *ui.Context) {
 }
 
 func (m *mockup) openSaveTaskView() {
-	m.saveTaskViewOpen, m.taskViewName = true, ""
+	m.saveTaskViewOpen, m.taskViewName, m.taskViewSaveError = true, "", false
 }
 
 func (m *mockup) savedTaskViewDialog(c *ui.Context) {
@@ -130,12 +141,18 @@ func (m *mockup) savedTaskViewDialog(c *ui.Context) {
 			input := ui.TextInput(c.Key("name"), &m.taskViewName).Label(tr("视图名称")).Placeholder(tr("视图名称")).AutoFocus()
 			name := strings.TrimSpace(m.taskViewName)
 			if (input.Submitted() || ui.PrimaryButton(c.Key("save"), tr("保存")).Disabled(name == "").Clicked()) && name != "" {
-				id := fmt.Sprintf("view-%d", len(m.savedTaskViews)+1)
 				state := m.viewState()
-				state.page = 0
-				m.savedTaskViews = append(m.savedTaskViews, savedTaskView{id, name, state})
-				m.selectTaskView(id)
+				state.Page = 0
+				saved := savedTaskView{ID: common.ID(), Name: name, State: state}
+				if err := m.saveNamedTaskView(saved); err != nil {
+					m.taskViewSaveError = true
+					return
+				}
+				m.selectTaskView(saved.ID)
 				m.saveTaskViewOpen = false
+			}
+			if m.taskViewSaveError {
+				components.Muted(c.Key("error"), tr("无法保存视图"))
 			}
 		})
 	})
@@ -152,11 +169,18 @@ func (m *mockup) taskGroup(object sourceObject) string {
 	}
 }
 
+func (m *mockup) taskColumnVisible(id string) bool {
+	if hidden, chosen := m.taskColumnsHidden[id]; chosen {
+		return !hidden
+	}
+	return m.layoutShowsTaskColumn(id)
+}
+
 func (m *mockup) visibleColumns() ([]ui.TableColumn, []int) {
 	var columns []ui.TableColumn
 	var indexes []int
 	for i, column := range taskColumns {
-		if m.taskColumnsHidden[column.ID] || !m.layoutShowsTaskColumn(column.ID) {
+		if !m.taskColumnVisible(column.ID) {
 			continue
 		}
 		column.Title = tr(column.Title)

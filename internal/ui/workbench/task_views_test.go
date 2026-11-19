@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -85,5 +86,55 @@ func TestSaveTaskViewKeepsQueryGroupingAndColumns(t *testing.T) {
 	}
 	if !slices.Contains(p.Texts(), "工作 vault") || !slices.Contains(p.Texts(), "支付发布") {
 		t.Fatal("grouped view should expose both source group headings")
+	}
+}
+
+func TestHostedTaskViewSurvivesWorkspaceRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "task-views.json")
+	open := func() *mockup {
+		t.Helper()
+		m := newFramework()
+		if err := m.loadTaskViewStore(path); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	first := open()
+	first.search, first.sourceFilter, first.taskGrouping = "priority:high", "Work", "按来源分组"
+	first.taskSort = ui.SortOrder{Column: "due", Descending: true}
+	first.taskPageSizeOverride = 20
+	first.taskColumnsHidden["priority"] = false
+	view := savedTaskView{ID: "kept", Name: "My work", State: first.viewState()}
+	if err := first.saveNamedTaskView(view); err != nil {
+		t.Fatal(err)
+	}
+
+	second := open()
+	if len(second.savedTaskViews) != 1 || second.savedTaskViews[0].Name != view.Name {
+		t.Fatalf("saved view missing: %+v", second.savedTaskViews)
+	}
+	second.selectTaskView(view.ID)
+	if second.search != first.search || second.sourceFilter != first.sourceFilter || second.taskGrouping != first.taskGrouping ||
+		second.taskSort != first.taskSort || second.taskPageSizeOverride != 20 || second.taskColumnsHidden["priority"] {
+		t.Fatal("the reopened view did not restore query, source, sorting, grouping, page size and columns")
+	}
+}
+
+func TestTaskColumnsOpensInCompactTasks(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.navigate(tasksPage)
+	p := ui.NewTester(m.view, 680, 580)
+	click(t, p, "列")
+	if !m.taskColumnsOpen || !p.HasText("优先级") {
+		t.Fatal("Columns should show the available table fields")
+	}
+	click(t, p, "优先级")
+	if !m.taskColumnVisible("priority") {
+		t.Fatal("clicking a column should change its visibility preference")
+	}
+	p.Key(0, ui.KeyEscape)
+	if m.taskColumnsOpen {
+		t.Fatal("Escape should close Columns")
 	}
 }

@@ -173,7 +173,7 @@ func (m *mockup) activeCommands() []command {
 
 func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 	k := &m.keyboard
-	if k.palette || m.assistantOpen || m.connectorEditor != nil || m.syncLogID != "" || m.newTaskOpen || m.debugOpen || m.saveTaskViewOpen || m.taskResourceOpen || m.sourceEditor != nil || m.labelEditor != nil ||
+	if k.palette || m.assistantOpen || m.connectorEditor != nil || m.syncLogID != "" || m.newTaskOpen || m.debugOpen || m.saveTaskViewOpen || m.taskColumnsOpen || m.taskResourceOpen || m.sourceEditor != nil || m.labelEditor != nil ||
 		(m.compactTaskList() && (m.taskDisplayOpen || m.searchExpanded)) {
 		k.prefix = keystroke{}
 		return

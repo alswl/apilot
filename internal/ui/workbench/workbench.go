@@ -59,6 +59,8 @@ type mockup struct {
 	taskView, taskGrouping, taskViewName string
 	taskViewDrafts                       map[string]taskViewState
 	savedTaskViews                       []savedTaskView
+	taskViewStorePath                    string
+	taskColumnsOpen, taskViewSaveError   bool
 	taskColumnsHidden                    map[string]bool
 	taskGroupTables                      map[string]*ui.ListState
 	taskDisplayOpen, saveTaskViewOpen    bool

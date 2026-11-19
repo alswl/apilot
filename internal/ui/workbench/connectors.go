@@ -625,14 +625,14 @@ func (m *mockup) saveConnector(config connection) string {
 			m.sourceFilter = config.Name
 		}
 		for id, view := range m.taskViewDrafts {
-			if view.source == existing.Name {
-				view.source = config.Name
+			if view.Source == existing.Name {
+				view.Source = config.Name
 				m.taskViewDrafts[id] = view
 			}
 		}
 		for i := range m.savedTaskViews {
-			if m.savedTaskViews[i].state.source == existing.Name {
-				m.savedTaskViews[i].state.source = config.Name
+			if m.savedTaskViews[i].State.Source == existing.Name {
+				m.savedTaskViews[i].State.Source = config.Name
 			}
 		}
 		*existing = config
