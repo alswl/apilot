@@ -14,7 +14,7 @@ func (s *Service) setWorkbenchObsidianState(store workbenchStore, writer workben
 	if (input.State != "done" && input.State != "open") || input.Title != "" || input.NotePath != "" || len(input.HeadingPath) != 0 {
 		return empty, common.Err("INVALID_ARGUMENT", "Provide an explicit open or done state")
 	}
-	if !connection.WriteEnabled || s.workbenchActive[connection.ID] != nil {
+	if s.workbenchActive[connection.ID] != nil {
 		return empty, common.Err("CONFLICT", "Enable Obsidian writes and wait for the active synchronization to finish")
 	}
 	conflict := common.WorkbenchTaskReceipt{

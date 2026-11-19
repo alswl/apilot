@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Service) openWorkbenchBridge(connection common.WorkbenchSnapshot) (*integrations.WorkbenchObsidianBridge, error) {
-	if !connection.WriteEnabled || s.workbenchActive[connection.ID] != nil {
+	if s.workbenchActive[connection.ID] != nil {
 		return nil, common.Err("CONFLICT", "Enable Obsidian writes and wait for the active synchronization to finish")
 	}
 	store, ok := s.store.(workbenchBridgeStore)
