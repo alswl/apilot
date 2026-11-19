@@ -11,13 +11,14 @@ import (
 )
 
 type Runtime struct {
-	Service    *services.Service
-	SocketPath string
-	server     *Server
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	once       sync.Once
-	err        error
+	Service       *services.Service
+	SocketPath    string
+	server        *Server
+	workbenchHTTP *workbenchHTTP
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	once          sync.Once
+	err           error
 }
 
 func Open(dir string) (*Runtime, error) {
@@ -31,8 +32,14 @@ func Open(dir string) (*Runtime, error) {
 		s.Close()
 		return nil, e
 	}
+	workbenchHTTP, err := listenWorkbenchHTTP(s, config.HTTPSocketPath(dir))
+	if err != nil {
+		server.Close()
+		s.Close()
+		return nil, err
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &Runtime{Service: s, SocketPath: socket, server: server, cancel: cancel}
+	r := &Runtime{Service: s, SocketPath: socket, server: server, workbenchHTTP: workbenchHTTP, cancel: cancel}
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
@@ -51,10 +58,10 @@ func Open(dir string) (*Runtime, error) {
 	return r, nil
 }
 func (r *Runtime) StopAdmission() { r.Service.StopAdmission(); r.cancel() }
-func (r *Runtime) StopIPC()       { r.server.Close() }
+func (r *Runtime) StopIPC()       { r.workbenchHTTP.close(); r.server.Close() }
 
 func (r *Runtime) Close() error {
-	r.once.Do(func() { r.StopAdmission(); r.server.Close(); r.wg.Wait(); r.err = r.Service.Close() })
+	r.once.Do(func() { r.StopAdmission(); r.StopIPC(); r.wg.Wait(); r.err = r.Service.Close() })
 	return r.err
 }
 

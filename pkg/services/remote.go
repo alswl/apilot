@@ -2,6 +2,9 @@ package services
 
 import (
 	"encoding/json"
+	"path/filepath"
+	"strings"
+
 	"github.com/alswl/apilot/pkg/common"
 
 	"github.com/alswl/apilot/pkg/integrations"
@@ -11,6 +14,10 @@ type Remote struct{ socket string }
 
 func NewRemote(socket string) *Remote { return &Remote{socket: socket} }
 func (r *Remote) Call(method string, params any) (json.RawMessage, error) {
+	if strings.HasPrefix(method, "workbench.") {
+		socket := filepath.Join(filepath.Dir(r.socket), "http.sock")
+		return integrations.CallWorkbenchHTTP(socket, method, params)
+	}
 	return integrations.Call(r.socket, method, params)
 }
 

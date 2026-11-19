@@ -27,7 +27,7 @@ type Server struct {
 	path        string
 }
 
-func Listen(s *services.Service, path string) (*Server, error) {
+func listenLocal(path string) (*net.UnixListener, error) {
 	if len(path) >= 104 {
 		return nil, unix.ENAMETOOLONG
 	}
@@ -54,6 +54,14 @@ func Listen(s *services.Service, path string) (*Server, error) {
 	if e = os.Chmod(path, 0600); e != nil {
 		l.Close()
 		return nil, e
+	}
+	return l, nil
+}
+
+func Listen(s *services.Service, path string) (*Server, error) {
+	l, err := listenLocal(path)
+	if err != nil {
+		return nil, err
 	}
 	srv := &Server{listener: l, done: make(chan struct{}), path: path, connections: make(map[*net.UnixConn]struct{})}
 	slots := make(chan struct{}, 32)

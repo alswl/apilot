@@ -13,7 +13,7 @@ open -n -a Apilot --args --workbench
 
 ## 用 CLI 配置、导入和查询
 
-可以先在独立终端启动本地服务。CLI 和工作台都通过当前用户的 Unix Socket 连接，使用相同的 `APILOT_DATA_DIR`。工作台单独启动时也可为自己启动本地服务。
+可以先在独立终端启动本地服务。CLI 和工作台使用同一个通过当前用户 Unix Socket 提供的 HTTP API，并使用相同的 `APILOT_DATA_DIR`。升级前若本地服务已在运行，先重启服务。工作台单独启动时也可为自己启动本地服务。
 
 ```sh
 go run ./cmd/apilot-app --serve

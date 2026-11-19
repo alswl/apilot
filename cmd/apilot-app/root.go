@@ -47,9 +47,13 @@ func Execute() int {
 		if *framework {
 			dir := config.DataDir()
 			remote := services.NewRemote(config.SocketPath(dir))
-			if _, statusErr := remote.Call("status", nil); statusErr != nil {
+			if _, statusErr := remote.Call("workbench.health", nil); statusErr != nil {
 				if common.ProtocolError(statusErr).Code != "APP_NOT_RUNNING" {
 					log.Print(statusErr)
+					return 1
+				}
+				if _, legacyErr := remote.Call("status", nil); legacyErr == nil {
+					log.Print("Restart the existing Apilot service to enable the workbench HTTP API")
 					return 1
 				}
 				runtime, openErr := server.Open(dir)
