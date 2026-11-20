@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+import fcntl
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import sys
+
+root = Path(__file__).resolve().parent.parent
+base = Path.home() / "Library" / "Caches" / "apilot-dev"
+identity = hashlib.sha256(str(root).encode()).hexdigest()[:20]
+profile = base / identity
+data = profile / "data"
+marker = profile / "worktree"
+lock_path = base / (identity + ".lock")
+
+
+def checked_directory(path):
+    if path.is_symlink():
+        raise RuntimeError(f"refusing symbolic link: {path}")
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not path.is_dir():
+        raise RuntimeError(f"not a directory: {path}")
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in ("path", "reset", "run") or (sys.argv[1] != "run" and len(sys.argv) != 2) or (sys.argv[1] == "run" and len(sys.argv) < 3):
+        print("usage: dev-profile {path|reset|run COMMAND...}", file=sys.stderr)
+        return 2
+    checked_directory(base)
+    lease_fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(lease_fd, "r+") as lease:
+        try:
+            fcntl.flock(lease, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if sys.argv[1] != "path":
+                raise RuntimeError("development environment is running or being reset") from None
+            if profile.is_symlink() or data.is_symlink() or marker.is_symlink() or not data.is_dir() or not marker.is_file() or marker.read_text() != str(root):
+                raise RuntimeError("development environment is not ready") from None
+            print(data)
+            return 0
+        if profile.is_symlink():
+            raise RuntimeError("profile is a symbolic link")
+        if profile.exists():
+            if marker.is_symlink() or not marker.is_file() or marker.read_text() != str(root):
+                raise RuntimeError("profile ownership does not match this worktree")
+        elif sys.argv[1] == "reset":
+            print("No development data to reset.")
+            return 0
+        else:
+            profile.mkdir(mode=0o700)
+            marker.write_text(str(root))
+        checked_directory(data)
+        if sys.argv[1] == "path":
+            print(data)
+            return 0
+        if sys.argv[1] == "run":
+            os.set_inheritable(lease.fileno(), True)
+            environment = os.environ.copy()
+            environment["APILOT_DATA_DIR"] = str(data)
+            os.execvpe(sys.argv[2], sys.argv[2:], environment)
+        lock = data / "app.lock"
+        fd = os.open(lock, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "r+") as instance:
+            try:
+                fcntl.flock(instance, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                raise RuntimeError("development service is running; stop it before reset") from None
+            for entry in data.iterdir():
+                if entry.name == "app.lock":
+                    continue
+                if entry.is_dir() and not entry.is_symlink():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+        print(f"Reset {data}")
+        return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError) as error:
+        print(f"dev-profile: {error}", file=sys.stderr)
+        sys.exit(1)

@@ -7,7 +7,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FIXTURES = Path("internal/ui/workbench/fixtures")
+FIXTURES = Path("desktop/internal/ui/workbench/fixtures")
 SINGLE_FILE_LAUNCH = re.compile(
     r"\bgo run\b[^\n`]*\bcmd/apilot-(?:app|mockup)/[^\s`]+\.go\b"
 )
@@ -75,7 +75,7 @@ def check(root):
     for row in usage["syncs"]:
         reference(row.get("connection_id"), connection_ids, f"{usage_path}: syncs")
 
-    paths = [Path("README.md"), Path("cmd/apilot-mockup/README.md")]
+    paths = [Path("README.md"), Path("desktop/cmd/apilot-mockup/README.md")]
     paths.extend(path.relative_to(root) for path in sorted((root / "docs").glob("*.md")))
     for path in paths:
         for line, content in enumerate((root / path).read_text(encoding="utf-8").splitlines(), 1):

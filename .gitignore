@@ -4,8 +4,8 @@
 /.specify
 /AGENTS.md
 /CLAUDE.md
-/.claude/settings.local.json
 /.agents/skills/speckit-*
+/.claude/settings.local.json
 
 /bin/
 /build/
@@ -37,3 +37,9 @@
 # Script caches.
 __pycache__/
 *.pyc
+
+# MyGo development bundle.
+/.mygo/
+
+/desktop/.mygo/
+/desktop/resources/*/bin/

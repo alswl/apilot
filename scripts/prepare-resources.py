@@ -15,9 +15,9 @@ if not source.is_file():
     parser.error(f'Build the target CLI first: {source}')
 # Earlier builds staged this generated binary without an architecture qualifier.
 # Leaving it there would make MyGo also merge the stale executable on macOS.
-legacy = ROOT / 'resources' / 'darwin' / 'bin' / 'apilot'
+legacy = ROOT / 'desktop' / 'resources' / 'darwin' / 'bin' / 'apilot'
 legacy.unlink(missing_ok=True)
-destination = ROOT / 'resources' / f'{args.os}-{args.arch}' / 'bin' / name
+destination = ROOT / 'desktop' / 'resources' / f'{args.os}-{args.arch}' / 'bin' / name
 destination.parent.mkdir(parents=True, exist_ok=True)
 shutil.copy2(source, destination)
 print(destination.relative_to(ROOT))

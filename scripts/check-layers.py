@@ -6,8 +6,9 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-PREFIX = 'github.com/alswl/apilot/'
+PREFIX = 'github.com/alswl/apilot/core/'
 ALLOWED = {
+    'presentation': {'common'},
     'common': set(),
     'config': set(),
     'dal': {'common'},
@@ -18,7 +19,7 @@ ALLOWED = {
 }
 
 def main():
-    raw = subprocess.check_output(['go', 'list', '-json', './...'], cwd=ROOT).decode()
+    raw = subprocess.check_output(['go', 'list', '-json', './...'], cwd=ROOT / 'core').decode()
     decoder = json.JSONDecoder()
     errors = []
     while raw.strip():
@@ -48,13 +49,18 @@ def main():
                     errors.append(f'Shared UI components must stay independent: {dependency}')
         elif path.startswith('internal/') and path not in {'internal/ui', 'internal/ui/locales', 'internal/ui/workbench', 'internal/presentation'}:
             errors.append(f'Unexpected internal package: {path}')
+    raw = subprocess.check_output(['go', 'list', '-json', './internal/ui/components'], cwd=ROOT / 'desktop').decode()
+    components = json.loads(raw)
+    for dependency in components.get('Imports', []):
+        if dependency.startswith('github.com/alswl/apilot/'):
+            errors.append(f'Shared UI components must stay independent: {dependency}')
     for executable in ('apilot', 'apilot-app'):
-        text = (ROOT / 'cmd' / executable / 'main.go').read_text()
+        text = (ROOT / ('core' if executable == 'apilot' else 'desktop') / 'cmd' / executable / 'main.go').read_text()
         if 'os.Exit(Execute())' not in text:
             errors.append(f'Entry point must delegate to Execute: {executable}')
-    if '.AddCommand(' in (ROOT / 'cmd/apilot/root.go').read_text():
+    if '.AddCommand(' in (ROOT / 'core/cmd/apilot/root.go').read_text():
         errors.append('root.go must not enumerate subcommands')
-    for path in (ROOT / 'cmd/apilot').glob('*.go'):
+    for path in (ROOT / 'core/cmd/apilot').glob('*.go'):
         if path.name.endswith('_test.go') or path.name == 'root.go':
             continue
         text = path.read_text()

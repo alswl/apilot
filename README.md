@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="resources/icon.png" width="96" height="96" alt="Apilot icon" />
+<img src="desktop/resources/icon.png" width="96" height="96" alt="Apilot icon" />
 
 # Apilot — Agent Pilot
 
@@ -164,14 +164,14 @@ make verify-lifecycle   # Process cleanup and restart checks
 
 Verification commands use disposable data. The [contributor guide](CONTRIBUTING.md) links the pinned Go/UI standards and project exceptions.
 
-The Go core is separate from MyGo UI: `pkg/services` owns application behavior, `pkg/dal` owns SQLite, `pkg/integrations` executes commands, and `pkg/server` serves the CLI over a private Unix Socket.
+The Go core is separate from MyGo UI: `core/pkg/services` owns application behavior, `core/pkg/dal` owns SQLite, `core/pkg/integrations` executes commands, and `core/pkg/server` serves the CLI over a private Unix Socket.
 
 ### Workbench mock mode
 
 Run the desktop app with bundled fixture data in an isolated session.
 
 ```sh
-go run ./cmd/apilot-app --mock
+go -C desktop run ./cmd/apilot-app --mock
 ```
 
 The [Workbench guide](docs/workbench.md) covers task search, pagination, source actions and screenshots.
@@ -196,4 +196,12 @@ directory using your agent runtime's skill loader.
 
 Apilot supports English and Simplified Chinese. It follows the preferred macOS app language, with English as the fallback. Choose Follow System, English, or 简体中文 in Apilot Settings → Language. Changes apply immediately and are remembered across launches. For a temporary local preview, launch the App executable with `MYGO_LOCALE=en` or `MYGO_LOCALE=zh-Hans`. Task names, commands, logs, stored event summaries and CLI JSON values remain unchanged.
 
-Translations live in `internal/ui/locales`; `tr` resolves interface messages using MyGo’s selected language. CLI commands and help remain English.
+Translations live in `desktop/internal/ui/locales`; `tr` resolves interface messages using MyGo’s selected language. CLI commands and help remain English.
+
+### Focused local development
+
+Run `make dev SCENE=task-create-pending` to open the pending task form with repeatable data. Save a Go source change to rebuild and reopen it. Run `make dev-test SCENE=task-create-pending` for the same scenario without a window.
+
+`make dev-watch CASE=local-create` and `make dev-watch CASE=local-create-cli` repeat focused tests after source changes. `make dev-live` starts the workbench with a data directory specific to the current worktree. Use `scripts/dev cli -- workbench task list --json` in another terminal to query it. Stop the workbench before `make dev-reset` clears that worktree's development data.
+
+The root Makefile coordinates the `core/` and `desktop/` Go modules. Run `go -C core test ./...` or `go -C desktop test ./...` to test either module separately.

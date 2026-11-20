@@ -1,0 +1,51 @@
+#!/bin/bash
+set -euo pipefail
+root=$(cd "$(dirname "$0")/.." && pwd -P)
+cd "$root"
+usage() {
+  printf '%s\n' 'Usage: scripts/dev {scene|test|watch|live|cli|reset} [name or arguments]' >&2
+}
+case "${1:-}" in
+  scene|test)
+    case "${2:-}" in
+      task-create-pending) ;;
+      *) printf '%s\n' 'Available scenes: task-create-pending' >&2; exit 2 ;;
+    esac
+    if [[ "$1" == scene ]]; then
+      export APILOT_DEV_SCENARIO="$2"
+      export CGO_ENABLED=1
+      exec "$root/scripts/dev-scene"
+    fi
+    exec go -C desktop test -count=1 ./internal/ui/workbench -run '^TestDevTaskCreatePendingScenario$'
+    ;;
+  watch)
+    case "${2:-}" in
+      local-create|local-create-cli) ;;
+      *) printf '%s\n' 'Available cases: local-create, local-create-cli' >&2; exit 2 ;;
+    esac
+    exec "$root/scripts/dev-watch" "$2"
+    ;;
+  live)
+    export APILOT_DATA_DIR="$("$root/scripts/dev-profile" path)"
+    printf 'Worktree: %s\nData: %s\nCLI: scripts/dev cli -- <arguments>\n' "$root" "$APILOT_DATA_DIR"
+    exec "$root/scripts/dev-profile" run go -C desktop run ./cmd/apilot-app --workbench
+    ;;
+  cli)
+    shift
+    if [[ "${1:-}" == -- ]]; then shift; fi
+    export APILOT_DATA_DIR="$("$root/scripts/dev-profile" path)"
+    cli_dir=$(mktemp -d)
+    trap 'rm -rf "$cli_dir"' EXIT
+    go -C core build -o "$cli_dir/apilot" ./cmd/apilot
+    status=0
+    "$cli_dir/apilot" "$@" || status=$?
+    if [[ "$status" -eq 3 ]]; then
+      printf '%s\n' 'Start this worktree service with make dev-live.' >&2
+    fi
+    exit "$status"
+    ;;
+  reset)
+    exec "$root/scripts/dev-profile" reset
+    ;;
+  *) usage; exit 2 ;;
+esac

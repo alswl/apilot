@@ -22,8 +22,8 @@ def main():
             if mode == 'format':
                 return 1
     elif mode == 'version':
-        declared = re.search(r'const Version = "([^"]+)"', (ROOT / 'pkg/common/version.go').read_text()).group(1)
-        packaged = json.loads((ROOT / 'mygo.json').read_text())['version']
+        declared = re.search(r'const Version = "([^"]+)"', (ROOT / 'core/pkg/common/version.go').read_text()).group(1)
+        packaged = json.loads((ROOT / 'desktop/mygo.json').read_text())['version']
         if declared != packaged:
             raise ValueError(f'Version mismatch: {declared} != {packaged}')
         print(f'App/CLI source version: {declared}')

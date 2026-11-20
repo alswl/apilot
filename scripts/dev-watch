@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+ROOT = Path(__file__).resolve().parent.parent
+CORE = ROOT / "core"
+CASES = {
+    "local-create": ("./pkg/services", "^TestLocalWorkbenchSingleWriteReplayAndStaleState$"),
+    "local-create-cli": ("./cmd/apilot", "^TestWorkbenchLocalTaskCommandsAcrossServiceRestart$"),
+}
+
+
+def inputs(package):
+    result = subprocess.run(["go", "list", "-e", "-deps", "-test", "-json", package], cwd=CORE,
+                            capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip())
+    decoder = json.JSONDecoder()
+    remaining = result.stdout
+    paths = {CORE / "go.mod", CORE / "go.sum"}
+    while remaining.strip():
+        value, end = decoder.raw_decode(remaining.lstrip())
+        remaining = remaining.lstrip()[end:]
+        directory = Path(value.get("Dir", "/"))
+        if not directory.is_relative_to(ROOT):
+            continue
+        for item in directory.iterdir():
+            if item.is_file() and item.suffix in {".go", ".s", ".h", ".c"}:
+                paths.add(item)
+        for key in ("EmbedFiles", "TestEmbedFiles", "XTestEmbedFiles"):
+            for name in value.get(key, []):
+                paths.add(directory / name)
+    digest = hashlib.sha256()
+    for path in sorted(paths):
+        if path.is_file():
+            digest.update(str(path.relative_to(ROOT)).encode())
+            digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def main():
+    if len(sys.argv) != 2 or sys.argv[1] not in CASES:
+        print("Available cases: local-create, local-create-cli", file=sys.stderr)
+        return 2
+    package, test = CASES[sys.argv[1]]
+    previous = None
+    generation = 0
+    while True:
+        try:
+            current = inputs(package)
+        except (OSError, RuntimeError) as error:
+            print(f"Cannot inspect test inputs: {error}", file=sys.stderr, flush=True)
+            time.sleep(1)
+            continue
+        if current != previous:
+            generation += 1
+            print(f"{sys.argv[1]} run {generation} ({current[:12]})", flush=True)
+            result = subprocess.run(["go", "test", "-count=1", package, "-run", test], cwd=CORE)
+            try:
+                after = inputs(package)
+            except (OSError, RuntimeError):
+                after = None
+            if after != current:
+                print(f"run {generation} superseded by newer changes", flush=True)
+                previous = None
+            else:
+                print(f"run {generation} {'passed' if result.returncode == 0 else 'failed'}", flush=True)
+                previous = current
+        time.sleep(1)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
