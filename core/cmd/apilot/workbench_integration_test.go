@@ -113,7 +113,9 @@ func TestWorkbenchReadPath(t *testing.T) {
 	}
 	a = wait(runtime.Service, obs, "success", a.ID)
 	after := get(obs)
-	if a.Added != 1 || a.Updated != 1 || a.Removed != 1 || after.Items[0].ID != id || after.Items[0].State != "done" {
+	// A watcher-triggered scan may finish before the explicit refresh, so the
+	// latest attempt's counters need not contain the source change.
+	if after.Total != 2 || after.Items[0].ID != id || after.Items[0].State != "done" || after.Items[1].Title != "Added" {
 		t.Fatalf("%+v %+v", a, after)
 	}
 	if err := runtime.Service.SyncWorkbench(obs); err != nil {
@@ -201,6 +203,32 @@ func TestWorkbenchReadPath(t *testing.T) {
 	send(`{"name":"Collected","tasks":[]}`, 0, "workbench", "task", "import")
 	if get(created.ID).Total != 0 {
 		t.Fatal("empty import did not clear the collection")
+	}
+	local, err := runtime.Service.WorkbenchSnapshot(common.DefaultWorkbenchLocalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	operation := common.WorkbenchTaskWrite{RequestID: "cli-operation", ConnectionID: local.ID, ConnectionVersion: local.Version, Title: "CLI operation"}
+	encoded, err := json.Marshal(operation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt common.WorkbenchTaskReceipt
+	data = send(string(encoded), 0, "workbench", "task", "operation", "submit")
+	if err := json.Unmarshal(data, &receipt); err != nil || receipt.SyncState != "confirmed" || receipt.SourceObjectID == "" {
+		t.Fatalf("submit operation: %s %v", data, err)
+	}
+	for _, action := range []string{"show", "reconcile"} {
+		var replay common.WorkbenchTaskReceipt
+		data = call(0, "workbench", "task", "operation", action, operation.RequestID)
+		if err := json.Unmarshal(data, &replay); err != nil || replay != receipt {
+			t.Fatalf("%s operation: %s %v", action, data, err)
+		}
+	}
+	var replay common.WorkbenchTaskReceipt
+	data = send(string(encoded), 0, "workbench", "task", "operation", "submit")
+	if err := json.Unmarshal(data, &replay); err != nil || replay != receipt {
+		t.Fatalf("replay operation: %s %v", data, err)
 	}
 
 	var catalog struct {
@@ -312,4 +340,66 @@ func TestWorkbenchLocalTaskCommandsAcrossServiceRestart(t *testing.T) {
 	if page.Total != 1 {
 		t.Fatalf("Local writes produced %d tasks", page.Total)
 	}
+}
+
+func TestWorkbenchOperationCommandsAcrossServiceRestart(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("APILOT_DATA_DIR", dir)
+	runtime, err := server.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = runtime.Close() }()
+	call := func(want int, result any, args ...string) {
+		t.Helper()
+		var out, stderr bytes.Buffer
+		if code := execute(append([]string{"workbench", "task", "operation"}, append(args, "--json")...), &out, &stderr); code != want {
+			t.Fatalf("%v: code=%d stdout=%s stderr=%s", args, code, &out, &stderr)
+		}
+		if result != nil {
+			envelope := struct{ Data any }{Data: result}
+			if err := json.Unmarshal(out.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	input := common.WorkbenchTaskWrite{RequestID: "cli-operation", ConnectionID: common.DefaultWorkbenchLocalID, ConnectionVersion: 1, Title: "Operation task"}
+	file := filepath.Join(t.TempDir(), "operation.json")
+	write := func(input common.WorkbenchTaskWrite) {
+		t.Helper()
+		body, err := json.Marshal(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(file, body, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(input)
+	var created common.WorkbenchTaskReceipt
+	call(0, &created, "submit", file)
+	if created.SyncState != "confirmed" || created.SourceObjectID == "" {
+		t.Fatalf("submit: %+v", created)
+	}
+	var shown common.WorkbenchTaskReceipt
+	call(0, &shown, "show", input.RequestID)
+	if shown != created {
+		t.Fatalf("show: %+v, submit: %+v", shown, created)
+	}
+	if err := runtime.Close(); err != nil {
+		t.Fatal(err)
+	}
+	runtime, err = server.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replay, checked common.WorkbenchTaskReceipt
+	call(0, &replay, "submit", file)
+	call(0, &checked, "reconcile", input.RequestID)
+	if replay != created || checked != created {
+		t.Fatalf("replay=%+v reconcile=%+v original=%+v", replay, checked, created)
+	}
+	input.Title = "Different operation"
+	write(input)
+	call(5, nil, "submit", file)
 }

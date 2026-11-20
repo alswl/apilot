@@ -14,6 +14,7 @@ require (
 	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/danielgtaylor/huma/v2 v2.41.0 // indirect
 	github.com/ebitengine/purego v0.11.1 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-chi/chi/v5 v5.5.0 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect

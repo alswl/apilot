@@ -19,30 +19,45 @@ type active struct {
 	cancelRequested bool
 }
 
+type ObsidianSyncOptions struct {
+	ScanInterval          time.Duration
+	ScanTimeout           time.Duration
+	MaxRetries            int
+	ScanTimeoutConfigured bool
+	Diagnostic            string
+}
+
 type Service struct {
-	workbenchActive  map[string]context.CancelFunc
-	readProgress     sync.Map // attempt ID to common.WorkbenchReadProgress
-	workbenchReader  workbenchReader
-	workbenchPlugins map[string]workbenchPlugin
-	observers        map[string]common.Observer
-	observing        map[string]active
-	observerNext     map[string]time.Time
-	closeOnce        sync.Once
-	closeError       error
-	suspended        bool
-	mu               sync.Mutex
-	store            Store
-	dir              string
-	lock             io.Closer
-	ctx              context.Context
-	cancel           context.CancelFunc
-	wg               sync.WaitGroup
-	tasks            map[string]common.Task
-	runs             map[string]common.Run
-	running          map[string]active
-	settings         common.Settings
-	stopping         bool
-	lastError        string
+	workbenchActive     map[string]context.CancelFunc
+	workbenchDirty      map[string]bool
+	workbenchPaths      map[string]map[string]bool
+	workbenchWatchReady map[string]workbenchWatchReadiness
+	workbenchWatchWake  chan struct{}
+	readProgress        sync.Map // attempt ID to common.WorkbenchReadProgress
+	operationNotes      workbenchNoteGates
+	operationRunning    map[string]bool
+	workbenchReader     workbenchReader
+	obsidianSync        ObsidianSyncOptions
+	workbenchPlugins    map[string]workbenchPlugin
+	observers           map[string]common.Observer
+	observing           map[string]active
+	observerNext        map[string]time.Time
+	closeOnce           sync.Once
+	closeError          error
+	suspended           bool
+	mu                  sync.Mutex
+	store               Store
+	dir                 string
+	lock                io.Closer
+	ctx                 context.Context
+	cancel              context.CancelFunc
+	wg                  sync.WaitGroup
+	tasks               map[string]common.Task
+	runs                map[string]common.Run
+	running             map[string]active
+	settings            common.Settings
+	stopping            bool
+	lastError           string
 }
 
 func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
@@ -50,6 +65,10 @@ func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
 }
 
 func NewWithWorkbenchPlugins(dir string, openStore func(string) (Store, error), registry WorkbenchPluginRegistry) (*Service, error) {
+	return NewWithWorkbenchOptions(dir, openStore, registry, ObsidianSyncOptions{MaxRetries: 3})
+}
+
+func NewWithWorkbenchOptions(dir string, openStore func(string) (Store, error), registry WorkbenchPluginRegistry, options ObsidianSyncOptions) (*Service, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return nil, e
 	}
@@ -70,9 +89,16 @@ func NewWithWorkbenchPlugins(dir string, openStore func(string) (Store, error), 
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{workbenchActive: make(map[string]context.CancelFunc), workbenchPlugins: registry.plugins, observers: map[string]common.Observer{}, observing: map[string]active{}, observerNext: map[string]time.Time{}, store: db, dir: dir, lock: lock, ctx: ctx, cancel: cancel, tasks: map[string]common.Task{}, runs: map[string]common.Run{}, running: map[string]active{}}
+	s := &Service{workbenchActive: make(map[string]context.CancelFunc), workbenchDirty: make(map[string]bool), workbenchPaths: make(map[string]map[string]bool), workbenchWatchReady: make(map[string]workbenchWatchReadiness), workbenchWatchWake: make(chan struct{}, 1), operationRunning: make(map[string]bool), workbenchPlugins: registry.plugins, observers: map[string]common.Observer{}, observing: map[string]active{}, observerNext: map[string]time.Time{}, store: db, dir: dir, lock: lock, ctx: ctx, cancel: cancel, tasks: map[string]common.Task{}, runs: map[string]common.Run{}, running: map[string]active{}}
 	s.workbenchReader = s.readWorkbench
+	s.obsidianSync = options
+	s.lastError = options.Diagnostic
 	fail := func(e error) (*Service, error) { cancel(); db.Close(); lock.Close(); return nil, e }
+	if operations, ok := db.(interface{ RecoverWorkbenchTaskOperations() error }); ok {
+		if err := operations.RecoverWorkbenchTaskOperations(); err != nil {
+			return fail(err)
+		}
+	}
 	s.settings, e = db.Settings()
 	if e != nil {
 		return fail(e)
@@ -121,6 +147,12 @@ func NewWithWorkbenchPlugins(dir string, openStore func(string) (Store, error), 
 		s.startScheduledWorkbench(wb, "startup")
 		s.wg.Add(1)
 		go s.tickWorkbench(wb)
+		s.wg.Add(1)
+		go s.watchWorkbenchConnections(wb)
+	}
+	if operations, ok := db.(workbenchTaskOperationStore); ok {
+		s.wg.Add(1)
+		go s.recoverWorkbenchOperations(operations)
 	}
 	return s, nil
 }

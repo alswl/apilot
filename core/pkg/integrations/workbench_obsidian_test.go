@@ -178,3 +178,52 @@ func TestWorkbenchObsidianCompletionKeepsTaskFormatAndNoteTail(t *testing.T) {
 		t.Fatalf("reopened: %q %v", reopened, err)
 	}
 }
+
+func TestWorkbenchObsidianReadsSingleScopedNote(t *testing.T) {
+	vault := t.TempDir()
+	if err := os.Mkdir(filepath.Join(vault, "Work"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(vault, "Work", "Note.md")
+	if err := os.WriteFile(path, []byte("# Project\n- [ ] Task\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	conn := common.WorkbenchConnection{Vault: vault, Scope: "Work"}
+	tasks, err := ReadWorkbenchObsidianTasksInNote(context.Background(), conn, "Work/Note.md")
+	if err != nil || len(tasks) != 1 || tasks[0].Title != "Task" {
+		t.Fatalf("tasks: %+v %v", tasks, err)
+	}
+	observation, err := ObserveWorkbenchObsidianNote(context.Background(), conn, "Work/Note.md")
+	if err != nil || observation.Coverage != common.WorkbenchCoverageRead || len(observation.Tasks) != 1 {
+		t.Fatalf("observation: %+v %v", observation, err)
+	}
+	observation, err = ObserveWorkbenchObsidianNote(context.Background(), conn, "outside.md")
+	if err == nil || observation.Coverage != common.WorkbenchCoverageOutside {
+		t.Fatalf("outside: %+v %v", observation, err)
+	}
+	if _, err := ReadWorkbenchObsidianTasksInNote(context.Background(), conn, "outside.md"); err == nil {
+		t.Fatal("accepted out-of-scope note")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadWorkbenchObsidianTasksInNote(context.Background(), conn, "Work/Note.md"); err == nil {
+		t.Fatal("missing note accepted as empty")
+	}
+	observation, err = ObserveWorkbenchObsidianNote(context.Background(), conn, "Work/Note.md")
+	if err != nil || observation.Coverage != common.WorkbenchCoverageMissing {
+		t.Fatalf("missing: %+v %v", observation, err)
+	}
+	if err := os.Remove(filepath.Join(vault, "Work")); err != nil {
+		t.Fatal(err)
+	}
+	observation, err = ObserveWorkbenchObsidianNote(context.Background(), conn, "Work/Note.md")
+	if err == nil || observation.Coverage != common.WorkbenchCoverageFailed {
+		t.Fatalf("missing scope: %+v %v", observation, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ReadWorkbenchObsidianTasksInNote(ctx, conn, "Work/Note.md"); err != context.Canceled {
+		t.Fatalf("cancelled: %v", err)
+	}
+}

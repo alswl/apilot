@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
-	rows, err := s.db.Query("SELECT config,last_success,attempts FROM workbench_connections ORDER BY id")
+	rows, err := s.db.Query("SELECT config,last_success,attempts,snapshot_version FROM workbench_connections ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -19,7 +19,7 @@ func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 		var config, attempts string
 		var success sql.NullString
 		var snapshot common.WorkbenchSnapshot
-		if err := rows.Scan(&config, &success, &attempts); err != nil {
+		if err := rows.Scan(&config, &success, &attempts, &snapshot.SnapshotVersion); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(config), &snapshot.WorkbenchConnection); err != nil {
@@ -57,6 +57,21 @@ func (s *Store) SaveWorkbenchBridge(c common.WorkbenchConnection, reset bool, br
 		return err
 	}
 	if reset {
+		// Historic locations may be outside the newly authorized scope.
+		var rawAttempts string
+		if err := tx.QueryRow("SELECT attempts FROM workbench_connections WHERE id=?", c.ID).Scan(&rawAttempts); err != nil {
+			return err
+		}
+		var attempts []common.WorkbenchAttempt
+		if err := json.Unmarshal([]byte(rawAttempts), &attempts); err != nil {
+			return err
+		}
+		for i := range attempts {
+			attempts[i].Paths = nil
+		}
+		if _, err := tx.Exec("UPDATE workbench_connections SET attempts=? WHERE id=?", encode(attempts), c.ID); err != nil {
+			return err
+		}
 		if _, err = tx.Exec("DELETE FROM workbench_objects WHERE connection_id=?", c.ID); err != nil {
 			return err
 		}
@@ -76,11 +91,50 @@ func (s *Store) SaveWorkbenchBridge(c common.WorkbenchConnection, reset bool, br
 }
 
 func (s *Store) RecordWorkbench(c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, success *time.Time) error {
+	return s.recordWorkbenchVersion(c, attempts, before, after, success, nil)
+}
+
+// RecordWorkbenchIfVersion rejects observations based on an older snapshot.
+func (s *Store) RecordWorkbenchIfVersion(c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, success *time.Time, version int64) error {
+	return s.recordWorkbenchVersion(c, attempts, before, after, success, &version)
+}
+
+// RecordWorkbenchPartialSnapshot publishes the verified portion of a full
+// observation without treating unresolved identities as a full confirmation.
+func (s *Store) RecordWorkbenchPartialSnapshot(c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, observed time.Time, version int64) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	var current int64
+	if err := tx.QueryRow("SELECT snapshot_version FROM workbench_connections WHERE id=?", c.ID).Scan(&current); err != nil {
+		return err
+	}
+	if current != version {
+		return common.Err("STALE_REVISION", "Source snapshot changed")
+	}
+	if err := recordWorkbenchSnapshot(tx, c, attempts, before, after, nil, &observed); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Store) recordWorkbenchVersion(c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, success *time.Time, version *int64) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if version != nil {
+		var current int64
+		if err := tx.QueryRow("SELECT snapshot_version FROM workbench_connections WHERE id=?", c.ID).Scan(&current); err != nil {
+			return err
+		}
+		if current != *version {
+			return common.Err("STALE_REVISION", "Source snapshot changed")
+		}
+	}
 	if err := recordWorkbench(tx, c, attempts, before, after, success); err != nil {
 		return err
 	}
@@ -103,7 +157,11 @@ func (s *Store) CommitWorkbenchImport(c common.WorkbenchConnection, attempts []c
 }
 
 func recordWorkbench(tx *sql.Tx, c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, success *time.Time) error {
-	result, err := tx.Exec("UPDATE workbench_connections SET attempts=?,last_success=COALESCE(?,last_success) WHERE id=? AND version=?", encode(attempts), formatWorkbenchTime(success), c.ID, c.Version)
+	return recordWorkbenchSnapshot(tx, c, attempts, before, after, success, success)
+}
+
+func recordWorkbenchSnapshot(tx *sql.Tx, c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, before, after []common.WorkbenchTask, success, observed *time.Time) error {
+	result, err := tx.Exec("UPDATE workbench_connections SET attempts=?,last_success=COALESCE(?,last_success),snapshot_version=snapshot_version+? WHERE id=? AND version=?", encode(attempts), formatWorkbenchTime(success), observed != nil, c.ID, c.Version)
 	if err != nil {
 		return err
 	}
@@ -114,7 +172,7 @@ func recordWorkbench(tx *sql.Tx, c common.WorkbenchConnection, attempts []common
 	if n != 1 {
 		return common.Err("STALE_REVISION", "Connection configuration changed")
 	}
-	if success != nil {
+	if observed != nil {
 		old := make(map[string]common.WorkbenchTask, len(before))
 		next := make(map[string]string, len(after))
 		for _, task := range before {
@@ -135,6 +193,9 @@ func recordWorkbench(tx *sql.Tx, c common.WorkbenchConnection, attempts []common
 			changed = true
 		}
 		for _, task := range after {
+			if _, err := tx.Exec("INSERT INTO workbench_tasks(id,created_at) VALUES(?,?) ON CONFLICT(id) DO NOTHING", task.ID, formatWorkbenchTime(observed)); err != nil {
+				return err
+			}
 			payload := encode(task)
 			if previous, ok := old[task.ID]; ok && previous.SourceKey == task.SourceKey && encode(previous) == payload {
 				continue
@@ -175,8 +236,8 @@ func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, er
 	if q.Revision != 0 && page.Revision != q.Revision {
 		return page, common.Err("STALE_REVISION", "Task list changed")
 	}
-	filter := " WHERE (?='' OR connection_id=?) AND (?='' OR state=?)"
-	args := []any{q.Connection, q.Connection, q.State, q.State}
+	filter := " WHERE (?='' OR connection_id=?) AND (?='' OR state=?) AND (?='' OR EXISTS (SELECT 1 FROM workbench_task_labels WHERE task_id=workbench_objects.id AND label_id=?))"
+	args := []any{q.Connection, q.Connection, q.State, q.State, q.LabelID, q.LabelID}
 	if err := tx.QueryRow("SELECT COUNT(*) FROM workbench_objects"+filter, args...).Scan(&page.Total); err != nil {
 		return page, err
 	}
@@ -192,7 +253,24 @@ func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, er
 		}
 		page.Items = append(page.Items, task)
 	}
-	return page, rows.Err()
+	if err := rows.Err(); err != nil {
+		return page, err
+	}
+	if err := rows.Close(); err != nil {
+		return page, err
+	}
+	ids := make([]string, len(page.Items))
+	for i := range page.Items {
+		ids[i] = page.Items[i].ID
+	}
+	labels, err := workbenchTaskLabels(tx, ids)
+	if err != nil {
+		return page, err
+	}
+	for i := range page.Items {
+		page.Items[i].WorkbenchLabels = labels[page.Items[i].ID]
+	}
+	return page, nil
 }
 
 func (s *Store) WorkbenchObject(id string) (common.WorkbenchTask, error) {
@@ -249,6 +327,103 @@ func (s *Store) DeleteWorkbench(id string) error {
 		return common.Err("NOT_FOUND", "Unknown workbench connection")
 	}
 	if _, err := tx.Exec("UPDATE workbench_revision SET revision=revision+1"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CommitWorkbenchObservedTasks updates only previously mapped source objects.
+// It never advances the last successful full-scope verification time.
+func (s *Store) CommitWorkbenchObservedTasks(connection common.WorkbenchConnection, version int64, tasks []common.WorkbenchTask) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := commitWorkbenchObservedTasks(tx, connection, version, tasks, false); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func commitWorkbenchObservedTasks(tx *sql.Tx, connection common.WorkbenchConnection, version int64, tasks []common.WorkbenchTask, allowPaused bool) error {
+	result, err := tx.Exec(`UPDATE workbench_connections SET snapshot_version=snapshot_version+1
+WHERE id=? AND version=? AND snapshot_version=? AND (? OR COALESCE(json_extract(config,'$.paused'),0)=0)
+AND COALESCE((SELECT enabled FROM workbench_plugin_settings WHERE id=json_extract(config,'$.kind')),1)=1`, connection.ID, connection.Version, version, allowPaused)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n != 1 {
+		return common.Err("STALE_REVISION", "Connection or source snapshot changed")
+	}
+	changed := false
+	for _, task := range tasks {
+		if task.ConnectionID != connection.ID {
+			return common.Err("INVALID_ARGUMENT", "Task belongs to another connection")
+		}
+		result, err := tx.Exec(`UPDATE workbench_objects SET title=?,state=?,payload=?
+WHERE id=? AND connection_id=? AND source_key=? AND (title<>? OR state<>? OR payload<>?)`, task.Title, task.State, encode(task), task.ID, connection.ID, task.SourceKey, task.Title, task.State, encode(task))
+		if err != nil {
+			return err
+		}
+		n, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			var exists int
+			if err := tx.QueryRow("SELECT 1 FROM workbench_objects WHERE id=? AND connection_id=? AND source_key=?", task.ID, connection.ID, task.SourceKey).Scan(&exists); err != nil {
+				if err == sql.ErrNoRows {
+					return common.Err("STALE_REVISION", "Task mapping changed")
+				}
+				return err
+			}
+		} else {
+			changed = true
+		}
+	}
+	if changed {
+		if _, err := tx.Exec("UPDATE workbench_revision SET revision=revision+1"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// FinishWorkbenchAttempt updates an in-flight attempt without replacing newer history.
+func (s *Store) FinishWorkbenchAttempt(connection common.WorkbenchConnection, attempt common.WorkbenchAttempt) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var raw string
+	if err := tx.QueryRow("SELECT attempts FROM workbench_connections WHERE id=? AND version=?", connection.ID, connection.Version).Scan(&raw); err != nil {
+		if err == sql.ErrNoRows {
+			return common.Err("STALE_REVISION", "Connection configuration changed")
+		}
+		return err
+	}
+	var attempts []common.WorkbenchAttempt
+	if err := json.Unmarshal([]byte(raw), &attempts); err != nil {
+		return err
+	}
+	found := false
+	for i := range attempts {
+		if attempts[i].ID == attempt.ID && attempts[i].State == "running" {
+			attempts[i] = attempt
+			found = true
+			break
+		}
+	}
+	if !found {
+		return common.Err("STALE_REVISION", "Sync attempt changed")
+	}
+	if _, err := tx.Exec("UPDATE workbench_connections SET attempts=? WHERE id=? AND version=?", encode(attempts), connection.ID, connection.Version); err != nil {
 		return err
 	}
 	return tx.Commit()

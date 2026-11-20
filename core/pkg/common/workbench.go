@@ -24,6 +24,7 @@ type WorkbenchTask struct {
 	Locator           string                  `json:"locator"`
 	Assignees         []string                `json:"assignees"`
 	Labels            []string                `json:"labels"`
+	WorkbenchLabels   []WorkbenchLabel        `json:"workbench_labels,omitempty"`
 	LabelValues       map[string]string       `json:"label_values"`
 	Summary           string                  `json:"summary"`
 	Related           []WorkbenchTaskResource `json:"related"`
@@ -47,9 +48,9 @@ type WorkbenchTaskEvent struct {
 const WorkbenchObsidianCLI = "obsidian_cli"
 
 type WorkbenchConnection struct {
-	ReadMethod       string            `json:"read_method,omitempty"`
+	ReadMethod       string            `json:"read_method,omitempty" hidden:"true"`
 	WriteEnabled     bool              `json:"write_enabled,omitempty"`
-	BridgeConfigured bool              `json:"bridge_configured,omitempty"`
+	BridgeConfigured bool              `json:"bridge_configured,omitempty" hidden:"true"`
 	Paused           bool              `json:"paused,omitempty"`
 	ID               string            `json:"id"`
 	Kind             string            `json:"kind"`
@@ -67,17 +68,62 @@ type WorkbenchReadProgress struct {
 	Total int `json:"total"`
 }
 
+// WorkbenchNoteObservation describes evidence obtained for one source location.
+// A missing location does not establish that a task was deleted or not moved.
+type WorkbenchNoteObservation struct {
+	Path     string
+	Coverage string
+	Tasks    []WorkbenchTask
+}
+
+// WorkbenchReadResult is internal evidence for one connection read. Its scope
+// and coverage project to WorkbenchAttempt; source tasks and errors stay in
+// the connector/service boundary and are not themselves an API response.
+type WorkbenchReadResult struct {
+	ConnectionID      string
+	ConnectionVersion int64
+	SnapshotVersion   int64
+	Scope             string
+	Coverage          string
+	Paths             []string
+	Notes             []WorkbenchNoteObservation
+	Tasks             []WorkbenchTask
+	Retry             bool
+	Err               error
+}
+
+const (
+	WorkbenchReadFull  = "full"
+	WorkbenchReadNotes = "notes"
+
+	WorkbenchReadComplete   = "complete"
+	WorkbenchReadPartial    = "partial"
+	WorkbenchReadUnverified = "unverified"
+)
+
+const (
+	WorkbenchCoverageRead    = "read"
+	WorkbenchCoverageMissing = "missing"
+	WorkbenchCoverageOutside = "outside"
+	WorkbenchCoverageFailed  = "failed"
+)
+
 type WorkbenchAttempt struct {
-	Progress *WorkbenchReadProgress `json:"progress,omitempty"`
-	ID       int64                  `json:"id"`
-	Trigger  string                 `json:"trigger"`
-	State    string                 `json:"state"`
-	Started  time.Time              `json:"started"`
-	Finished *time.Time             `json:"finished,omitempty"`
-	Error    string                 `json:"error,omitempty"`
-	Added    int                    `json:"added"`
-	Updated  int                    `json:"updated"`
-	Removed  int                    `json:"removed"`
+	Progress          *WorkbenchReadProgress `json:"progress,omitempty"`
+	Scope             string                 `json:"scope,omitempty" enum:"full,notes"`
+	Paths             []string               `json:"paths,omitempty"`
+	Coverage          string                 `json:"coverage,omitempty" enum:"complete,partial,unverified"`
+	ConnectionVersion int64                  `json:"connection_version,omitempty"`
+	SnapshotVersion   int64                  `json:"snapshot_version,omitempty"`
+	ID                int64                  `json:"id"`
+	Trigger           string                 `json:"trigger"`
+	State             string                 `json:"state"`
+	Started           time.Time              `json:"started"`
+	Finished          *time.Time             `json:"finished,omitempty"`
+	Error             string                 `json:"error,omitempty"`
+	Added             int                    `json:"added"`
+	Updated           int                    `json:"updated"`
+	Removed           int                    `json:"removed"`
 }
 
 type WorkbenchCapabilities struct {
@@ -90,9 +136,10 @@ type WorkbenchCapabilities struct {
 }
 
 type WorkbenchSnapshot struct {
-	Capabilities   WorkbenchCapabilities  `json:"capabilities"`
-	PendingWrites  []WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
-	PluginDisabled bool                   `json:"plugin_disabled,omitempty"`
+	SnapshotVersion int64                  `json:"-"`
+	Capabilities    WorkbenchCapabilities  `json:"capabilities"`
+	PendingWrites   []WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
+	PluginDisabled  bool                   `json:"plugin_disabled,omitempty"`
 	WorkbenchConnection
 	LastSuccess *time.Time         `json:"last_success,omitempty"`
 	Attempts    []WorkbenchAttempt `json:"attempts"`
@@ -100,6 +147,7 @@ type WorkbenchSnapshot struct {
 }
 
 type WorkbenchQuery struct {
+	LabelID    string `json:"label_id,omitempty"`
 	Connection string `json:"connection"`
 	State      string `json:"state"`
 	Limit      int    `json:"limit"`
@@ -150,6 +198,32 @@ type WorkbenchTaskReceipt struct {
 	Reason         string `json:"reason,omitempty"`
 }
 
+// Operation phases describe request processing, independently of task state.
+const (
+	WorkbenchOperationAccepted    = "accepted"
+	WorkbenchOperationDispatching = "dispatching"
+	WorkbenchOperationNeedsReview = "needs_review"
+	WorkbenchOperationConfirmed   = "confirmed"
+	WorkbenchOperationConflict    = "conflict"
+	WorkbenchOperationNotExecuted = "not_executed"
+)
+
+// WorkbenchTaskOperation contains the durable input and processing stage.
+// The stage is separate from the last confirmed state of the source task.
+type WorkbenchTaskOperation struct {
+	Input       WorkbenchTaskWrite         `json:"input"`
+	Receipt     WorkbenchTaskReceipt       `json:"receipt"`
+	Phase       string                     `json:"phase"`
+	Fingerprint string                     `json:"-"`
+	Binding     *WorkbenchOperationBinding `json:"-"`
+}
+
+type WorkbenchOperationBinding struct {
+	Vault    string         `json:"vault"`
+	Scope    string         `json:"scope"`
+	Baseline *WorkbenchTask `json:"baseline,omitempty"`
+}
+
 type WorkbenchNote struct {
 	NotePath string `json:"note_path"`
 }
@@ -163,8 +237,23 @@ type WorkbenchHeading struct {
 
 // WorkbenchBridgeInput is write-only connection configuration.
 type WorkbenchBridgeInput struct {
-	Endpoint     string `json:"bridge_endpoint,omitempty"`
-	Token        string `json:"bridge_token,omitempty"`
-	Certificate  string `json:"bridge_certificate,omitempty"`
+	Endpoint     string `json:"bridge_endpoint,omitempty" hidden:"true"`
+	Token        string `json:"bridge_token,omitempty" hidden:"true"`
+	Certificate  string `json:"bridge_certificate,omitempty" hidden:"true"`
 	WriteEnabled *bool  `json:"write_enabled,omitempty"`
+}
+
+// WorkbenchLabel is a locally managed task label.
+type WorkbenchLabel struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// WorkbenchAnnotation is a locally managed note attached to a task.
+type WorkbenchAnnotation struct {
+	ID        string `json:"id"`
+	TaskID    string `json:"task_id"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }

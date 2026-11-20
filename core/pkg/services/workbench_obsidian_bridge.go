@@ -69,7 +69,9 @@ func (s *Service) prepareWorkbenchBridge(c *common.WorkbenchConnection, old comm
 		return nil, err
 	}
 	if c.WriteEnabled {
-		if err := client.VerifyVault(context.Background(), *c); err != nil {
+		ctx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
+		defer cancel()
+		if err := client.VerifyVault(ctx, *c); err != nil {
 			return nil, err
 		}
 	}

@@ -120,6 +120,9 @@ func handle(s *services.Service, c *net.UnixConn) {
 		resp.Error = Error(e)
 	} else {
 		resp.ID = req.ID
+		if req.Method == "workbench.operation.reconcile" {
+			c.SetWriteDeadline(time.Now().Add(35 * time.Second))
+		}
 		resp.Data, e = Dispatch(s, req)
 		if e != nil {
 			resp.Data = nil

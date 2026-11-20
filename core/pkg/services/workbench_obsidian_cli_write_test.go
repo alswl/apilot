@@ -119,6 +119,21 @@ run().then(console.log).catch(error => { console.log("Error: " + error.message);
 	if replayed, err := s.WriteWorkbenchTask(input); err != nil || replayed != created {
 		t.Fatalf("create replay: %+v %v", replayed, err)
 	}
+	if readMethod == "" {
+		current, err := s.WorkbenchSnapshot(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, attempt := range current.Attempts {
+			if attempt.Trigger == "write" && attempt.Scope == "notes" && attempt.Coverage == "complete" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("creation did not use watched note coverage: %+v", current.Attempts)
+		}
+	}
 	readNote := func() string {
 		t.Helper()
 		data, err := os.ReadFile(note)
@@ -147,8 +162,24 @@ run().then(console.log).catch(error => { console.log("Error: " + error.message);
 	}
 	t.Setenv("APILOT_CLI_TEST_OUTCOME", "")
 	complete.RequestID = "complete-again"
+	beforeStateWrite := time.Now().UTC().UnixNano()
 	if receipt, err := s.WriteWorkbenchTask(complete); err != nil || receipt.SyncState != "confirmed" {
 		t.Fatalf("complete: %+v %v", receipt, err)
+	}
+	if readMethod == "" {
+		current, err := s.WorkbenchSnapshot(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, attempt := range current.Attempts {
+			if attempt.ID >= beforeStateWrite && attempt.Trigger == "write" && attempt.Scope == "notes" && attempt.Coverage == "complete" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("state write did not use watched note coverage: %+v", current.Attempts)
+		}
 	}
 	expected := strings.Replace(beforeComplete, "- [ ] 发布", "- [x] 发布", 1)
 	marker := obsidianCreationMarker(workbenchFingerprint(input))

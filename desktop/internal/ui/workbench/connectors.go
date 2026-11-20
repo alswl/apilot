@@ -17,9 +17,10 @@ import (
 
 type connectorEdit struct {
 	connection
-	problem       string
-	configureREST bool
-	bridge        common.WorkbenchBridgeInput
+	problem         string
+	bridge          common.WorkbenchBridgeInput
+	permissionVault string
+	permissionScope string
 }
 
 type syncEvent struct {
@@ -363,7 +364,7 @@ func (m *mockup) editConnector(conn connection) {
 	if conn.StatusLabels == nil {
 		conn.StatusLabels = make(map[string]string)
 	}
-	m.connectorEditor = &connectorEdit{connection: conn}
+	m.connectorEditor = &connectorEdit{connection: conn, permissionVault: conn.VaultPath, permissionScope: conn.Scope}
 }
 
 func (m *mockup) connectorDialog(c *ui.Context) {
@@ -435,9 +436,6 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 				}
 				if ui.PrimaryButton(c.Key("save"), tr("保存配置")).Clicked() {
 					if m.live != nil && edit.SourceKind == obsidianTasks {
-						if edit.ReadMethod == common.WorkbenchObsidianCLI {
-							edit.bridge = common.WorkbenchBridgeInput{}
-						}
 						edit.bridge.WriteEnabled = &edit.WriteEnabled
 						edit.problem = m.saveLiveConnection(edit.connection, edit.bridge)
 					} else {
@@ -458,23 +456,6 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 
 func (m *mockup) obsidianBridgeFields(c *ui.Context, edit *connectorEdit) {
 	ui.Checkbox(c.Key("writable"), &edit.WriteEnabled, tr("允许回写"))
-	if !edit.WriteEnabled || edit.ReadMethod == common.WorkbenchObsidianCLI {
-		return
-	}
-	if !edit.BridgeConfigured && !edit.configureREST {
-		if ui.Button(c.Key("configure-rest"), tr("配置 REST 桥接…")).Clicked() {
-			edit.configureREST = true
-		}
-		return
-	}
-	if edit.BridgeConfigured {
-		components.Muted(c, tr("已保存桥接凭据。留空以继续使用。"))
-	}
-	components.TextField(c.Key("endpoint"), tr("桥接地址"), &edit.bridge.Endpoint).Placeholder("https://127.0.0.1:27124")
-	ui.TextInput(c.Key("token"), &edit.bridge.Token).Label(tr("桥接令牌")).Password().FillWidth()
-	ui.Field(c.Key("certificate"), tr("桥接证书"), func() {
-		ui.TextArea(c, &edit.bridge.Certificate).Label(tr("桥接证书")).FillWidth().Height(75)
-	})
 }
 
 func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
@@ -510,20 +491,9 @@ func (m *mockup) obsidianConnectorFields(c *ui.Context, edit *connectorEdit) {
 			m.chooseObsidianVault(edit)
 		}
 	})
-	if m.live != nil {
-		method := "直接读取 Markdown"
-		if edit.ReadMethod == common.WorkbenchObsidianCLI {
-			method = "Obsidian CLI"
-		}
-		previous := edit.ReadMethod
-		choiceField(c.Key("read-method"), "读取方式", &method, []string{"直接读取 Markdown", "Obsidian CLI"})
-		edit.ReadMethod = ""
-		if method == "Obsidian CLI" {
-			edit.ReadMethod = common.WorkbenchObsidianCLI
-		}
-		if edit.ReadMethod != previous {
-			edit.WriteEnabled = false
-		}
+	if edit.ID != "" && (edit.VaultPath != edit.permissionVault || edit.Scope != edit.permissionScope) {
+		edit.WriteEnabled = false
+		edit.permissionVault, edit.permissionScope = edit.VaultPath, edit.Scope
 	}
 }
 

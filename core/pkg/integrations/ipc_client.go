@@ -22,7 +22,11 @@ func Call(path, method string, params any) (json.RawMessage, error) {
 		return nil, common.Err("IPC_UNAVAILABLE", e.Error())
 	}
 	defer c.Close()
-	c.SetDeadline(time.Now().Add(2 * time.Second))
+	timeout := 2 * time.Second
+	if method == "workbench.operation.reconcile" {
+		timeout = 35 * time.Second
+	}
+	c.SetDeadline(time.Now().Add(timeout))
 	b, e := json.Marshal(params)
 	if e != nil {
 		return nil, e

@@ -13,10 +13,7 @@ open -n -a Apilot --args --workbench
 
 ## 启用 Obsidian 回写
 
-- **Obsidian CLI 回写（默认）**。在 Obsidian 开启命令行接口并打开目标 vault。在 Apilot 勾选「允许回写」并保存。可以保留「直接读取 Markdown」，也可以用 CLI 读取。写回通过 CLI 在 Obsidian 内检查版本并保存。
-- **REST 桥接回写（可选）**。选择直接读取 Markdown，点「配置 REST 桥接…」。在目标 vault 启用带原子条件写入补丁的 Local REST API 5.5.2，勾选「允许回写」，填写本机 HTTPS 地址、令牌和 PEM 证书。Apilot 会用临时验证笔记核对 vault。 [桥接构建与安装](../packaging/obsidian/README.md)
-
-切换访问方式、vault 或范围后，需要重新授权。插件停用或连接暂停时，仍可查询已同步的任务。
+在 Obsidian 打开目标 vault，在 Apilot 连接配置中勾选「允许回写」并保存。按提示启用 Obsidian 的命令行接口。更换 vault 或同步范围后，需要重新授权。插件停用或连接暂停时，仍可查询已同步的任务。
 
 在工作台新建任务时选择连接、笔记和已有章节。点击任务复选框可完成或重开。完成时写入本地日期，重开时移除完成日期。提交后工作台显示「等待来源确认」，此时保留原复选框状态和新建草稿。读回确认后才更新任务状态或关闭新建窗口，失败时可查看原因。若创建结果待核对，请在同一表单重试，以保留请求标识。点连接的日志按钮可以查看待核对或冲突的提交，也可以取消本轮、暂停、恢复或解除连接。
 
@@ -57,11 +54,15 @@ apilot workbench connection pause CONNECTION_ID VERSION --json
 apilot workbench connection resume CONNECTION_ID VERSION --json
 ```
 
-`apilot workbench connection remove CONNECTION_ID` 可删除用户创建的连接及本地快照。默认 Local 连接可用空的 `tasks` 数组清空。GitHub 样例来源只读。Obsidian 可通过 CLI 或 REST 桥接启用回写。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
+任务操作可用 `apilot workbench task operation submit FILE|- --json` 提交 JSON，返回的 `request_id` 可用于 `apilot workbench task operation show REQUEST_ID --json` 查询。回执为待核对时，使用 `apilot workbench task operation reconcile REQUEST_ID --json` 核对原请求；重复提交须使用相同请求 ID 和输入。
+
+`apilot workbench connection remove CONNECTION_ID` 可删除用户创建的连接及本地快照。默认 Local 连接可用空的 `tasks` 数组清空。GitHub 样例来源只读。Obsidian 连接可按需启用回写。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。
 
 在 Obsidian 连接配置中，点 Vault 路径旁的「选择文件夹…」，选择 vault 根目录。将同步范围设为 `.` 可扫描整个 vault。保存后在同步日志查看读取结果。
 
-Obsidian 连接的「读取方式」默认直接读取 Markdown。也可选 Obsidian CLI，或在连接 JSON 中填写 `"read_method":"obsidian_cli"`。使用 CLI 时，启动 Obsidian、开启命令行接口并打开目标 vault；Apilot 会核对 CLI 返回的 vault 路径。CLI 模式按批读取 Markdown。勾选「允许回写」后，可通过 CLI 在指定标题下创建任务、完成或重开任务，无需填写桥接地址、令牌或证书。Apilot 会在 Obsidian 保存时检查原文版本；版本不一致则提示冲突。直接读取 Markdown 也可使用 CLI 回写。已配置 Local REST API 的连接沿用原桥接。扫描开始时显示读取状态，取得笔记总数后显示已读数。直接读取的整轮上限为 30 秒，CLI 读取为 90 秒（单次 CLI 命令最多 15 秒）。超时会标为失败，并保留上次确认的任务。主动取消会记录为已取消。两种结果都可在同步日志查看。
+连接保存后开始同步，来源发生变化时自动更新，也可手动同步。读取失败或超时时保留上次确认的任务，连接日志显示本轮结果。
+
+如需调整高级参数，可在 Apilot 数据目录创建 `obsidian-sync.json`，重启服务后生效。`scan_interval_seconds` 范围为 1–86400，`scan_timeout_seconds` 范围为 1–3600，`max_retries` 范围为 0–100。未填写的字段使用默认策略；文件无效时使用默认值并记录诊断。
 
 Obsidian 任务详情显示文件名、vault 内路径、章节和行号，并可用「在 Obsidian 中打开」打开原笔记。「活动」记录 Apilot 导入任务的时间。任务搜索支持 Obsidian Tasks 的 Emoji 和 Dataview 字段，例如 `file:Release.md`、`scheduled:2026-11-24`、`has:recurrence`、`depends_on:=deploy`。点来源图标只看该连接，再点一次恢复全部来源。
 
@@ -78,17 +79,9 @@ open -n -a Apilot --args --mock
 - CLI 能连上但看不到工作台里的任务时，检查两个进程是否使用同一数据目录。使用自定义目录时，在启动服务、CLI 和 UI 的终端中设定同一个绝对路径。都省略 `APILOT_DATA_DIR` 时，使用当前用户的默认目录。
 - 从 CLI 执行 `apilot doctor --json` 查看所连接服务报告的 `data_dir`。执行 `apilot workbench connection list --json` 可核对连接名称。
 
-### 排查 Obsidian CLI 连接和同步超时
+### 排查 Obsidian 连接
 
-以下命令只读取 vault。将示例中的 `VAULT_NAME` 替换为目标 vault 的名称。
-
-1. 执行 `obsidian vaults`。如果 CLI 无法连接 Obsidian，先保存笔记，再完全退出并重新打开 Obsidian。重试命令。
-2. 执行 `obsidian vault=VAULT_NAME vault info=path`。将返回路径与 Apilot 连接的 Vault 路径比对。有多个 vault 时，后续命令也指定目标 vault。
-3. 执行 `obsidian vault=VAULT_NAME files total`，记录文件枚举耗时。文件总数包含非 Markdown 文件。
-4. 执行 `obsidian vault=VAULT_NAME files ext=md`，统计 Markdown 笔记。用 `obsidian vault=VAULT_NAME read path=PATH.md` 测量小范围内多篇笔记的读取耗时。将 `PATH.md` 替换为 vault 内的相对路径。
-5. 在 Apilot 中同步相同范围。查看已读数和同步日志。小范围成功后再验证整个 vault，记录本轮用时和最后可见进度。超时会记录为失败，并保留上次确认的任务。
-
-如果直接读取报告路径不存在，检查连接保存的 Vault 路径是否指向现有目录。CLI 可访问性通过前两步单独检查。
+检查 vault 和同步范围是否存在，并在连接日志查看失败原因。若回写不可用，确认 Obsidian 正在运行、目标 vault 已打开且已开启命令行接口。小范围同步成功后，可再扩大范围。
 
 ## 管理自动化
 

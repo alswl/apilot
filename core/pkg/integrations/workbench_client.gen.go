@@ -17,6 +17,45 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for WorkbenchAttemptCoverage.
+const (
+	Complete   WorkbenchAttemptCoverage = "complete"
+	Partial    WorkbenchAttemptCoverage = "partial"
+	Unverified WorkbenchAttemptCoverage = "unverified"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchAttemptCoverage enum.
+func (e WorkbenchAttemptCoverage) Valid() bool {
+	switch e {
+	case Complete:
+		return true
+	case Partial:
+		return true
+	case Unverified:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchAttemptScope.
+const (
+	Full  WorkbenchAttemptScope = "full"
+	Notes WorkbenchAttemptScope = "notes"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchAttemptScope enum.
+func (e WorkbenchAttemptScope) Valid() bool {
+	switch e {
+	case Full:
+		return true
+	case Notes:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WorkbenchConnectionInputKind.
 const (
 	GithubIssues  WorkbenchConnectionInputKind = "github_issues"
@@ -110,19 +149,48 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// WorkbenchAnnotation defines model for WorkbenchAnnotation.
+type WorkbenchAnnotation struct {
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at"`
+	Id        string `json:"id"`
+	TaskId    string `json:"task_id"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// WorkbenchAnnotationInputBody defines model for WorkbenchAnnotationInputBody.
+type WorkbenchAnnotationInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchAnnotationInputBody.json
+	Schema *string `json:"$schema,omitempty"`
+	Body   string  `json:"body"`
+}
+
 // WorkbenchAttempt defines model for WorkbenchAttempt.
 type WorkbenchAttempt struct {
-	Added    int64                  `json:"added"`
-	Error    *string                `json:"error,omitempty"`
-	Finished *time.Time             `json:"finished,omitempty"`
-	Id       int64                  `json:"id"`
-	Progress *WorkbenchReadProgress `json:"progress,omitempty"`
-	Removed  int64                  `json:"removed"`
-	Started  time.Time              `json:"started"`
-	State    string                 `json:"state"`
-	Trigger  string                 `json:"trigger"`
-	Updated  int64                  `json:"updated"`
+	Added             int64                     `json:"added"`
+	ConnectionVersion *int64                    `json:"connection_version,omitempty"`
+	Coverage          *WorkbenchAttemptCoverage `json:"coverage,omitempty"`
+	Error             *string                   `json:"error,omitempty"`
+	Finished          *time.Time                `json:"finished,omitempty"`
+	Id                int64                     `json:"id"`
+	Paths             *[]string                 `json:"paths,omitempty"`
+	Progress          *WorkbenchReadProgress    `json:"progress,omitempty"`
+	Removed           int64                     `json:"removed"`
+	Scope             *WorkbenchAttemptScope    `json:"scope,omitempty"`
+	SnapshotVersion   *int64                    `json:"snapshot_version,omitempty"`
+	Started           time.Time                 `json:"started"`
+	State             string                    `json:"state"`
+	Trigger           string                    `json:"trigger"`
+	Updated           int64                     `json:"updated"`
 }
+
+// WorkbenchAttemptCoverage defines model for WorkbenchAttempt.Coverage.
+type WorkbenchAttemptCoverage string
+
+// WorkbenchAttemptScope defines model for WorkbenchAttempt.Scope.
+type WorkbenchAttemptScope string
 
 // WorkbenchCapabilities defines model for WorkbenchCapabilities.
 type WorkbenchCapabilities struct {
@@ -139,21 +207,17 @@ type WorkbenchConnectionInput struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchConnectionInput.json
-	Schema            *string                      `json:"$schema,omitempty"`
-	BridgeCertificate *string                      `json:"bridge_certificate,omitempty"`
-	BridgeEndpoint    *string                      `json:"bridge_endpoint,omitempty"`
-	BridgeToken       *string                      `json:"bridge_token,omitempty"`
-	Id                *string                      `json:"id,omitempty"`
-	Kind              WorkbenchConnectionInputKind `json:"kind"`
-	Mode              *string                      `json:"mode,omitempty"`
-	Name              string                       `json:"name"`
-	ReadMethod        *string                      `json:"read_method,omitempty"`
-	Repository        *string                      `json:"repository,omitempty"`
-	Scope             *string                      `json:"scope,omitempty"`
-	Statuses          *map[string]string           `json:"statuses,omitempty"`
-	Vault             *string                      `json:"vault,omitempty"`
-	Version           *int64                       `json:"version,omitempty"`
-	WriteEnabled      *bool                        `json:"write_enabled,omitempty"`
+	Schema       *string                      `json:"$schema,omitempty"`
+	Id           *string                      `json:"id,omitempty"`
+	Kind         WorkbenchConnectionInputKind `json:"kind"`
+	Mode         *string                      `json:"mode,omitempty"`
+	Name         string                       `json:"name"`
+	Repository   *string                      `json:"repository,omitempty"`
+	Scope        *string                      `json:"scope,omitempty"`
+	Statuses     *map[string]string           `json:"statuses,omitempty"`
+	Vault        *string                      `json:"vault,omitempty"`
+	Version      *int64                       `json:"version,omitempty"`
+	WriteEnabled *bool                        `json:"write_enabled,omitempty"`
 }
 
 // WorkbenchConnectionInputKind defines model for WorkbenchConnectionInput.Kind.
@@ -205,6 +269,15 @@ type WorkbenchImportTask struct {
 	Title   string  `json:"title"`
 }
 
+// WorkbenchItemsWorkbenchAnnotation defines model for WorkbenchItemsWorkbenchAnnotation.
+type WorkbenchItemsWorkbenchAnnotation struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchItemsWorkbenchAnnotation.json
+	Schema *string                `json:"$schema,omitempty"`
+	Items  *[]WorkbenchAnnotation `json:"items"`
+}
+
 // WorkbenchItemsWorkbenchConnector defines model for WorkbenchItemsWorkbenchConnector.
 type WorkbenchItemsWorkbenchConnector struct {
 	// Schema A URL to the JSON Schema for this object.
@@ -221,6 +294,15 @@ type WorkbenchItemsWorkbenchHeading struct {
 	// Examples: http://apilot/schemas/WorkbenchItemsWorkbenchHeading.json
 	Schema *string             `json:"$schema,omitempty"`
 	Items  *[]WorkbenchHeading `json:"items"`
+}
+
+// WorkbenchItemsWorkbenchLabel defines model for WorkbenchItemsWorkbenchLabel.
+type WorkbenchItemsWorkbenchLabel struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchItemsWorkbenchLabel.json
+	Schema *string           `json:"$schema,omitempty"`
+	Items  *[]WorkbenchLabel `json:"items"`
 }
 
 // WorkbenchItemsWorkbenchNote defines model for WorkbenchItemsWorkbenchNote.
@@ -248,6 +330,21 @@ type WorkbenchItemsWorkbenchSnapshot struct {
 	// Examples: http://apilot/schemas/WorkbenchItemsWorkbenchSnapshot.json
 	Schema *string              `json:"$schema,omitempty"`
 	Items  *[]WorkbenchSnapshot `json:"items"`
+}
+
+// WorkbenchLabel defines model for WorkbenchLabel.
+type WorkbenchLabel struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// WorkbenchLabelsInputBody defines model for WorkbenchLabelsInputBody.
+type WorkbenchLabelsInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchLabelsInputBody.json
+	Schema *string   `json:"$schema,omitempty"`
+	Names  *[]string `json:"names"`
 }
 
 // WorkbenchNote defines model for WorkbenchNote.
@@ -316,25 +413,23 @@ type WorkbenchSnapshot struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchSnapshot.json
-	Schema           *string                 `json:"$schema,omitempty"`
-	Attempts         *[]WorkbenchAttempt     `json:"attempts"`
-	BridgeConfigured *bool                   `json:"bridge_configured,omitempty"`
-	Capabilities     WorkbenchCapabilities   `json:"capabilities"`
-	Id               string                  `json:"id"`
-	Kind             string                  `json:"kind"`
-	LastSuccess      *time.Time              `json:"last_success,omitempty"`
-	Mode             string                  `json:"mode"`
-	Name             string                  `json:"name"`
-	Paused           *bool                   `json:"paused,omitempty"`
-	PendingWrites    *[]WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
-	PluginDisabled   *bool                   `json:"plugin_disabled,omitempty"`
-	ReadMethod       *string                 `json:"read_method,omitempty"`
-	Repository       *string                 `json:"repository,omitempty"`
-	Scope            *string                 `json:"scope,omitempty"`
-	Statuses         *map[string]string      `json:"statuses,omitempty"`
-	Vault            *string                 `json:"vault,omitempty"`
-	Version          int64                   `json:"version"`
-	WriteEnabled     *bool                   `json:"write_enabled,omitempty"`
+	Schema         *string                 `json:"$schema,omitempty"`
+	Attempts       *[]WorkbenchAttempt     `json:"attempts"`
+	Capabilities   WorkbenchCapabilities   `json:"capabilities"`
+	Id             string                  `json:"id"`
+	Kind           string                  `json:"kind"`
+	LastSuccess    *time.Time              `json:"last_success,omitempty"`
+	Mode           string                  `json:"mode"`
+	Name           string                  `json:"name"`
+	Paused         *bool                   `json:"paused,omitempty"`
+	PendingWrites  *[]WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
+	PluginDisabled *bool                   `json:"plugin_disabled,omitempty"`
+	Repository     *string                 `json:"repository,omitempty"`
+	Scope          *string                 `json:"scope,omitempty"`
+	Statuses       *map[string]string      `json:"statuses,omitempty"`
+	Vault          *string                 `json:"vault,omitempty"`
+	Version        int64                   `json:"version"`
+	WriteEnabled   *bool                   `json:"write_enabled,omitempty"`
 }
 
 // WorkbenchSyncResult defines model for WorkbenchSyncResult.
@@ -370,6 +465,7 @@ type WorkbenchTask struct {
 	Summary           string                   `json:"summary"`
 	TargetVersion     *string                  `json:"target_version,omitempty"`
 	Title             string                   `json:"title"`
+	WorkbenchLabels   *[]WorkbenchLabel        `json:"workbench_labels,omitempty"`
 }
 
 // WorkbenchTaskEvent defines model for WorkbenchTaskEvent.
@@ -424,6 +520,7 @@ type ListWorkbenchHeadingsParams struct {
 
 // ListWorkbenchTasksParams defines parameters for ListWorkbenchTasks.
 type ListWorkbenchTasksParams struct {
+	LabelId    *string                        `form:"label_id,omitempty" json:"label_id,omitempty"`
 	Connection *string                        `form:"connection,omitempty" json:"connection,omitempty"`
 	State      *ListWorkbenchTasksParamsState `form:"state,omitempty" json:"state,omitempty"`
 	Offset     *int64                         `form:"offset,omitempty" json:"offset,omitempty"`
@@ -443,11 +540,20 @@ type PauseWorkbenchConnectionJSONRequestBody = WorkbenchPauseInputBody
 // SetWorkbenchPluginEnabledJSONRequestBody defines body for SetWorkbenchPluginEnabled for application/json ContentType.
 type SetWorkbenchPluginEnabledJSONRequestBody = WorkbenchPluginInputBody
 
+// SubmitWorkbenchTaskOperationJSONRequestBody defines body for SubmitWorkbenchTaskOperation for application/json ContentType.
+type SubmitWorkbenchTaskOperationJSONRequestBody = WorkbenchTaskWrite
+
 // CreateWorkbenchTaskJSONRequestBody defines body for CreateWorkbenchTask for application/json ContentType.
 type CreateWorkbenchTaskJSONRequestBody = WorkbenchTaskWrite
 
 // ImportWorkbenchTasksJSONRequestBody defines body for ImportWorkbenchTasks for application/json ContentType.
 type ImportWorkbenchTasksJSONRequestBody = WorkbenchImport
+
+// PutWorkbenchAnnotationJSONRequestBody defines body for PutWorkbenchAnnotation for application/json ContentType.
+type PutWorkbenchAnnotationJSONRequestBody = WorkbenchAnnotationInputBody
+
+// SetWorkbenchLabelsJSONRequestBody defines body for SetWorkbenchLabels for application/json ContentType.
+type SetWorkbenchLabelsJSONRequestBody = WorkbenchLabelsInputBody
 
 // SetWorkbenchTaskStateJSONRequestBody defines body for SetWorkbenchTaskState for application/json ContentType.
 type SetWorkbenchTaskStateJSONRequestBody = WorkbenchTaskWrite
@@ -609,6 +715,11 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 	ListWorkbenchConnectors(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListWorkbenchLabels List local task labels
+	//
+	// Corresponds with GET /v1/workbench/labels (the `ListWorkbenchLabels` operationId).
+	ListWorkbenchLabels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListWorkbenchPlugins List source plugins
 	//
 	// Corresponds with GET /v1/workbench/plugins (the `ListWorkbenchPlugins` operationId).
@@ -627,6 +738,30 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /v1/workbench/plugins/{id}/enabled (the `SetWorkbenchPluginEnabled` operationId).
 	SetWorkbenchPluginEnabled(ctx context.Context, id string, body SetWorkbenchPluginEnabledJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitWorkbenchTaskOperationWithBody Accept a task operation
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+	SubmitWorkbenchTaskOperationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubmitWorkbenchTaskOperation Accept a task operation
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+	SubmitWorkbenchTaskOperation(ctx context.Context, body SubmitWorkbenchTaskOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkbenchTaskOperation Read a task operation receipt
+	//
+	// Corresponds with GET /v1/workbench/task-operations/{request_id} (the `GetWorkbenchTaskOperation` operationId).
+	GetWorkbenchTaskOperation(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReconcileWorkbenchTaskOperation Check the original task operation against its source
+	//
+	// Corresponds with POST /v1/workbench/task-operations/{request_id}/reconcile (the `ReconcileWorkbenchTaskOperation` operationId).
+	ReconcileWorkbenchTaskOperation(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListWorkbenchTasks Search the committed task snapshot
 	//
@@ -665,6 +800,44 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/workbench/tasks/{id} (the `GetWorkbenchTask` operationId).
 	GetWorkbenchTask(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkbenchAnnotations List local task annotations
+	//
+	// Corresponds with GET /v1/workbench/tasks/{id}/annotations (the `ListWorkbenchAnnotations` operationId).
+	ListWorkbenchAnnotations(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteWorkbenchAnnotation Delete a local task annotation
+	//
+	// Corresponds with DELETE /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `DeleteWorkbenchAnnotation` operationId).
+	DeleteWorkbenchAnnotation(ctx context.Context, id string, annotationId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutWorkbenchAnnotationWithBody Save a local task annotation
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+	PutWorkbenchAnnotationWithBody(ctx context.Context, id string, annotationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutWorkbenchAnnotation Save a local task annotation
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+	PutWorkbenchAnnotation(ctx context.Context, id string, annotationId string, body PutWorkbenchAnnotationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetWorkbenchLabelsWithBody Set local task labels
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+	SetWorkbenchLabelsWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetWorkbenchLabels Set local task labels
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+	SetWorkbenchLabels(ctx context.Context, id string, body SetWorkbenchLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetWorkbenchTaskStateWithBody Set a task state
 	//
@@ -914,6 +1087,21 @@ func (c *Client) ListWorkbenchConnectors(ctx context.Context, reqEditors ...Requ
 	return c.Client.Do(req)
 }
 
+// ListWorkbenchLabels List local task labels
+//
+// Corresponds with GET /v1/workbench/labels (the `ListWorkbenchLabels` operationId).
+func (c *Client) ListWorkbenchLabels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkbenchLabelsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListWorkbenchPlugins List source plugins
 //
 // Corresponds with GET /v1/workbench/plugins (the `ListWorkbenchPlugins` operationId).
@@ -953,6 +1141,70 @@ func (c *Client) SetWorkbenchPluginEnabledWithBody(ctx context.Context, id strin
 // Corresponds with PUT /v1/workbench/plugins/{id}/enabled (the `SetWorkbenchPluginEnabled` operationId).
 func (c *Client) SetWorkbenchPluginEnabled(ctx context.Context, id string, body SetWorkbenchPluginEnabledJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSetWorkbenchPluginEnabledRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitWorkbenchTaskOperationWithBody Accept a task operation
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+func (c *Client) SubmitWorkbenchTaskOperationWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitWorkbenchTaskOperationRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubmitWorkbenchTaskOperation Accept a task operation
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+func (c *Client) SubmitWorkbenchTaskOperation(ctx context.Context, body SubmitWorkbenchTaskOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubmitWorkbenchTaskOperationRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkbenchTaskOperation Read a task operation receipt
+//
+// Corresponds with GET /v1/workbench/task-operations/{request_id} (the `GetWorkbenchTaskOperation` operationId).
+func (c *Client) GetWorkbenchTaskOperation(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkbenchTaskOperationRequest(c.Server, requestId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReconcileWorkbenchTaskOperation Check the original task operation against its source
+//
+// Corresponds with POST /v1/workbench/task-operations/{request_id}/reconcile (the `ReconcileWorkbenchTaskOperation` operationId).
+func (c *Client) ReconcileWorkbenchTaskOperation(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReconcileWorkbenchTaskOperationRequest(c.Server, requestId)
 	if err != nil {
 		return nil, err
 	}
@@ -1051,6 +1303,104 @@ func (c *Client) ImportWorkbenchTasks(ctx context.Context, body ImportWorkbenchT
 // Corresponds with GET /v1/workbench/tasks/{id} (the `GetWorkbenchTask` operationId).
 func (c *Client) GetWorkbenchTask(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkbenchTaskRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListWorkbenchAnnotations List local task annotations
+//
+// Corresponds with GET /v1/workbench/tasks/{id}/annotations (the `ListWorkbenchAnnotations` operationId).
+func (c *Client) ListWorkbenchAnnotations(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkbenchAnnotationsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteWorkbenchAnnotation Delete a local task annotation
+//
+// Corresponds with DELETE /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `DeleteWorkbenchAnnotation` operationId).
+func (c *Client) DeleteWorkbenchAnnotation(ctx context.Context, id string, annotationId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteWorkbenchAnnotationRequest(c.Server, id, annotationId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutWorkbenchAnnotationWithBody Save a local task annotation
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+func (c *Client) PutWorkbenchAnnotationWithBody(ctx context.Context, id string, annotationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutWorkbenchAnnotationRequestWithBody(c.Server, id, annotationId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutWorkbenchAnnotation Save a local task annotation
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+func (c *Client) PutWorkbenchAnnotation(ctx context.Context, id string, annotationId string, body PutWorkbenchAnnotationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutWorkbenchAnnotationRequest(c.Server, id, annotationId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetWorkbenchLabelsWithBody Set local task labels
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+func (c *Client) SetWorkbenchLabelsWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorkbenchLabelsRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetWorkbenchLabels Set local task labels
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+func (c *Client) SetWorkbenchLabels(ctx context.Context, id string, body SetWorkbenchLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetWorkbenchLabelsRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1558,6 +1908,33 @@ func NewListWorkbenchConnectorsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListWorkbenchLabelsRequest constructs an http.Request for the ListWorkbenchLabels method
+func NewListWorkbenchLabelsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/labels")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListWorkbenchPluginsRequest constructs an http.Request for the ListWorkbenchPlugins method
 func NewListWorkbenchPluginsRequest(server string) (*http.Request, error) {
 	var err error
@@ -1632,6 +2009,114 @@ func NewSetWorkbenchPluginEnabledRequestWithBody(server string, id string, conte
 	return req, nil
 }
 
+// NewSubmitWorkbenchTaskOperationRequest calls the generic SubmitWorkbenchTaskOperation builder with application/json body
+func NewSubmitWorkbenchTaskOperationRequest(server string, body SubmitWorkbenchTaskOperationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubmitWorkbenchTaskOperationRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSubmitWorkbenchTaskOperationRequestWithBody constructs an http.Request for the SubmitWorkbenchTaskOperation method, with any body, and a specified content type
+func NewSubmitWorkbenchTaskOperationRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/task-operations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetWorkbenchTaskOperationRequest constructs an http.Request for the GetWorkbenchTaskOperation method
+func NewGetWorkbenchTaskOperationRequest(server string, requestId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "request_id", requestId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/task-operations/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewReconcileWorkbenchTaskOperationRequest constructs an http.Request for the ReconcileWorkbenchTaskOperation method
+func NewReconcileWorkbenchTaskOperationRequest(server string, requestId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "request_id", requestId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/task-operations/%s/reconcile", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListWorkbenchTasksRequest constructs an http.Request for the ListWorkbenchTasks method
 func NewListWorkbenchTasksRequest(server string, params *ListWorkbenchTasksParams) (*http.Request, error) {
 	var err error
@@ -1659,6 +2144,18 @@ func NewListWorkbenchTasksRequest(server string, params *ListWorkbenchTasksParam
 		// styled parameters, preserving literal commas as delimiters
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
+
+		if params.LabelId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "label_id", *params.LabelId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
 
 		if params.Connection != nil {
 
@@ -1844,6 +2341,182 @@ func NewGetWorkbenchTaskRequest(server string, id string) (*http.Request, error)
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewListWorkbenchAnnotationsRequest constructs an http.Request for the ListWorkbenchAnnotations method
+func NewListWorkbenchAnnotationsRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/tasks/%s/annotations", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteWorkbenchAnnotationRequest constructs an http.Request for the DeleteWorkbenchAnnotation method
+func NewDeleteWorkbenchAnnotationRequest(server string, id string, annotationId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "annotation_id", annotationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/tasks/%s/annotations/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutWorkbenchAnnotationRequest calls the generic PutWorkbenchAnnotation builder with application/json body
+func NewPutWorkbenchAnnotationRequest(server string, id string, annotationId string, body PutWorkbenchAnnotationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutWorkbenchAnnotationRequestWithBody(server, id, annotationId, "application/json", bodyReader)
+}
+
+// NewPutWorkbenchAnnotationRequestWithBody constructs an http.Request for the PutWorkbenchAnnotation method, with any body, and a specified content type
+func NewPutWorkbenchAnnotationRequestWithBody(server string, id string, annotationId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "annotation_id", annotationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/tasks/%s/annotations/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetWorkbenchLabelsRequest calls the generic SetWorkbenchLabels builder with application/json body
+func NewSetWorkbenchLabelsRequest(server string, id string, body SetWorkbenchLabelsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetWorkbenchLabelsRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewSetWorkbenchLabelsRequestWithBody constructs an http.Request for the SetWorkbenchLabels method, with any body, and a specified content type
+func NewSetWorkbenchLabelsRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/tasks/%s/labels", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -2044,6 +2717,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 	ListWorkbenchConnectorsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkbenchConnectorsResponse, error)
 
+	// ListWorkbenchLabelsWithResponse List local task labels
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/labels (the `ListWorkbenchLabels` operationId).
+	ListWorkbenchLabelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkbenchLabelsResponse, error)
+
 	// ListWorkbenchPluginsWithResponse List source plugins
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -2064,6 +2744,34 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /v1/workbench/plugins/{id}/enabled (the `SetWorkbenchPluginEnabled` operationId).
 	SetWorkbenchPluginEnabledWithResponse(ctx context.Context, id string, body SetWorkbenchPluginEnabledJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorkbenchPluginEnabledResponse, error)
+
+	// SubmitWorkbenchTaskOperationWithBodyWithResponse Accept a task operation
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+	SubmitWorkbenchTaskOperationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitWorkbenchTaskOperationResponse, error)
+
+	// SubmitWorkbenchTaskOperationWithResponse Accept a task operation
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+	SubmitWorkbenchTaskOperationWithResponse(ctx context.Context, body SubmitWorkbenchTaskOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitWorkbenchTaskOperationResponse, error)
+
+	// GetWorkbenchTaskOperationWithResponse Read a task operation receipt
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/task-operations/{request_id} (the `GetWorkbenchTaskOperation` operationId).
+	GetWorkbenchTaskOperationWithResponse(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*GetWorkbenchTaskOperationResponse, error)
+
+	// ReconcileWorkbenchTaskOperationWithResponse Check the original task operation against its source
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/task-operations/{request_id}/reconcile (the `ReconcileWorkbenchTaskOperation` operationId).
+	ReconcileWorkbenchTaskOperationWithResponse(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*ReconcileWorkbenchTaskOperationResponse, error)
 
 	// ListWorkbenchTasksWithResponse Search the committed task snapshot
 	//
@@ -2106,6 +2814,48 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/workbench/tasks/{id} (the `GetWorkbenchTask` operationId).
 	GetWorkbenchTaskWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkbenchTaskResponse, error)
+
+	// ListWorkbenchAnnotationsWithResponse List local task annotations
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/tasks/{id}/annotations (the `ListWorkbenchAnnotations` operationId).
+	ListWorkbenchAnnotationsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkbenchAnnotationsResponse, error)
+
+	// DeleteWorkbenchAnnotationWithResponse Delete a local task annotation
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `DeleteWorkbenchAnnotation` operationId).
+	DeleteWorkbenchAnnotationWithResponse(ctx context.Context, id string, annotationId string, reqEditors ...RequestEditorFn) (*DeleteWorkbenchAnnotationResponse, error)
+
+	// PutWorkbenchAnnotationWithBodyWithResponse Save a local task annotation
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+	PutWorkbenchAnnotationWithBodyWithResponse(ctx context.Context, id string, annotationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutWorkbenchAnnotationResponse, error)
+
+	// PutWorkbenchAnnotationWithResponse Save a local task annotation
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+	PutWorkbenchAnnotationWithResponse(ctx context.Context, id string, annotationId string, body PutWorkbenchAnnotationJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkbenchAnnotationResponse, error)
+
+	// SetWorkbenchLabelsWithBodyWithResponse Set local task labels
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+	SetWorkbenchLabelsWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkbenchLabelsResponse, error)
+
+	// SetWorkbenchLabelsWithResponse Set local task labels
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+	SetWorkbenchLabelsWithResponse(ctx context.Context, id string, body SetWorkbenchLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorkbenchLabelsResponse, error)
 
 	// SetWorkbenchTaskStateWithBodyWithResponse Set a task state
 	//
@@ -2963,6 +3713,54 @@ func (r ListWorkbenchConnectorsResponse) ContentType() string {
 	return ""
 }
 
+type ListWorkbenchLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchItemsWorkbenchLabel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWorkbenchLabelsResponse) GetJSON200() *WorkbenchItemsWorkbenchLabel {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r ListWorkbenchLabelsResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWorkbenchLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkbenchLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkbenchLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWorkbenchLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListWorkbenchPluginsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -3074,6 +3872,213 @@ func (r SetWorkbenchPluginEnabledResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SetWorkbenchPluginEnabledResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SubmitWorkbenchTaskOperationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchTaskReceipt
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SubmitWorkbenchTaskOperationResponse) GetJSON200() *WorkbenchTaskReceipt {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r SubmitWorkbenchTaskOperationResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r SubmitWorkbenchTaskOperationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r SubmitWorkbenchTaskOperationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r SubmitWorkbenchTaskOperationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r SubmitWorkbenchTaskOperationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r SubmitWorkbenchTaskOperationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SubmitWorkbenchTaskOperationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubmitWorkbenchTaskOperationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SubmitWorkbenchTaskOperationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetWorkbenchTaskOperationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchTaskReceipt
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkbenchTaskOperationResponse) GetJSON200() *WorkbenchTaskReceipt {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetWorkbenchTaskOperationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r GetWorkbenchTaskOperationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r GetWorkbenchTaskOperationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkbenchTaskOperationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkbenchTaskOperationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkbenchTaskOperationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkbenchTaskOperationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReconcileWorkbenchTaskOperationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchTaskReceipt
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ReconcileWorkbenchTaskOperationResponse) GetJSON200() *WorkbenchTaskReceipt {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r ReconcileWorkbenchTaskOperationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r ReconcileWorkbenchTaskOperationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r ReconcileWorkbenchTaskOperationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r ReconcileWorkbenchTaskOperationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ReconcileWorkbenchTaskOperationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReconcileWorkbenchTaskOperationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReconcileWorkbenchTaskOperationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReconcileWorkbenchTaskOperationResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -3356,6 +4361,275 @@ func (r GetWorkbenchTaskResponse) ContentType() string {
 	return ""
 }
 
+type ListWorkbenchAnnotationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchItemsWorkbenchAnnotation
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWorkbenchAnnotationsResponse) GetJSON200() *WorkbenchItemsWorkbenchAnnotation {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r ListWorkbenchAnnotationsResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r ListWorkbenchAnnotationsResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r ListWorkbenchAnnotationsResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWorkbenchAnnotationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkbenchAnnotationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkbenchAnnotationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWorkbenchAnnotationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteWorkbenchAnnotationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchResultID
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DeleteWorkbenchAnnotationResponse) GetJSON200() *WorkbenchResultID {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r DeleteWorkbenchAnnotationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r DeleteWorkbenchAnnotationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r DeleteWorkbenchAnnotationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteWorkbenchAnnotationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteWorkbenchAnnotationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteWorkbenchAnnotationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteWorkbenchAnnotationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PutWorkbenchAnnotationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchResultID
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutWorkbenchAnnotationResponse) GetJSON200() *WorkbenchResultID {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r PutWorkbenchAnnotationResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r PutWorkbenchAnnotationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r PutWorkbenchAnnotationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r PutWorkbenchAnnotationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r PutWorkbenchAnnotationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r PutWorkbenchAnnotationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutWorkbenchAnnotationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutWorkbenchAnnotationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutWorkbenchAnnotationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetWorkbenchLabelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchResultID
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetWorkbenchLabelsResponse) GetJSON200() *WorkbenchResultID {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r SetWorkbenchLabelsResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r SetWorkbenchLabelsResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r SetWorkbenchLabelsResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r SetWorkbenchLabelsResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r SetWorkbenchLabelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetWorkbenchLabelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetWorkbenchLabelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetWorkbenchLabelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type SetWorkbenchTaskStateResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -3627,6 +4901,19 @@ func (c *ClientWithResponses) ListWorkbenchConnectorsWithResponse(ctx context.Co
 	return ParseListWorkbenchConnectorsResponse(rsp)
 }
 
+// ListWorkbenchLabelsWithResponse List local task labels
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/labels (the `ListWorkbenchLabels` operationId).
+func (c *ClientWithResponses) ListWorkbenchLabelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkbenchLabelsResponse, error) {
+	rsp, err := c.ListWorkbenchLabels(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkbenchLabelsResponse(rsp)
+}
+
 // ListWorkbenchPluginsWithResponse List source plugins
 //
 // Returns a wrapper object for the known response body format(s).
@@ -3664,6 +4951,58 @@ func (c *ClientWithResponses) SetWorkbenchPluginEnabledWithResponse(ctx context.
 		return nil, err
 	}
 	return ParseSetWorkbenchPluginEnabledResponse(rsp)
+}
+
+// SubmitWorkbenchTaskOperationWithBodyWithResponse Accept a task operation
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+func (c *ClientWithResponses) SubmitWorkbenchTaskOperationWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubmitWorkbenchTaskOperationResponse, error) {
+	rsp, err := c.SubmitWorkbenchTaskOperationWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitWorkbenchTaskOperationResponse(rsp)
+}
+
+// SubmitWorkbenchTaskOperationWithResponse Accept a task operation
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/task-operations (the `SubmitWorkbenchTaskOperation` operationId).
+func (c *ClientWithResponses) SubmitWorkbenchTaskOperationWithResponse(ctx context.Context, body SubmitWorkbenchTaskOperationJSONRequestBody, reqEditors ...RequestEditorFn) (*SubmitWorkbenchTaskOperationResponse, error) {
+	rsp, err := c.SubmitWorkbenchTaskOperation(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubmitWorkbenchTaskOperationResponse(rsp)
+}
+
+// GetWorkbenchTaskOperationWithResponse Read a task operation receipt
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/task-operations/{request_id} (the `GetWorkbenchTaskOperation` operationId).
+func (c *ClientWithResponses) GetWorkbenchTaskOperationWithResponse(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*GetWorkbenchTaskOperationResponse, error) {
+	rsp, err := c.GetWorkbenchTaskOperation(ctx, requestId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkbenchTaskOperationResponse(rsp)
+}
+
+// ReconcileWorkbenchTaskOperationWithResponse Check the original task operation against its source
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/task-operations/{request_id}/reconcile (the `ReconcileWorkbenchTaskOperation` operationId).
+func (c *ClientWithResponses) ReconcileWorkbenchTaskOperationWithResponse(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*ReconcileWorkbenchTaskOperationResponse, error) {
+	rsp, err := c.ReconcileWorkbenchTaskOperation(ctx, requestId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReconcileWorkbenchTaskOperationResponse(rsp)
 }
 
 // ListWorkbenchTasksWithResponse Search the committed task snapshot
@@ -3742,6 +5081,84 @@ func (c *ClientWithResponses) GetWorkbenchTaskWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseGetWorkbenchTaskResponse(rsp)
+}
+
+// ListWorkbenchAnnotationsWithResponse List local task annotations
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/tasks/{id}/annotations (the `ListWorkbenchAnnotations` operationId).
+func (c *ClientWithResponses) ListWorkbenchAnnotationsWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*ListWorkbenchAnnotationsResponse, error) {
+	rsp, err := c.ListWorkbenchAnnotations(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkbenchAnnotationsResponse(rsp)
+}
+
+// DeleteWorkbenchAnnotationWithResponse Delete a local task annotation
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `DeleteWorkbenchAnnotation` operationId).
+func (c *ClientWithResponses) DeleteWorkbenchAnnotationWithResponse(ctx context.Context, id string, annotationId string, reqEditors ...RequestEditorFn) (*DeleteWorkbenchAnnotationResponse, error) {
+	rsp, err := c.DeleteWorkbenchAnnotation(ctx, id, annotationId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteWorkbenchAnnotationResponse(rsp)
+}
+
+// PutWorkbenchAnnotationWithBodyWithResponse Save a local task annotation
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+func (c *ClientWithResponses) PutWorkbenchAnnotationWithBodyWithResponse(ctx context.Context, id string, annotationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutWorkbenchAnnotationResponse, error) {
+	rsp, err := c.PutWorkbenchAnnotationWithBody(ctx, id, annotationId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutWorkbenchAnnotationResponse(rsp)
+}
+
+// PutWorkbenchAnnotationWithResponse Save a local task annotation
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/annotations/{annotation_id} (the `PutWorkbenchAnnotation` operationId).
+func (c *ClientWithResponses) PutWorkbenchAnnotationWithResponse(ctx context.Context, id string, annotationId string, body PutWorkbenchAnnotationJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkbenchAnnotationResponse, error) {
+	rsp, err := c.PutWorkbenchAnnotation(ctx, id, annotationId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutWorkbenchAnnotationResponse(rsp)
+}
+
+// SetWorkbenchLabelsWithBodyWithResponse Set local task labels
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+func (c *ClientWithResponses) SetWorkbenchLabelsWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetWorkbenchLabelsResponse, error) {
+	rsp, err := c.SetWorkbenchLabelsWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorkbenchLabelsResponse(rsp)
+}
+
+// SetWorkbenchLabelsWithResponse Set local task labels
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/workbench/tasks/{id}/labels (the `SetWorkbenchLabels` operationId).
+func (c *ClientWithResponses) SetWorkbenchLabelsWithResponse(ctx context.Context, id string, body SetWorkbenchLabelsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetWorkbenchLabelsResponse, error) {
+	rsp, err := c.SetWorkbenchLabels(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetWorkbenchLabelsResponse(rsp)
 }
 
 // SetWorkbenchTaskStateWithBodyWithResponse Set a task state
@@ -4416,6 +5833,39 @@ func ParseListWorkbenchConnectorsResponse(rsp *http.Response) (*ListWorkbenchCon
 	return response, nil
 }
 
+// ParseListWorkbenchLabelsResponse parses an HTTP response from a ListWorkbenchLabelsWithResponse call
+func ParseListWorkbenchLabelsResponse(rsp *http.Response) (*ListWorkbenchLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkbenchLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchItemsWorkbenchLabel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListWorkbenchPluginsResponse parses an HTTP response from a ListWorkbenchPluginsWithResponse call
 func ParseListWorkbenchPluginsResponse(rsp *http.Response) (*ListWorkbenchPluginsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -4476,6 +5926,168 @@ func ParseSetWorkbenchPluginEnabledResponse(rsp *http.Response) (*SetWorkbenchPl
 			return nil, err
 		}
 		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubmitWorkbenchTaskOperationResponse parses an HTTP response from a SubmitWorkbenchTaskOperationWithResponse call
+func ParseSubmitWorkbenchTaskOperationResponse(rsp *http.Response) (*SubmitWorkbenchTaskOperationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubmitWorkbenchTaskOperationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchTaskReceipt
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkbenchTaskOperationResponse parses an HTTP response from a GetWorkbenchTaskOperationWithResponse call
+func ParseGetWorkbenchTaskOperationResponse(rsp *http.Response) (*GetWorkbenchTaskOperationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkbenchTaskOperationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchTaskReceipt
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReconcileWorkbenchTaskOperationResponse parses an HTTP response from a ReconcileWorkbenchTaskOperationWithResponse call
+func ParseReconcileWorkbenchTaskOperationResponse(rsp *http.Response) (*ReconcileWorkbenchTaskOperationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReconcileWorkbenchTaskOperationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchTaskReceipt
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest ErrorModel
@@ -4692,6 +6304,215 @@ func ParseGetWorkbenchTaskResponse(rsp *http.Response) (*GetWorkbenchTaskRespons
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkbenchAnnotationsResponse parses an HTTP response from a ListWorkbenchAnnotationsWithResponse call
+func ParseListWorkbenchAnnotationsResponse(rsp *http.Response) (*ListWorkbenchAnnotationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkbenchAnnotationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchItemsWorkbenchAnnotation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteWorkbenchAnnotationResponse parses an HTTP response from a DeleteWorkbenchAnnotationWithResponse call
+func ParseDeleteWorkbenchAnnotationResponse(rsp *http.Response) (*DeleteWorkbenchAnnotationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteWorkbenchAnnotationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchResultID
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePutWorkbenchAnnotationResponse parses an HTTP response from a PutWorkbenchAnnotationWithResponse call
+func ParsePutWorkbenchAnnotationResponse(rsp *http.Response) (*PutWorkbenchAnnotationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutWorkbenchAnnotationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchResultID
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetWorkbenchLabelsResponse parses an HTTP response from a SetWorkbenchLabelsWithResponse call
+func ParseSetWorkbenchLabelsResponse(rsp *http.Response) (*SetWorkbenchLabelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetWorkbenchLabelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchResultID
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorModel
