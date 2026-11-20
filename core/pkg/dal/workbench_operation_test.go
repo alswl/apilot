@@ -1,12 +1,53 @@
 package dal
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
 )
+
+func TestWorkbenchPendingWritesIncludesAllActiveOperations(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "data.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	connection := common.WorkbenchConnection{ID: "vault", Version: 1}
+	if err := store.SaveWorkbench(connection, false); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 50 {
+		input := common.WorkbenchTaskWrite{RequestID: fmt.Sprintf("request-%02d", i), ConnectionID: connection.ID, ConnectionVersion: 1, Title: "Task"}
+		op, _, err := store.AdmitWorkbenchTaskOperation(input, connection.ID, input.RequestID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i >= 25 {
+			op.Receipt.SyncState = common.WorkbenchOperationConflict
+			if err := store.AdvanceWorkbenchTaskOperation(input.RequestID, common.WorkbenchOperationAccepted, common.WorkbenchOperationConflict, op.Receipt); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	pending, err := store.WorkbenchPendingWrites(connection.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var active, conflicts int
+	for _, receipt := range pending {
+		if receipt.SyncState == common.WorkbenchOperationAccepted {
+			active++
+		} else if receipt.SyncState == common.WorkbenchOperationConflict {
+			conflicts++
+		}
+	}
+	if active != 25 || conflicts != 20 {
+		t.Fatalf("active=%d conflicts=%d; all active operations and only recent conflicts should be returned", active, conflicts)
+	}
+}
 
 func TestWorkbenchOperationAdmissionAndRecovery(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")

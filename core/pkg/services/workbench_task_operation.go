@@ -48,6 +48,9 @@ func (s *Service) SubmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) 
 		}
 		if existing.Phase == common.WorkbenchOperationAccepted && connection.Kind == common.WorkbenchObsidianTasks {
 			s.scheduleWorkbenchOperation(input.RequestID)
+		} else if existing.Phase == common.WorkbenchOperationNeedsReview && connection.Kind == common.WorkbenchObsidianTasks {
+			s.scheduleWorkbenchReconciliation(input.RequestID)
+			return s.WorkbenchTaskOperationReceipt(input.RequestID)
 		}
 		return existing.Receipt, nil
 	}
@@ -141,6 +144,12 @@ func (s *Service) WorkbenchTaskOperationReceipt(requestID string) (common.Workbe
 	}
 	if _, err := s.WorkbenchSnapshot(op.Receipt.ConnectionID); err != nil {
 		return common.WorkbenchTaskReceipt{}, err
+	}
+	s.mu.Lock()
+	running := s.operationRunning[requestID]
+	s.mu.Unlock()
+	if running && op.Receipt.SyncState == common.WorkbenchOperationNeedsReview {
+		op.Receipt.SyncState = common.WorkbenchOperationDispatching
 	}
 	return op.Receipt, nil
 }

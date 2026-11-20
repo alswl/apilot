@@ -146,6 +146,7 @@ func (s *Service) writeLocalWorkbenchTask(_ workbenchStore, writer workbenchTask
 		}
 		before = []common.WorkbenchTask{task}
 		task.State = input.State
+		recordWorkbenchStateChange(before[0], &task, now)
 		fields := make(map[string]string, len(task.NativeFields)+1)
 		for key, value := range task.NativeFields {
 			fields[key] = value

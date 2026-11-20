@@ -9,6 +9,7 @@ import (
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/services"
 	"github.com/alswl/apilot/desktop/internal/ui/components"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -72,7 +73,7 @@ func dateForEditor(value string) string {
 }
 
 func (m *mockup) sourceWritePending(id string) bool {
-	return m.pendingTaskEdits[id] || (id == m.mutation.SourceObject && m.mutation.Status == "queued")
+	return m.pendingTaskEdits[id] || workbenchOperationInProgress(m.serverTaskOperations[id].SyncState) || (id == m.mutation.SourceObject && m.mutation.Status == "queued")
 }
 
 func (m *mockup) openSourceEdit(o sourceObject) {
@@ -93,6 +94,12 @@ func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
 		}
 		if problem := m.liveTaskProblems[o.ID]; problem != "" {
 			components.Muted(c.Key("write-problem"), tr(problem))
+		}
+		if receipt := m.serverTaskOperations[o.ID]; receipt.SyncState == common.WorkbenchOperationNeedsReview && !m.sourceWritePending(o.ID) {
+			components.Muted(c.Key("review-status"), tr("来源尚未确认"))
+			if ui.Button(c.Key("reconcile"), tr("核对操作")).Clicked() {
+				m.reconcileLiveTask(o.ID, receipt.RequestID)
+			}
 		}
 		return
 	}
@@ -138,6 +145,9 @@ func (m *mockup) sourceToggleLabel(o sourceObject) string {
 
 func (m *mockup) canToggleSourceTask(o sourceObject) bool {
 	if m.live != nil {
+		if o.Kind == common.WorkbenchObsidianTasks && o.State == "unknown" {
+			return false
+		}
 		conn := m.taskConnection(o)
 		return conn != nil && conn.Writable && (o.Kind == common.WorkbenchLocal || o.Kind == common.WorkbenchObsidianTasks && conn.Status == "同步正常") && o.TargetVersion != ""
 	}
@@ -146,13 +156,27 @@ func (m *mockup) canToggleSourceTask(o sourceObject) bool {
 
 func (m *mockup) toggleSourceTask(o sourceObject) {
 	if m.live != nil {
-		if !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID) {
+		if !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID) || m.serverTaskOperations[o.ID].SyncState == common.WorkbenchOperationNeedsReview {
 			return
 		}
 		state := "done"
 		if taskClosed(o) {
 			state = "open"
 		}
+		m.submitLiveTaskState(o, state)
+		return
+	}
+	state := "已完成"
+	if taskClosed(o) {
+		if conn := m.taskConnection(o); conn != nil {
+			state = conn.reopenState()
+		}
+	}
+	m.setTaskState(o, state)
+}
+
+func (m *mockup) submitLiveTaskState(o sourceObject, state string) {
+	if m.live != nil && m.canToggleSourceTask(o) && !m.sourceWritePending(o.ID) && m.serverTaskOperations[o.ID].SyncState != common.WorkbenchOperationNeedsReview {
 		if m.liveTaskRequests == nil {
 			m.liveTaskRequests = make(map[string]common.WorkbenchTaskWrite)
 			m.liveTaskProblems = make(map[string]string)
@@ -167,18 +191,35 @@ func (m *mockup) toggleSourceTask(o sourceObject) {
 		m.runLiveTaskWrite(request, func(receipt common.WorkbenchTaskReceipt, err error) {
 			m.finishLiveTaskToggle(o.ID, receipt, err)
 		})
+	}
+}
+
+func (m *mockup) reconcileLiveTask(taskID, requestID string) {
+	if m.live == nil || requestID == "" || m.sourceWritePending(taskID) {
 		return
 	}
-	state := "已完成"
-	if taskClosed(o) {
-		if conn := m.taskConnection(o); conn != nil {
-			state = conn.reopenState()
-		}
+	if m.liveTaskProblems == nil {
+		m.liveTaskProblems = make(map[string]string)
 	}
-	m.setTaskState(o, state)
+	m.pendingTaskEdits[taskID] = true
+	remote := m.live
+	go func() {
+		receipt, err := remote.ReconcileWorkbenchTaskOperation(requestID)
+		mygo.RunOnMain(func() {
+			m.finishLiveTaskToggle(taskID, receipt, err)
+			m.liveGeneration++
+			if m.win != nil && !m.win.IsDestroyed() {
+				m.win.Invalidate()
+				m.refreshLive()
+			}
+		})
+	}()
 }
 
 func (m *mockup) finishLiveTaskToggle(id string, receipt common.WorkbenchTaskReceipt, err error) {
+	if err == nil && workbenchOperationInProgress(receipt.SyncState) {
+		return
+	}
 	delete(m.pendingTaskEdits, id)
 	switch {
 	case err != nil:
@@ -202,6 +243,16 @@ func (m *mockup) finishLiveTaskToggle(id string, receipt common.WorkbenchTaskRec
 }
 
 func (m *mockup) setTaskState(o sourceObject, state string) {
+	if m.live != nil {
+		if state == "待处理" || state == "开放" {
+			if o.State != "open" {
+				m.submitLiveTaskState(o, "open")
+			}
+		} else if state == "已完成" && o.State != "done" {
+			m.submitLiveTaskState(o, "done")
+		}
+		return
+	}
 	if !m.editableSource(o) || m.sourceWritePending(o.ID) {
 		return
 	}

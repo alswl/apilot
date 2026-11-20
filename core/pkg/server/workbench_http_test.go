@@ -322,6 +322,8 @@ func TestWorkbenchHTTPObsidianOperationReplay(t *testing.T) {
 	if err := os.WriteFile(note, []byte("- [ ] Task 🆔 stable\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	writeStarted := make(chan struct{}, 1)
+	releaseWrite := make(chan struct{}, 1)
 	bridge := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := filepath.Join(vault, strings.TrimPrefix(r.URL.Path, "/vault/"))
 		body, err := os.ReadFile(path)
@@ -339,6 +341,12 @@ func TestWorkbenchHTTPObsidianOperationReplay(t *testing.T) {
 		}
 		if r.Header.Get("If-Match") != etag {
 			w.WriteHeader(http.StatusPreconditionFailed)
+			return
+		}
+		writeStarted <- struct{}{}
+		select {
+		case <-releaseWrite:
+		case <-r.Context().Done():
 			return
 		}
 		body, err = io.ReadAll(r.Body)
@@ -394,6 +402,24 @@ func TestWorkbenchHTTPObsidianOperationReplay(t *testing.T) {
 	if err != nil || accepted.SyncState != "accepted" {
 		t.Fatalf("submit: %+v %v", accepted, err)
 	}
+	select {
+	case <-writeStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background write did not start")
+	}
+	pending, err := remote.WorkbenchTaskOperationReceipt(input.RequestID)
+	if err != nil || pending.SyncState != common.WorkbenchOperationDispatching {
+		t.Fatalf("pending receipt: %+v %v", pending, err)
+	}
+	detail, err := remote.WorkbenchSyncDetails(connection.ID)
+	if err != nil || len(detail.PendingWrites) != 1 || detail.PendingWrites[0].RequestID != input.RequestID || detail.PendingWrites[0].SyncState != common.WorkbenchOperationDispatching {
+		t.Fatalf("pending operation must be recoverable from the connection: %+v %v", detail.PendingWrites, err)
+	}
+	before, err := remote.WorkbenchTasks(common.WorkbenchQuery{Connection: connection.ID})
+	if err != nil || len(before.Items) != 1 || before.Items[0].State != "open" {
+		t.Fatalf("unconfirmed state must remain visible: %+v %v", before, err)
+	}
+	releaseWrite <- struct{}{}
 	deadline = time.Now().Add(5 * time.Second)
 	var confirmed common.WorkbenchTaskReceipt
 	for time.Now().Before(deadline) {

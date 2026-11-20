@@ -101,6 +101,77 @@ func TestWorkbenchWatchTriggersSourceRefresh(t *testing.T) {
 	t.Fatal("duplicate source identity was not reported")
 }
 
+func TestWorkbenchWatchRecordsSourceStateChangesOnce(t *testing.T) {
+	dir, vault := t.TempDir(), t.TempDir()
+	note := filepath.Join(vault, "task.md")
+	if err := os.WriteFile(note, []byte("- [ ] Task 🆔 stable\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.SaveWorkbench(common.WorkbenchConnection{Kind: common.WorkbenchObsidianTasks, Name: "Vault", Vault: vault})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitTask := func(state string, events int) common.WorkbenchTask {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			page, err := s.WorkbenchTasks(common.WorkbenchQuery{Connection: id})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Items) == 1 && page.Items[0].State == state && len(page.Items[0].Activity) == events {
+				return page.Items[0]
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatalf("task did not reach %s with %d activity events", state, events)
+		return common.WorkbenchTask{}
+	}
+	first := waitTask("open", 1)
+	if err := os.WriteFile(note, []byte("- [x] Task 🆔 stable ✅ 2026-11-20\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	done := waitTask("done", 2)
+	if done.ID != first.ID || done.Activity[1].Text != "状态改为已完成" || done.Activity[1].Time.IsZero() {
+		t.Fatalf("source activity: %+v", done)
+	}
+	beforeRestart, err := s.WorkbenchSnapshot(id)
+	if err != nil || len(beforeRestart.Attempts) == 0 {
+		t.Fatalf("snapshot before restart: %+v %v", beforeRestart, err)
+	}
+	lastAttempt := beforeRestart.Attempts[0].ID
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = openService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		snapshot, err := s.WorkbenchSnapshot(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snapshot.Attempts) > 0 && snapshot.Attempts[0].ID > lastAttempt && snapshot.Attempts[0].State == "success" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("startup sync did not finish: %+v", snapshot.Attempts)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	afterRestart := waitTask("done", 2)
+	if afterRestart.ID != first.ID || afterRestart.Activity[1] != done.Activity[1] {
+		t.Fatalf("activity changed after restart: %+v", afterRestart.Activity)
+	}
+}
+
 func TestWorkbenchWatchRecoversAfterScopeDisappears(t *testing.T) {
 	s, err := openService(t.TempDir())
 	if err != nil {

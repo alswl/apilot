@@ -67,6 +67,21 @@ func TestConnectorInstancesAndSyncLog(t *testing.T) {
 	}
 }
 
+func TestSyncLogOffersRecoveryForUncertainCreation(t *testing.T) {
+	m := newFramework()
+	m.live = services.NewRemote("")
+	conn := connection{ID: "vault", Name: "Vault", SourceKind: obsidianTasks}
+	m.syncDetail = common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: conn.ID}, PendingWrites: []common.WorkbenchTaskReceipt{
+		{RequestID: "pending", SyncState: common.WorkbenchOperationDispatching},
+		{RequestID: "uncertain-create", SyncState: common.WorkbenchOperationNeedsReview},
+		{RequestID: "not-executed", SyncState: common.WorkbenchOperationNotExecuted},
+	}}
+	p := ui.NewTester(func(c *ui.Context) { m.liveSyncResults(c, &conn) }, 680, 480)
+	if !p.HasText("等待来源确认") || !p.HasText("来源尚未确认") || !p.HasText("核对操作") || !p.HasText("操作未执行") {
+		t.Fatal("sync log must distinguish active, uncertain and undispatched operations")
+	}
+}
+
 func TestTaskKeyboardOpenAndStatusMenu(t *testing.T) {
 	m := newMockup()
 	m.useAdaptiveLayout()

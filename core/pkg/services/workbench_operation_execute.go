@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"log"
 	"path/filepath"
 	"sync"
 	"time"
@@ -68,6 +69,21 @@ func (s *Service) executeObsidianTaskOperation(ctx context.Context, requestID st
 	if op.Phase != common.WorkbenchOperationAccepted {
 		return op.Receipt, nil
 	}
+	started := time.Now()
+	var gateDuration, prepareDuration, writeDuration, reconcileDuration time.Duration
+	var prepareStarted time.Time
+	result := "not_dispatched"
+	defer func() {
+		if gateDuration == 0 {
+			gateDuration = time.Since(started)
+		}
+		if prepareDuration == 0 && !prepareStarted.IsZero() {
+			prepareDuration = time.Since(prepareStarted)
+		}
+		log.Printf("workbench operation request=%q connection=%q result=%s total=%s wait=%s prepare=%s write=%s reconcile=%s",
+			requestID, op.Receipt.ConnectionID, result, time.Since(started).Round(time.Millisecond), gateDuration.Round(time.Millisecond),
+			prepareDuration.Round(time.Millisecond), writeDuration.Round(time.Millisecond), reconcileDuration.Round(time.Millisecond))
+	}()
 	connection, err := s.WorkbenchSnapshot(op.Receipt.ConnectionID)
 	if err != nil {
 		return op.Receipt, err
@@ -107,6 +123,8 @@ func (s *Service) executeObsidianTaskOperation(ctx context.Context, requestID st
 		return op.Receipt, err
 	}
 	defer release()
+	gateDuration = time.Since(started)
+	prepareStarted = time.Now()
 	// A duplicate request may have completed while waiting for the note.
 	op, err = ops.WorkbenchTaskOperation(requestID)
 	if err != nil || op.Phase != common.WorkbenchOperationAccepted {
@@ -170,7 +188,14 @@ func (s *Service) executeObsidianTaskOperation(ctx context.Context, requestID st
 			if err != nil {
 				return receipt, err
 			}
-			return s.reconcileWorkbenchOperationWithRetry(ctx, requestID)
+			result = common.WorkbenchOperationNeedsReview
+			reconcileStarted := time.Now()
+			receipt, err = s.reconcileWorkbenchOperationWithRetry(ctx, requestID)
+			reconcileDuration = time.Since(reconcileStarted)
+			if err == nil {
+				result = receipt.SyncState
+			}
+			return receipt, err
 		}
 		var conflict common.WorkbenchTaskReceipt
 		path, content, replacement, conflict, err = prepareWorkbenchObsidianStateWithCoverage(ctx, connection, op.Input, task, nativeCovered)
@@ -292,10 +317,15 @@ func (s *Service) executeObsidianTaskOperation(ctx context.Context, requestID st
 		return op.Receipt, err
 	}
 	op = claimed
+	prepareDuration = time.Since(prepareStarted)
+	result = common.WorkbenchOperationDispatching
+	writeStarted := time.Now()
 	err = write()
+	writeDuration = time.Since(writeStarted)
 	if err != nil {
 		problem, ok := errors.AsType[*common.Error](err)
 		if ok && problem.Code == "STALE_REVISION" {
+			result = common.WorkbenchOperationConflict
 			return finish(common.WorkbenchOperationDispatching, common.WorkbenchOperationConflict, problem.Message)
 		}
 	}
@@ -305,7 +335,14 @@ func (s *Service) executeObsidianTaskOperation(ctx context.Context, requestID st
 	}
 	verifyCtx, cancel := context.WithTimeout(s.ctx, 8*time.Second)
 	defer cancel()
-	return s.reconcileWorkbenchOperationWithRetry(verifyCtx, requestID)
+	result = common.WorkbenchOperationNeedsReview
+	reconcileStarted := time.Now()
+	receipt, err = s.reconcileWorkbenchOperationWithRetry(verifyCtx, requestID)
+	reconcileDuration = time.Since(reconcileStarted)
+	if err == nil {
+		result = receipt.SyncState
+	}
+	return receipt, err
 }
 
 func (s *Service) reconcileWorkbenchOperationWithRetry(ctx context.Context, requestID string) (common.WorkbenchTaskReceipt, error) {
@@ -366,5 +403,24 @@ func (s *Service) scheduleWorkbenchOperation(requestID string) {
 			case <-time.After(100 * time.Millisecond):
 			}
 		}
+	}()
+}
+
+// scheduleWorkbenchReconciliation only observes an already dispatched request;
+// it never repeats the source write.
+func (s *Service) scheduleWorkbenchReconciliation(requestID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopping || s.operationRunning[requestID] {
+		return
+	}
+	s.operationRunning[requestID] = true
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		defer func() { s.mu.Lock(); delete(s.operationRunning, requestID); s.mu.Unlock() }()
+		ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+		defer cancel()
+		_, _ = s.reconcileWorkbenchOperationWithRetry(ctx, requestID)
 	}()
 }

@@ -88,6 +88,10 @@ func parseWorkbenchNote(c common.WorkbenchConnection, notePath, content string) 
 		default:
 			if v := c.Statuses[m[1]]; v != "" {
 				state = v
+			} else if m[1] == "/" {
+				state = "in_progress"
+			} else if m[1] == "-" {
+				state = "cancelled"
 			}
 		}
 		fields := map[string]string{"path": notePath, "file": path.Base(notePath), "line": strconv.Itoa(i + 1), "section": "", "checkbox": m[1], "status": state}

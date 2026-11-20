@@ -272,12 +272,54 @@ func (m *mockup) liveSyncResults(c *ui.Context, conn *connection) {
 		return
 	}
 	for _, receipt := range m.syncDetail.PendingWrites {
-		label := "来源尚未确认，重试可核对本次提交"
-		if receipt.SyncState == "conflict" {
+		label := "等待来源确认"
+		switch receipt.SyncState {
+		case common.WorkbenchOperationNeedsReview:
+			label = "来源尚未确认"
+		case common.WorkbenchOperationConflict:
 			label = "来源已变化，请刷新写入位置"
+		case common.WorkbenchOperationNotExecuted:
+			label = "操作未执行"
 		}
-		components.ActivityRow(c.Key(receipt.RequestID), receipt.RequestID, tr(label))
+		ui.Column(c.Key(receipt.RequestID)).FillWidth().Gap(4).Children(func() {
+			components.ActivityRow(c.Key("receipt"), receipt.RequestID, tr(label))
+			if receipt.SyncState == common.WorkbenchOperationNeedsReview {
+				button := ui.Button(c.Key("check"), tr("核对操作")).Label(tr("核对操作") + " · " + receipt.RequestID).Disabled(m.checkingOperations[receipt.RequestID])
+				if button.Clicked() {
+					m.reconcileLiveOperation(receipt.RequestID)
+				}
+			}
+		})
 	}
+}
+
+func (m *mockup) reconcileLiveOperation(requestID string) {
+	if m.live == nil || requestID == "" || m.checkingOperations[requestID] {
+		return
+	}
+	if m.checkingOperations == nil {
+		m.checkingOperations = make(map[string]bool)
+	}
+	m.checkingOperations[requestID] = true
+	remote := m.live
+	go func() {
+		receipt, err := remote.ReconcileWorkbenchTaskOperation(requestID)
+		mygo.RunOnMain(func() {
+			delete(m.checkingOperations, requestID)
+			if err != nil {
+				m.syncDetailProblem = common.ProtocolError(err).Message
+			} else if receipt.SyncState == common.WorkbenchOperationNeedsReview {
+				m.syncDetailProblem = tr("暂时无法确认操作结果")
+			} else {
+				m.syncDetailProblem = ""
+			}
+			m.liveGeneration++
+			if m.win != nil && !m.win.IsDestroyed() {
+				m.win.Invalidate()
+				m.refreshLive()
+			}
+		})
+	}()
 }
 
 func (m *mockup) removeConnectionControl(c *ui.Context, conn *connection, problem *string) bool {

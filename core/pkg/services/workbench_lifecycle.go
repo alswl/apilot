@@ -82,6 +82,12 @@ func (s *Service) WorkbenchSyncDetails(id string) (common.WorkbenchSnapshot, err
 		WorkbenchPendingWrites(string) ([]common.WorkbenchTaskReceipt, error)
 	}); ok {
 		snapshot.PendingWrites, err = store.WorkbenchPendingWrites(id)
+		for i := range snapshot.PendingWrites {
+			receipt := &snapshot.PendingWrites[i]
+			if receipt.SyncState == common.WorkbenchOperationNeedsReview && s.operationRunning[receipt.RequestID] {
+				receipt.SyncState = common.WorkbenchOperationDispatching
+			}
+		}
 	}
 	return snapshot, err
 }

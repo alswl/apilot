@@ -501,6 +501,15 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 	if partial {
 		attempt.State = "success"
 		attempt.Coverage = "complete"
+		previousByID := make(map[string]common.WorkbenchTask, len(before))
+		for _, task := range before {
+			previousByID[task.ID] = task
+		}
+		for i := range updates {
+			if prior, ok := previousByID[updates[i].ID]; ok {
+				recordWorkbenchStateChange(prior, &updates[i], now)
+			}
+		}
 		updatedIDs := make(map[string]bool, len(updates))
 		for _, task := range updates {
 			updatedIDs[task.ID] = true

@@ -243,7 +243,7 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 		t.Fatalf("complete replay: %+v %v", replay, err)
 	}
 	task, err = s.WorkbenchTask(task.ID)
-	if err != nil || task.State != "done" || len(task.Activity) != 1 || !task.Activity[0].Time.Equal(importedAt) {
+	if err != nil || task.State != "done" || len(task.Activity) != 2 || !task.Activity[0].Time.Equal(importedAt) || task.Activity[1].Text != "状态改为已完成" {
 		t.Fatalf("completed task: %+v %v", task, err)
 	}
 	status.RequestID, status.State, status.TargetVersion = "reopen-bridge-task", "open", task.TargetVersion
@@ -258,6 +258,9 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 	task, err = s.WorkbenchTask(task.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(task.Activity) != 3 || task.Activity[2].Text != "状态改为待处理" {
+		t.Fatalf("reopen activity: %+v", task.Activity)
 	}
 	status.RequestID, status.State, status.TargetVersion = "competing-state-write", "done", task.TargetVersion
 	competingSave.Store(true)

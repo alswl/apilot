@@ -262,6 +262,9 @@ func TestLocalWorkbenchSingleWriteReplayAndStaleState(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Items[0].State != "done" {
 		t.Fatalf("Local tasks: %+v %v", page, err)
 	}
+	if len(page.Items[0].Activity) != 1 || page.Items[0].Activity[0].Text != "状态改为已完成" {
+		t.Fatalf("Local status activity: %+v", page.Items[0].Activity)
+	}
 }
 
 func TestWorkbenchCapabilitiesFollowConnectionPolicy(t *testing.T) {

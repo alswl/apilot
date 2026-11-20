@@ -54,6 +54,29 @@ func TestWorkbenchObsidianScopeAndParse(t *testing.T) {
 	}
 }
 
+func TestWorkbenchObsidianDefaultAndConfiguredStatuses(t *testing.T) {
+	vault := t.TempDir()
+	content := "- [ ] Open\n- [/] In progress\n- [x] Done\n- [-] Cancelled\n- [?] Unknown\n"
+	if err := os.WriteFile(filepath.Join(vault, "tasks.md"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	connection := common.WorkbenchConnection{Vault: vault, Scope: "."}
+	tasks, err := ReadWorkbenchObsidian(context.Background(), connection)
+	if err != nil || len(tasks) != 5 {
+		t.Fatalf("tasks: %+v %v", tasks, err)
+	}
+	for i, state := range []string{"open", "in_progress", "done", "cancelled", "unknown"} {
+		if tasks[i].State != state {
+			t.Errorf("task %d: got %q, want %q", i, tasks[i].State, state)
+		}
+	}
+	connection.Statuses = map[string]string{"/": "cancelled", "?": "in_progress"}
+	tasks, err = ReadWorkbenchObsidian(context.Background(), connection)
+	if err != nil || tasks[1].State != "cancelled" || tasks[4].State != "in_progress" {
+		t.Fatalf("configured symbols must override defaults: %+v %v", tasks, err)
+	}
+}
+
 func TestWorkbenchObsidianHeadingTargets(t *testing.T) {
 	vault := t.TempDir()
 	work := filepath.Join(vault, "Work")

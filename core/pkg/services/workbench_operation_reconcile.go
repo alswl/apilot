@@ -40,6 +40,13 @@ func (s *Service) recoverWorkbenchOperations(store workbenchTaskOperationStore) 
 		if operation.Phase != common.WorkbenchOperationNeedsReview {
 			continue
 		}
+		s.mu.Lock()
+		if s.stopping || s.operationRunning[operation.Receipt.RequestID] {
+			s.mu.Unlock()
+			continue
+		}
+		s.operationRunning[operation.Receipt.RequestID] = true
+		s.mu.Unlock()
 		for attempt := 0; attempt <= s.obsidianSync.MaxRetries; attempt++ {
 			ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
 			_, err := s.reconcileWorkbenchTaskOperation(ctx, operation.Receipt.RequestID)
@@ -50,10 +57,16 @@ func (s *Service) recoverWorkbenchOperations(store workbenchTaskOperationStore) 
 			}
 			select {
 			case <-s.ctx.Done():
+				s.mu.Lock()
+				delete(s.operationRunning, operation.Receipt.RequestID)
+				s.mu.Unlock()
 				return
 			case <-time.After(100 * time.Millisecond):
 			}
 		}
+		s.mu.Lock()
+		delete(s.operationRunning, operation.Receipt.RequestID)
+		s.mu.Unlock()
 	}
 }
 
@@ -267,6 +280,7 @@ func (s *Service) reconcileWorkbenchObservedOperation(ctx context.Context, reque
 	target.ID, target.ConnectionID, target.Kind, target.Mode = original.ID, original.ConnectionID, original.Kind, original.Mode
 	target.SourceKey, target.Activity = original.SourceKey, original.Activity
 	now := time.Now().UTC()
+	recordWorkbenchStateChange(original, &target, now)
 	attempt := common.WorkbenchAttempt{ID: now.UnixNano(), Trigger: "write", State: "success", Started: now, Finished: &now,
 		Scope: "notes", Paths: []string{path}, Coverage: "complete", ConnectionVersion: connection.Version, SnapshotVersion: connection.SnapshotVersion}
 	countWorkbenchChanges(&attempt, []common.WorkbenchTask{original}, []common.WorkbenchTask{target})

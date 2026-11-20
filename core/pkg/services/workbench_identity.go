@@ -188,9 +188,26 @@ func recordObsidianImport(c common.WorkbenchConnection, before, after []common.W
 				assigned[id], task.ID = true, id
 			}
 		}
-		task.Activity = previous[task.ID].Activity
+		prior, existed := previous[task.ID]
+		task.Activity = prior.Activity
 		if len(task.Activity) == 0 {
 			task.Activity = []common.WorkbenchTaskEvent{{Time: now, Text: "从 Obsidian 导入"}}
 		}
+		if existed && !now.IsZero() {
+			recordWorkbenchStateChange(prior, task, now)
+		}
 	}
+}
+
+func recordWorkbenchStateChange(before common.WorkbenchTask, after *common.WorkbenchTask, now time.Time) {
+	if before.State == "" || before.State == after.State {
+		return
+	}
+	text := map[string]string{
+		"open": "状态改为待处理", "in_progress": "状态改为进行中", "done": "状态改为已完成", "cancelled": "状态改为已取消",
+	}[after.State]
+	if text == "" {
+		text = "任务状态已变化"
+	}
+	after.Activity = append(append([]common.WorkbenchTaskEvent(nil), after.Activity...), common.WorkbenchTaskEvent{Time: now, Text: text})
 }

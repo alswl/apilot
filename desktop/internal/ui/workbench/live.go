@@ -29,7 +29,7 @@ func (m *mockup) pollLive() {
 func (m *mockup) runLiveTaskWrite(request common.WorkbenchTaskWrite, finish func(common.WorkbenchTaskReceipt, error)) {
 	remote := m.live
 	go func() {
-		receipt, err := remote.WriteWorkbenchTask(request)
+		receipt, err := remote.SubmitWorkbenchTaskOperation(request)
 		mygo.RunOnMain(func() {
 			finish(receipt, err)
 			m.liveGeneration++
@@ -49,8 +49,36 @@ func (m *mockup) refreshLive() {
 	m.liveBusy = true
 	generation := m.liveGeneration
 	syncID := m.syncLogID
+	requests := make(map[string]string)
+	for taskID, request := range m.liveTaskRequests {
+		if m.pendingTaskEdits[taskID] && request.RequestID != "" {
+			requests[taskID] = request.RequestID
+		}
+	}
+	createRequest := ""
+	if m.newTaskPending {
+		createRequest = m.newTaskRequest.RequestID
+	}
 	go func() {
 		connections, err := remote.WorkbenchConnections()
+		var detail common.WorkbenchSnapshot
+		var detailErr error
+		if err == nil {
+			for i := range connections {
+				if connections[i].Kind == common.WorkbenchLocal {
+					continue
+				}
+				var snapshot common.WorkbenchSnapshot
+				snapshot, err = remote.WorkbenchSyncDetails(connections[i].ID)
+				if err != nil {
+					break
+				}
+				connections[i].PendingWrites = snapshot.PendingWrites
+				if connections[i].ID == syncID {
+					detail = snapshot
+				}
+			}
+		}
 		var plugins []services.WorkbenchPlugin
 		if err == nil {
 			plugins, err = remote.WorkbenchPlugins()
@@ -71,10 +99,18 @@ func (m *mockup) refreshLive() {
 				q.Offset, q.Revision = len(tasks), page.Revision
 			}
 		}
-		var detail common.WorkbenchSnapshot
-		var detailErr error
-		if syncID != "" {
+		if syncID != "" && detail.ID == "" {
 			detail, detailErr = remote.WorkbenchSyncDetails(syncID)
+		}
+		receipts := make(map[string]common.WorkbenchTaskReceipt, len(requests))
+		for taskID, requestID := range requests {
+			if receipt, receiptErr := remote.WorkbenchTaskOperationReceipt(requestID); receiptErr == nil {
+				receipts[taskID] = receipt
+			}
+		}
+		var createReceipt common.WorkbenchTaskReceipt
+		if createRequest != "" {
+			createReceipt, _ = remote.WorkbenchTaskOperationReceipt(createRequest)
 		}
 		mygo.RunOnMain(func() {
 			m.liveBusy = false
@@ -84,6 +120,17 @@ func (m *mockup) refreshLive() {
 			if generation != m.liveGeneration {
 				m.refreshLive()
 				return
+			}
+			settled := false
+			for taskID, receipt := range receipts {
+				if m.pendingTaskEdits[taskID] && m.liveTaskRequests[taskID].RequestID == receipt.RequestID && !workbenchOperationInProgress(receipt.SyncState) {
+					m.finishLiveTaskToggle(taskID, receipt, nil)
+					settled = true
+				}
+			}
+			if m.newTaskPending && createRequest != "" && m.newTaskRequest.RequestID == createReceipt.RequestID && !workbenchOperationInProgress(createReceipt.SyncState) {
+				m.finishLiveTaskCreate(createReceipt, nil)
+				settled = true
 			}
 			detailChanged := false
 			if syncID != "" && syncID == m.syncLogID && detailErr == nil {
@@ -97,14 +144,32 @@ func (m *mockup) refreshLive() {
 				m.livePlugins = plugins
 				m.applyLive(connections, tasks)
 				m.win.Invalidate()
-			} else if hadError != m.liveError || detailChanged {
+			} else if hadError != m.liveError || detailChanged || settled {
 				m.win.Invalidate()
+			}
+			if settled {
+				m.refreshLive()
 			}
 		})
 	}()
 }
 
+func workbenchOperationInProgress(state string) bool {
+	return state == common.WorkbenchOperationAccepted || state == common.WorkbenchOperationDispatching
+}
+
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
+	m.serverTaskOperations = make(map[string]common.WorkbenchTaskReceipt)
+	for _, snapshot := range snapshots {
+		for _, receipt := range snapshot.PendingWrites {
+			if receipt.SourceObjectID == "" || (!workbenchOperationInProgress(receipt.SyncState) && receipt.SyncState != common.WorkbenchOperationNeedsReview) {
+				continue
+			}
+			if _, exists := m.serverTaskOperations[receipt.SourceObjectID]; !exists {
+				m.serverTaskOperations[receipt.SourceObjectID] = receipt
+			}
+		}
+	}
 	if len(m.pendingTaskEdits) > 0 {
 		current := make(map[string]sourceObject, len(m.pendingTaskEdits))
 		for _, task := range m.objects {
@@ -210,10 +275,29 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 
 func (m *mockup) replaceLiveTasks(tasks []sourceObject) {
 	selectedID := m.taskSelection
+	previousPosition := -1
+	if m.page == tasksPage && !m.fullTask && selectedID != "" {
+		for i, index := range m.taskRows() {
+			if m.objects[index].ID == selectedID {
+				previousPosition = i
+				break
+			}
+		}
+	}
 	if m.inspector && m.selected >= 0 && m.selected < len(m.objects) {
 		selectedID = m.objects[m.selected].ID
 	}
 	m.objects = tasks
+	if previousPosition >= 0 {
+		rows := m.taskRows()
+		stillVisible := slices.ContainsFunc(rows, func(index int) bool { return m.objects[index].ID == selectedID })
+		if !stillVisible && len(rows) > 0 {
+			next := rows[min(previousPosition, len(rows)-1)]
+			m.taskSelection = m.objects[next].ID
+			selectedID = m.taskSelection
+			m.restoreTaskFocus = true
+		}
+	}
 	if m.inspector {
 		m.selected = slices.IndexFunc(tasks, func(task sourceObject) bool { return task.ID == selectedID })
 		if m.selected < 0 {

@@ -161,6 +161,46 @@ func TestRestartMarksDispatchedOperationForReview(t *testing.T) {
 	}
 }
 
+func TestReceiptReportsBackgroundReconciliationAsProcessing(t *testing.T) {
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	connection, err := s.WorkbenchSnapshot(common.DefaultWorkbenchLocalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := common.WorkbenchTaskWrite{RequestID: "active-reconcile", ConnectionID: connection.ID, ConnectionVersion: connection.Version, Title: "Task"}
+	op, _, err := s.admitWorkbenchTaskOperation(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := s.store.(workbenchTaskOperationStore)
+	op.Receipt.SyncState = common.WorkbenchOperationNeedsReview
+	if err := store.AdvanceWorkbenchTaskOperation(input.RequestID, common.WorkbenchOperationAccepted, common.WorkbenchOperationNeedsReview, op.Receipt); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.operationRunning[input.RequestID] = true
+	s.mu.Unlock()
+	receipt, err := s.WorkbenchTaskOperationReceipt(input.RequestID)
+	if err != nil || receipt.SyncState != common.WorkbenchOperationDispatching {
+		t.Fatalf("active reconciliation: %+v %v", receipt, err)
+	}
+	detail, err := s.WorkbenchSyncDetails(connection.ID)
+	if err != nil || len(detail.PendingWrites) != 1 || detail.PendingWrites[0].SyncState != common.WorkbenchOperationDispatching {
+		t.Fatalf("active reconciliation in connection details: %+v %v", detail.PendingWrites, err)
+	}
+	s.mu.Lock()
+	delete(s.operationRunning, input.RequestID)
+	s.mu.Unlock()
+	receipt, err = s.WorkbenchTaskOperationReceipt(input.RequestID)
+	if err != nil || receipt.SyncState != common.WorkbenchOperationNeedsReview {
+		t.Fatalf("finished reconciliation: %+v %v", receipt, err)
+	}
+}
+
 func TestRestartConfirmsDispatchedCreationWithoutRepeatingIt(t *testing.T) {
 	dir := t.TempDir()
 	vault := t.TempDir()
@@ -280,8 +320,19 @@ func TestRestartKeepsUnobservedDispatchForReview(t *testing.T) {
 		t.Fatalf("uncertain operation: %+v %v", receipt, err)
 	}
 	replay, err := s.SubmitWorkbenchTaskOperation(input)
-	if err != nil || replay.SyncState != common.WorkbenchOperationNeedsReview {
+	if err != nil || (replay.SyncState != common.WorkbenchOperationNeedsReview && replay.SyncState != common.WorkbenchOperationDispatching) {
 		t.Fatalf("replay: %+v %v", replay, err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for replay.SyncState == common.WorkbenchOperationDispatching && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		replay, err = s.WorkbenchTaskOperationReceipt(input.RequestID)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if replay.SyncState != common.WorkbenchOperationNeedsReview {
+		t.Fatalf("reconciliation must remain uncertain: %+v", replay)
 	}
 	data, err := os.ReadFile(note)
 	if err != nil || string(data) != string(original) {

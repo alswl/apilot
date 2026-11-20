@@ -77,8 +77,15 @@ func (s *Store) SetWorkbenchTaskWriteState(receipt common.WorkbenchTaskReceipt, 
 func (s *Store) WorkbenchPendingWrites(connectionID string) ([]common.WorkbenchTaskReceipt, error) {
 	rows, err := s.db.Query(`
 		SELECT receipt FROM workbench_task_writes
-		WHERE connection_id=? AND json_extract(receipt,'$.sync_state') IN ('accepted','dispatching','needs_review','conflict','not_executed')
-		ORDER BY rowid DESC LIMIT 20`, connectionID)
+		WHERE connection_id=? AND (
+			json_extract(receipt,'$.sync_state') IN ('accepted','dispatching','needs_review')
+			OR request_id IN (
+				SELECT request_id FROM workbench_task_writes
+				WHERE connection_id=? AND json_extract(receipt,'$.sync_state') IN ('conflict','not_executed')
+				ORDER BY rowid DESC LIMIT 20
+			)
+		)
+		ORDER BY rowid DESC`, connectionID, connectionID)
 	if err != nil {
 		return nil, err
 	}
