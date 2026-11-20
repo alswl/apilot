@@ -35,7 +35,7 @@ func (m *mockup) taskConnection(o sourceObject) *connection {
 
 func (m *mockup) editableSource(o sourceObject) bool {
 	conn := m.taskConnection(o)
-	return conn != nil && conn.Writable && conn.Status == "同步正常" &&
+	return m.live == nil && conn != nil && conn.Writable && conn.Status == "同步正常" &&
 		(conn.SourceKind == obsidianTasks || conn.SourceKind == githubIssues)
 }
 
@@ -84,6 +84,18 @@ func (m *mockup) openSourceEdit(o sourceObject) {
 }
 
 func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
+	if m.live != nil {
+		if m.canToggleSourceTask(*o) || m.sourceWritePending(o.ID) {
+			m.taskStatusCheckbox(c.Key("toggle"), *o)
+		}
+		if m.sourceWritePending(o.ID) {
+			components.Muted(c.Key("pending"), tr("等待来源确认"))
+		}
+		if problem := m.liveTaskProblems[o.ID]; problem != "" {
+			components.Muted(c.Key("write-problem"), tr(problem))
+		}
+		return
+	}
 	conn := m.taskConnection(*o)
 	if conn == nil || !conn.Writable {
 		return
@@ -124,7 +136,39 @@ func (m *mockup) sourceToggleLabel(o sourceObject) string {
 	return "完成任务"
 }
 
+func (m *mockup) canToggleSourceTask(o sourceObject) bool {
+	if m.live != nil {
+		conn := m.taskConnection(o)
+		return conn != nil && conn.Writable && (o.Kind == common.WorkbenchLocal || o.Kind == common.WorkbenchObsidianTasks && conn.Status == "同步正常") && o.TargetVersion != ""
+	}
+	return m.editableSource(o)
+}
+
 func (m *mockup) toggleSourceTask(o sourceObject) {
+	if m.live != nil {
+		if !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID) {
+			return
+		}
+		state := "done"
+		if taskClosed(o) {
+			state = "open"
+		}
+		if m.liveTaskRequests == nil {
+			m.liveTaskRequests = make(map[string]common.WorkbenchTaskWrite)
+			m.liveTaskProblems = make(map[string]string)
+		}
+		request := m.liveTaskRequests[o.ID]
+		if request.RequestID == "" {
+			request = common.WorkbenchTaskWrite{RequestID: common.ID(), SourceObjectID: o.ID, ConnectionVersion: o.ConnectionVersion, TargetVersion: o.TargetVersion, State: state}
+			m.liveTaskRequests[o.ID] = request
+		}
+		m.pendingTaskEdits[o.ID] = true
+		delete(m.liveTaskProblems, o.ID)
+		m.runLiveTaskWrite(request, func(receipt common.WorkbenchTaskReceipt, err error) {
+			m.finishLiveTaskToggle(o.ID, receipt, err)
+		})
+		return
+	}
 	state := "已完成"
 	if taskClosed(o) {
 		if conn := m.taskConnection(o); conn != nil {
@@ -132,6 +176,29 @@ func (m *mockup) toggleSourceTask(o sourceObject) {
 		}
 	}
 	m.setTaskState(o, state)
+}
+
+func (m *mockup) finishLiveTaskToggle(id string, receipt common.WorkbenchTaskReceipt, err error) {
+	delete(m.pendingTaskEdits, id)
+	switch {
+	case err != nil:
+		problem := common.ProtocolError(err)
+		m.liveTaskProblems[id] = problem.Message
+		if problem.Code == "STALE_REVISION" || problem.Code == "INVALID_ARGUMENT" || problem.Code == "CONFLICT" {
+			delete(m.liveTaskRequests, id)
+		}
+	case receipt.SyncState == "confirmed":
+		delete(m.liveTaskRequests, id)
+		delete(m.liveTaskProblems, id)
+	case receipt.SyncState == "conflict":
+		delete(m.liveTaskRequests, id)
+		m.liveTaskProblems[id] = receipt.Reason
+		if receipt.Reason == "" {
+			m.liveTaskProblems[id] = "来源已变化，请重新核对任务"
+		}
+	default:
+		m.liveTaskProblems[id] = "来源尚未确认，重试可核对本次提交"
+	}
 }
 
 func (m *mockup) setTaskState(o sourceObject, state string) {

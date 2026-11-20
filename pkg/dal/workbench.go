@@ -41,6 +41,10 @@ func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 }
 
 func (s *Store) SaveWorkbench(c common.WorkbenchConnection, reset bool) error {
+	return s.SaveWorkbenchBridge(c, reset, nil)
+}
+
+func (s *Store) SaveWorkbenchBridge(c common.WorkbenchConnection, reset bool, bridge *common.WorkbenchBridgeInput) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -60,6 +64,14 @@ func (s *Store) SaveWorkbench(c common.WorkbenchConnection, reset bool) error {
 			return err
 		}
 	}
+	if bridge != nil {
+		if _, err := tx.Exec(`INSERT INTO workbench_obsidian_bridges(connection_id,endpoint,token,certificate)
+			VALUES(?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET endpoint=excluded.endpoint,
+			token=excluded.token, certificate=excluded.certificate`, c.ID, bridge.Endpoint, bridge.Token, bridge.Certificate); err != nil {
+			return err
+		}
+	}
+
 	return tx.Commit()
 }
 
@@ -104,16 +116,17 @@ func recordWorkbench(tx *sql.Tx, c common.WorkbenchConnection, attempts []common
 	}
 	if success != nil {
 		old := make(map[string]common.WorkbenchTask, len(before))
-		next := make(map[string]bool, len(after))
+		next := make(map[string]string, len(after))
 		for _, task := range before {
 			old[task.ID] = task
 		}
 		for _, task := range after {
-			next[task.ID] = true
+			next[task.ID] = task.SourceKey
 		}
 		changed := false
+		// Release old keys before writing rows that may now own those keys.
 		for _, task := range before {
-			if next[task.ID] {
+			if key, exists := next[task.ID]; exists && key == task.SourceKey {
 				continue
 			}
 			if _, err := tx.Exec("DELETE FROM workbench_objects WHERE id=?", task.ID); err != nil {

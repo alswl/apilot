@@ -36,6 +36,12 @@ func (s *Service) ImportWorkbench(batch common.WorkbenchImport) (common.Workbenc
 	if s.stopping {
 		return empty, common.Err("CONFLICT", "App is stopping")
 	}
+	if err := s.workbenchPluginAvailable(common.WorkbenchLocal); err != nil {
+		return empty, err
+	}
+	if !s.workbenchPlugins[common.WorkbenchLocal].capabilities.Import {
+		return empty, common.Err("CONFLICT", "Connector does not support imports")
+	}
 	batch.Name = strings.TrimSpace(batch.Name)
 	if len(batch.Name) > 256 || batch.Tasks == nil {
 		return empty, common.Err("INVALID_ARGUMENT", "Provide a tasks array and an optional connection name of at most 256 bytes")

@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -81,5 +82,77 @@ func TestWorkbenchLegacyIPCCompatibility(t *testing.T) {
 	var c common.WorkbenchSnapshot
 	if err := json.Unmarshal(data, &c); err != nil || c.ID != common.DefaultWorkbenchLocalID || c.Kind != common.WorkbenchLocal {
 		t.Fatalf("legacy connection payload %s: %v", data, err)
+	}
+}
+
+func TestWorkbenchHTTPSeparatesPluginAndConnectionLifecycle(t *testing.T) {
+	runtime, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	remote := services.NewRemote(runtime.SocketPath)
+	a, err := remote.SaveWorkbench(common.WorkbenchConnection{Kind: common.WorkbenchObsidianTasks, Name: "A", Vault: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := remote.SaveWorkbench(common.WorkbenchConnection{Kind: common.WorkbenchObsidianTasks, Name: "B", Vault: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.PauseWorkbench(a.ID, a.Version, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.PauseWorkbench(a.ID, a.Version, false); err == nil || common.ProtocolError(err).Code != "STALE_REVISION" {
+		t.Fatalf("obsolete pause version: %v", err)
+	}
+	if err := remote.SyncWorkbench(a.ID); err == nil || common.ProtocolError(err).Code != "CONFLICT" {
+		t.Fatalf("paused connection accepted a sync: %v", err)
+	}
+	current, err := remote.WorkbenchSyncDetails(b.ID)
+	if err != nil || current.Paused || !current.Capabilities.Refresh {
+		t.Fatalf("independent connection: %+v %v", current, err)
+	}
+	if err := remote.SetWorkbenchPluginEnabled(common.WorkbenchObsidianTasks, false); err != nil {
+		t.Fatal(err)
+	}
+	current, err = remote.WorkbenchSyncDetails(b.ID)
+	if err != nil || !current.PluginDisabled || current.Capabilities.Refresh {
+		t.Fatalf("disabled plugin: %+v %v", current, err)
+	}
+	if err := remote.SetWorkbenchPluginEnabled(common.WorkbenchObsidianTasks, true); err != nil {
+		t.Fatal(err)
+	}
+	current, err = remote.WorkbenchSyncDetails(a.ID)
+	if err != nil || !current.Paused || current.PluginDisabled {
+		t.Fatalf("pause after re-enable: %+v %v", current, err)
+	}
+	if err := remote.RemoveWorkbench(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := remote.WorkbenchSyncDetails(a.ID); err == nil || common.ProtocolError(err).Code != "NOT_FOUND" {
+		t.Fatalf("removed connection: %v", err)
+	}
+	if _, err := remote.WorkbenchSyncDetails(b.ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkbenchHTTPVersionNegotiation(t *testing.T) {
+	handler, _ := workbenchRouter(nil)
+	for _, requested := range []string{"", common.WorkbenchAPIVersion, "99"} {
+		request := httptest.NewRequest(http.MethodGet, "/health", nil)
+		if requested != "" {
+			request.Header.Set(common.WorkbenchAPIVersionHeader, requested)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		want := http.StatusOK
+		if requested == "99" {
+			want = http.StatusConflict
+		}
+		if response.Code != want || response.Header().Get(common.WorkbenchAPIVersionHeader) != common.WorkbenchAPIVersion {
+			t.Fatalf("requested %q: %d %s", requested, response.Code, response.Body)
+		}
 	}
 }

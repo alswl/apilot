@@ -59,7 +59,7 @@ func EventTarget(e common.AttentionEvent) Target {
 
 type MenuProjection struct {
 	Tasks                    []common.Task
-	Active, Recent           []common.Run
+	Active                   []common.Run
 	Attention                []common.AttentionEvent
 	ActiveCount, UnreadCount int
 }
@@ -75,8 +75,6 @@ func ProjectMenu(tasks []common.Task, runs []common.Run, events []common.Attenti
 			if len(p.Active) < PreviewLimit {
 				p.Active = append(p.Active, r)
 			}
-		} else if len(p.Recent) < PreviewLimit {
-			p.Recent = append(p.Recent, r)
 		}
 	}
 	for _, e := range events {

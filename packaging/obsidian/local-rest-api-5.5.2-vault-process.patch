@@ -1,0 +1,45 @@
+diff --git a/src/requestHandler.ts b/src/requestHandler.ts
+index 0e74084..38e9545 100644
+--- a/src/requestHandler.ts
++++ b/src/requestHandler.ts
+@@ -869,6 +869,7 @@ export default class RequestHandler {
+     // embeds). Those keep Express's default body-hash ETag; note JSON carries the
+     // version in its body instead.
+     const etag = formatEntityTag(versionOf(new Uint8Array(content)));
++    res.setHeader("X-Apilot-Conditional-Write", "vault-process-v1");
+ 
+     // A signed link is made to be opened — in a browser tab, in an <img> — so it is
+     // served inline unless the link asked for a download. API-key requests keep the
+diff --git a/src/vaultOperations.ts b/src/vaultOperations.ts
+index 1854fa2..da6d554 100644
+--- a/src/vaultOperations.ts
++++ b/src/vaultOperations.ts
+@@ -749,6 +749,28 @@ export class VaultOperations {
+   ): Promise<string> {
+     this.assertContained(filePath);
+     return this.withPathLocks([filePath], async () => {
++      const target = this.app.vault.getAbstractFileByPath(filePath);
++      if (
++        typeof content === "string" &&
++        preconditions &&
++        preconditions.ifMatch !== undefined &&
++        preconditions.ifMatch !== "*"
++      ) {
++        if (!(target instanceof TFile)) {
++          throw new PreconditionFailedError("The expected file no longer exists.");
++        }
++        await this.app.vault.process(target, (current) => {
++          const failure = preconditionFailure(
++            { exists: true, version: versionOf(current) },
++            preconditions,
++          );
++          if (failure !== null) {
++            throw new PreconditionFailedError(failure);
++          }
++          return content;
++        });
++        return versionOf(content);
++      }
+       await this.enforcePreconditions(filePath, preconditions);
+       try {
+         await this.app.vault.createFolder(path.dirname(filePath));

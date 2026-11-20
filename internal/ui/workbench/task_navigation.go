@@ -40,7 +40,7 @@ func (m *mockup) returnToRelatedSource() {
 		m.taskView = point.viewID
 		m.restoreView(point.view)
 		m.showTaskDetail(index)
-		m.taskPageIndex, m.taskSelection = point.view.page, point.selection
+		m.taskPageIndex, m.taskSelection = point.view.Page, point.selection
 		m.layout.revealSelection = false
 		m.pageScroll[tasksPage] = ui.ScrollState{X: point.listX, Y: point.listY}
 		m.assistantThreadFor(index).scroll = ui.ScrollState{X: point.detailX, Y: point.detailY}

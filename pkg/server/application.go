@@ -66,5 +66,5 @@ func (r *Runtime) Close() error {
 }
 
 func OpenService(dir string) (*services.Service, error) {
-	return services.New(dir, func(path string) (services.Store, error) { return dal.Open(path) })
+	return services.NewWithWorkbenchPlugins(dir, func(path string) (services.Store, error) { return dal.Open(path) }, services.BuiltinWorkbenchPluginRegistry())
 }

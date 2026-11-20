@@ -106,7 +106,7 @@ func (m *mockup) activeCommands() []command {
 		if m.taskSelection != "" || len(rows) > 0 || m.inspector {
 			items = append(items, command{"task.open", tr("打开完整任务"), m.openCurrentTask})
 		}
-		items = append(items, command{"tasks.insert", tr("输入任务搜索"), m.openSearch}, command{"view.save", tr("保存视图"), m.openSaveTaskView})
+		items = append(items, command{"tasks.insert", tr("输入任务搜索"), m.openSearch}, command{"view.save", tr("保存视图"), m.saveCurrentTaskView})
 		if (!m.inspector || m.unifiedTasks()) && m.taskPageIndex > 0 {
 			items = append(items, command{"view.prevPage", tr("上一页"), func() { m.browseTaskPage(-1) }})
 		}
@@ -136,8 +136,11 @@ func (m *mockup) activeCommands() []command {
 		items = append(items,
 			command{"task.edit", tr("编辑任务"), func() { m.openSourceEdit(object) }},
 			command{"task.labels", tr("管理标签"), func() { m.openLabels(object) }},
-			command{"task.toggle", tr(m.sourceToggleLabel(object)), func() { m.toggleSourceTask(object) }},
 		)
+	}
+
+	if m.canToggleSourceTask(object) && !m.sourceWritePending(object.ID) {
+		items = append(items, command{"task.toggle", tr(m.sourceToggleLabel(object)), func() { m.toggleSourceTask(object) }})
 	}
 
 	if m.objects[index].NativeFields["excerpt"] != "" {

@@ -20,30 +20,36 @@ type active struct {
 }
 
 type Service struct {
-	workbenchActive map[string]context.CancelFunc
-	workbenchReader workbenchReader
-	observers       map[string]common.Observer
-	observing       map[string]active
-	observerNext    map[string]time.Time
-	closeOnce       sync.Once
-	closeError      error
-	suspended       bool
-	mu              sync.Mutex
-	store           Store
-	dir             string
-	lock            io.Closer
-	ctx             context.Context
-	cancel          context.CancelFunc
-	wg              sync.WaitGroup
-	tasks           map[string]common.Task
-	runs            map[string]common.Run
-	running         map[string]active
-	settings        common.Settings
-	stopping        bool
-	lastError       string
+	workbenchActive  map[string]context.CancelFunc
+	readProgress     sync.Map // attempt ID to common.WorkbenchReadProgress
+	workbenchReader  workbenchReader
+	workbenchPlugins map[string]workbenchPlugin
+	observers        map[string]common.Observer
+	observing        map[string]active
+	observerNext     map[string]time.Time
+	closeOnce        sync.Once
+	closeError       error
+	suspended        bool
+	mu               sync.Mutex
+	store            Store
+	dir              string
+	lock             io.Closer
+	ctx              context.Context
+	cancel           context.CancelFunc
+	wg               sync.WaitGroup
+	tasks            map[string]common.Task
+	runs             map[string]common.Run
+	running          map[string]active
+	settings         common.Settings
+	stopping         bool
+	lastError        string
 }
 
 func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
+	return NewWithWorkbenchPlugins(dir, openStore, BuiltinWorkbenchPluginRegistry())
+}
+
+func NewWithWorkbenchPlugins(dir string, openStore func(string) (Store, error), registry WorkbenchPluginRegistry) (*Service, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return nil, e
 	}
@@ -64,7 +70,8 @@ func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
 		return nil, e
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{workbenchActive: make(map[string]context.CancelFunc), workbenchReader: readWorkbench, observers: map[string]common.Observer{}, observing: map[string]active{}, observerNext: map[string]time.Time{}, store: db, dir: dir, lock: lock, ctx: ctx, cancel: cancel, tasks: map[string]common.Task{}, runs: map[string]common.Run{}, running: map[string]active{}}
+	s := &Service{workbenchActive: make(map[string]context.CancelFunc), workbenchPlugins: registry.plugins, observers: map[string]common.Observer{}, observing: map[string]active{}, observerNext: map[string]time.Time{}, store: db, dir: dir, lock: lock, ctx: ctx, cancel: cancel, tasks: map[string]common.Task{}, runs: map[string]common.Run{}, running: map[string]active{}}
+	s.workbenchReader = s.readWorkbench
 	fail := func(e error) (*Service, error) { cancel(); db.Close(); lock.Close(); return nil, e }
 	s.settings, e = db.Settings()
 	if e != nil {
@@ -110,6 +117,8 @@ func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
 	s.wg.Add(1)
 	go s.tick()
 	if wb, ok := db.(workbenchStore); ok {
+		// Queue startup scans before callers can create or cancel a scan.
+		s.startScheduledWorkbench(wb, "startup")
 		s.wg.Add(1)
 		go s.tickWorkbench(wb)
 	}

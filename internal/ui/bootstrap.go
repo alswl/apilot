@@ -94,7 +94,7 @@ func Run(runtime *server.Runtime, remote *services.Remote, reveal, probe bool, k
 	s := &windowState{service: service, settings: first.Settings, followLogs: true, seen: presentation.InitialSeen(first.Runs, first.Events)}
 	appUI := mygo.App
 	appUI.SetName("Apilot")
-	appUI.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	appUI.SetActivationPolicy(mygo.ActivationPolicyRegular)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	s.ctx = ctx
@@ -135,7 +135,7 @@ func Run(runtime *server.Runtime, remote *services.Remote, reveal, probe bool, k
 		}()
 	})
 	appUI.OnActivate(func(visible bool) {
-		if !visible && s.tray != nil {
+		if s.tray != nil && !s.stopping && (!visible || s.win == nil || !s.win.IsVisible()) {
 			s.show()
 		}
 	})

@@ -1,10 +1,16 @@
 package workbench
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/config"
+	"github.com/alswl/apilot/pkg/server"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -121,5 +127,152 @@ func TestLocalKeyValueLabelsCanBeSavedAndSearched(t *testing.T) {
 	m.search = "label:=area:payments"
 	if rows := m.taskRows(); !slices.Equal(rows, []int{0}) {
 		t.Fatalf("expected exact key–value label search to find the task, got %v", rows)
+	}
+}
+
+func TestLiveConnectionResultsDistinguishCancellationFromFailure(t *testing.T) {
+	m := newMockup()
+	m.live = services.NewRemote("")
+	now := time.Now()
+	connection := common.WorkbenchConnection{ID: "obsidian", Kind: common.WorkbenchObsidianTasks, Name: "Vault"}
+	var tasks = []sourceObject{{ID: "kept", ConnectionID: connection.ID, Title: "Last confirmed task"}}
+	for _, test := range []struct {
+		state  string
+		paused bool
+		status string
+	}{
+		{"cancelled", false, "同步正常"},
+		{"failed", false, "同步失败"},
+		{"success", true, "已暂停"},
+	} {
+		snapshot := common.WorkbenchSnapshot{
+			WorkbenchConnection: connection, LastSuccess: &now,
+			Attempts: []common.WorkbenchAttempt{{ID: 1, State: test.state}},
+		}
+		snapshot.Paused = test.paused
+		m.applyLive([]common.WorkbenchSnapshot{snapshot}, tasks)
+		got := m.connectionByID(connection.ID)
+		if got == nil || got.Status != test.status || got.LastConfirmedAt == "" || len(m.objects) != 1 || m.objects[0].ID != "kept" {
+			t.Fatalf("%s: connection=%+v, tasks=%+v", test.state, got, m.objects)
+		}
+	}
+}
+
+func TestSyncLogReturnsKeyboardFocusToItsTrigger(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.navigate(connectionsPage)
+	p := ui.NewTester(m.view, 640, 480)
+	label := "同步日志 · 工作 vault"
+	click(t, p, label)
+	if m.syncLogID == "" {
+		t.Fatal("sync log did not open")
+	}
+	p.Key(0, ui.KeyEscape)
+	if m.syncLogID != "" || !p.Focused(label) {
+		t.Fatalf("focus after Escape: log=%q, trigger=%t", m.syncLogID, p.Focused(label))
+	}
+	p.Key(0, ui.KeyEnter)
+	if m.syncLogID == "" {
+		t.Fatal("keyboard activation did not reopen the sync log")
+	}
+	click(t, p, "关闭")
+	if m.syncLogID != "" || !p.Focused(label) {
+		t.Fatal("closing the sync log did not return focus")
+	}
+}
+
+func TestDisconnectFailedObsidianConnectionFromSettings(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := server.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { runtime.Close() })
+	vault := t.TempDir()
+	note := filepath.Join(vault, "Note.md")
+	const original = "# Tasks\n- [ ] Keep this note\n"
+	if err := os.WriteFile(note, []byte(original), 0600); err != nil {
+		t.Fatal(err)
+	}
+	remote := services.NewRemote(config.SocketPath(dir))
+	created, err := remote.ConfigureWorkbench(common.WorkbenchConnection{
+		Kind: common.WorkbenchObsidianTasks, Name: "Broken vault", Vault: vault, Scope: "Missing",
+	}, common.WorkbenchBridgeInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failed common.WorkbenchSnapshot
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		failed, err = remote.WorkbenchSyncDetails(created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(failed.Attempts) > 0 && failed.Attempts[0].State == "failed" {
+			break
+		}
+	}
+	if len(failed.Attempts) == 0 || failed.Attempts[0].State != "failed" {
+		t.Fatalf("expected a failed connection: %+v", failed)
+	}
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.live, m.liveBusy = remote, true
+	m.applyLive([]common.WorkbenchSnapshot{failed}, nil)
+	m.navigate(connectionsPage)
+	p := ui.NewTester(m.view, 680, 580)
+	click(t, p, "连接配置 · Broken vault", "解除连接")
+	if m.removeConnectionID != created.ID {
+		t.Fatalf("disconnect confirmation did not open: %q, editor open: %v", m.removeConnectionID, m.connectorEditor != nil)
+	}
+	p.Frame()
+	click(t, p, "保留连接")
+	if _, err := remote.WorkbenchSyncDetails(created.ID); err != nil {
+		t.Fatalf("cancelling deleted the connection: %v", err)
+	}
+	click(t, p, "解除连接", "确认解除连接")
+	if m.connectorEditor != nil {
+		t.Fatal("disconnect should close connection settings")
+	}
+	if _, err := remote.WorkbenchSyncDetails(created.ID); err == nil || common.ProtocolError(err).Code != "NOT_FOUND" {
+		t.Fatalf("connection was not removed: %v", err)
+	}
+	if data, err := os.ReadFile(note); err != nil || string(data) != original {
+		t.Fatalf("source note was modified: %v", err)
+	}
+}
+
+func TestLiveSyncDisplaysReadCountsWhenAvailable(t *testing.T) {
+	m := newMockup()
+	m.live = services.NewRemote("")
+	conn := &connection{ID: "reading"}
+	m.pendingSync[conn.ID] = true
+	view := func(c *ui.Context) { m.syncProgressView(c, conn) }
+	if !ui.NewTester(view, 490, 100).HasText("读取来源") {
+		t.Fatal("missing indeterminate read status")
+	}
+	conn.ReadProgress = &common.WorkbenchReadProgress{Read: 64, Total: 4000}
+	if !ui.NewTester(view, 490, 100).HasText("已读取 64 / 4000 篇笔记") {
+		t.Fatal("missing live note count")
+	}
+}
+
+func TestObsidianWriteUsesCLIUnlessRESTConfigured(t *testing.T) {
+	m := newMockup()
+	edit := &connectorEdit{connection: connection{ReadMethod: common.WorkbenchObsidianCLI}}
+	p := ui.NewTester(func(c *ui.Context) { m.obsidianBridgeFields(c, edit) }, 460, 240)
+	click(t, p, "允许回写")
+	if !edit.WriteEnabled || p.HasText("桥接地址") || p.HasText("桥接令牌") || p.HasText("桥接证书") {
+		t.Fatal("CLI should allow writeback without REST settings")
+	}
+	edit.ReadMethod = ""
+	p.Frame()
+	if p.HasText("桥接地址") {
+		t.Fatal("Markdown reads should allow CLI writeback without REST settings")
+	}
+	click(t, p, "配置 REST 桥接…")
+	p.Frame()
+	if !p.HasText("桥接地址") {
+		t.Fatal("explicitly configuring a REST bridge should show its settings")
 	}
 }

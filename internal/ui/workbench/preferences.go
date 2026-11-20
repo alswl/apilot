@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/alswl/apilot/internal/ui/components"
+	"github.com/alswl/apilot/pkg/common"
+	"github.com/alswl/apilot/pkg/services"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
@@ -124,6 +126,10 @@ func (m *mockup) settings(c *ui.Context) {
 					})
 				}
 			case 2:
+				if m.live != nil {
+					m.livePluginSettings(c)
+					return
+				}
 				for _, conn := range m.connectionsData {
 					ui.Row(c.Key(conn.ID)).FillWidth().Gap(12).Children(func() {
 						components.DataText(c, tr(conn.ConnectorID))
@@ -163,5 +169,30 @@ func (m *mockup) keyboardSettings(c *ui.Context) {
 	}
 	if m.keyboard.loadError != "" {
 		components.Muted(c, m.keyboard.loadError)
+	}
+}
+
+func (m *mockup) livePluginSettings(c *ui.Context) {
+	for _, plugin := range m.livePlugins {
+		title := plugin.ID
+		for _, connector := range services.WorkbenchConnectors() {
+			if connector.Kind == plugin.Connector {
+				title = connector.Name
+				break
+			}
+		}
+		enabled := plugin.Enabled
+		if ui.Checkbox(c.Key(plugin.ID), &enabled, title).Changed() {
+			if err := m.live.SetWorkbenchPluginEnabled(plugin.ID, enabled); err != nil {
+				m.livePluginProblem = common.ProtocolError(err).Message
+			} else {
+				m.livePluginProblem = ""
+				m.liveGeneration++
+				m.refreshLive()
+			}
+		}
+	}
+	if m.livePluginProblem != "" {
+		components.Muted(c.Key("plugin-problem"), m.livePluginProblem)
 	}
 }

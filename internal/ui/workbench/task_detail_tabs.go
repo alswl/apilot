@@ -24,7 +24,7 @@ type taskDetailUI struct {
 	tab                                     int
 	draft                                   string
 	labelInput, labelProblem, labelOriginal string
-	labelPair, focusLabel                   bool
+	labelPair, focusLabel, sourceOpenFailed bool
 	comments                                []taskComment
 }
 

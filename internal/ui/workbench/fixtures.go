@@ -18,9 +18,15 @@ type taskResource = common.WorkbenchTaskResource
 type taskEvent = common.WorkbenchTaskEvent
 
 type connection struct {
-	Version int64  `json:"-"`
-	ID      string `json:"connection_id"`
-	Name    string `json:"name"`
+	PluginDisabled   bool
+	WriteEnabled     bool
+	BridgeConfigured bool
+	Paused           bool
+	ActiveAttempt    int64
+	ReadProgress     *common.WorkbenchReadProgress
+	Version          int64  `json:"-"`
+	ID               string `json:"connection_id"`
+	Name             string `json:"name"`
 
 	SourceKind      string            `json:"source_kind"`
 	Repository      string            `json:"repository"`
@@ -38,6 +44,7 @@ type connection struct {
 	LastConfirmedAt string            `json:"last_confirmed_at"`
 	StatusLabels    map[string]string `json:"status_labels"`
 	CheckboxMapping map[string]string `json:"checkbox_mapping"`
+	ReadMethod      string            `json:"read_method,omitempty"`
 	VaultPath       string            `json:"vault_path"`
 	SyncMode        string            `json:"sync_mode"`
 }

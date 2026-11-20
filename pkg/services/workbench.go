@@ -4,13 +4,15 @@ import "github.com/alswl/apilot/pkg/common"
 
 // WorkbenchConnector describes a source kind and its fixture configuration.
 type WorkbenchConnector struct {
-	Kind             string   `json:"kind"`
-	Name             string   `json:"name"`
-	UserConfigurable bool     `json:"user_configurable"`
-	DemoCapabilities string   `json:"-"`
-	DemoSyncMode     string   `json:"-"`
-	SearchAliases    []string `json:"search_aliases,omitempty"`
-	SearchFields     []string `json:"search_fields,omitempty"`
+	PluginID         string                       `json:"plugin_id,omitempty"`
+	Capabilities     common.WorkbenchCapabilities `json:"capabilities"`
+	Kind             string                       `json:"kind"`
+	Name             string                       `json:"name"`
+	UserConfigurable bool                         `json:"user_configurable"`
+	DemoCapabilities string                       `json:"-"`
+	DemoSyncMode     string                       `json:"-"`
+	SearchAliases    []string                     `json:"search_aliases,omitempty"`
+	SearchFields     []string                     `json:"search_fields,omitempty"`
 }
 
 func WorkbenchConnectors() []WorkbenchConnector {
@@ -27,7 +29,7 @@ func WorkbenchConnectors() []WorkbenchConnector {
 			Kind: common.WorkbenchObsidianTasks, Name: "Obsidian Tasks", UserConfigurable: true,
 			DemoCapabilities: "文件变化 · 增量读取 · 回写", DemoSyncMode: "文件变化",
 			SearchAliases: []string{"obsidian"},
-			SearchFields:  []string{"path", "section", "start", "scheduled", "done", "checkbox"},
+			SearchFields:  []string{"file", "path", "section", "line", "created", "start", "scheduled", "done", "cancelled", "recurrence", "depends_on", "on_completion", "checkbox"},
 		},
 	}
 }
