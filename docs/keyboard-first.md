@@ -27,7 +27,7 @@
 目前在工作台模拟模式中可用。省略 `--keybindings` 时默认启用内置 Vim 键位，指定路径时从该 JSON 文件加载。编辑文件后可在工作台设置中打开文件或手动重新加载。已安装的新版应用也可在 `--args --mock` 后传入同样参数。
 
 ```sh
-go run ./cmd/apilot-app --mock --keybindings docs/keybindings.example.json
+go -C desktop run ./cmd/apilot-app --mock --keybindings ../docs/keybindings.example.json
 ```
 
 示例中 `Cmd+Shift+P` 和 `Cmd+K` 都能打开面板，`g t` 和 `Cmd+2` 跳到任务页，定时任务的可配置绑定已清除。[示例配置](keybindings.example.json)

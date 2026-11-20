@@ -75,8 +75,8 @@ func main() {
 	if transparent == 0 || ink == 0 || art.Empty() {
 		panic("menu-bar master must contain both transparent space and artwork")
 	}
-	writePNG("resources/icon.png", appIcon(master, 1024))
-	writePNG("internal/ui/assets/app.png", appIcon(master, 128))
+	writePNG("desktop/resources/icon.png", appIcon(master, 1024))
+	writePNG("desktop/internal/ui/assets/app.png", appIcon(master, 128))
 	// MyGo displays tray images at 18pt; export at 2x with a half-point inset.
 	const size, inset = 36, 1
 	tray := image.NewNRGBA(image.Rect(0, 0, size, size))
@@ -94,5 +94,5 @@ func main() {
 		tray.Pix[i+1] = 0
 		tray.Pix[i+2] = 0
 	}
-	writePNG("internal/ui/assets/tray.png", tray)
+	writePNG("desktop/internal/ui/assets/tray.png", tray)
 }

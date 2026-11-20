@@ -3,7 +3,7 @@
 从仓库启动工作台，或给已安装的 Apilot 传入同样的参数。
 
 ```sh
-go run ./cmd/apilot-app --workbench
+go -C desktop run ./cmd/apilot-app --workbench
 open -n -a Apilot --args --workbench
 ```
 
@@ -27,7 +27,7 @@ open -n -a Apilot --args --workbench
 可以先在独立终端启动本地服务。CLI 和工作台使用同一个通过当前用户 Unix Socket 提供的 HTTP API。工作台单独启动时也可为自己启动本地服务。
 
 ```sh
-go run ./cmd/apilot-app --serve
+go -C desktop run ./cmd/apilot-app --serve
 ```
 
 在另一个终端配置来源，或直接导入一组本地任务。
@@ -66,7 +66,7 @@ Obsidian 连接的「读取方式」默认直接读取 Markdown。也可选 Obsi
 Obsidian 任务详情显示文件名、vault 内路径、章节和行号，并可用「在 Obsidian 中打开」打开原笔记。「活动」记录 Apilot 导入任务的时间。任务搜索支持 Obsidian Tasks 的 Emoji 和 Dataview 字段，例如 `file:Release.md`、`scheduled:2026-11-24`、`has:recurrence`、`depends_on:=deploy`。点来源图标只看该连接，再点一次恢复全部来源。
 
 ```sh
-go run ./cmd/apilot-app --mock
+go -C desktop run ./cmd/apilot-app --mock
 open -n -a Apilot --args --mock
 ```
 
@@ -137,7 +137,7 @@ open -n -a Apilot --args --mock
 调试面板可以切换 ChangeTag、回写边界状态和组件预览。批量生成原生窗口截图并退出：
 
 ```sh
-go run ./cmd/apilot-app --mock --capture tmp/workbench-mockup
+go -C desktop run ./cmd/apilot-app --mock --capture ../tmp/workbench-mockup
 ```
 
-模拟模式内的任务、写入、连接、定时运行和助理回复来自本地样例。编辑、命名视图和对话保存在内存，重启后恢复样例。详见[当前限制](known-limitations.md)和[模拟模式开发入口](../cmd/apilot-mockup/README.md)。
+模拟模式内的任务、写入、连接、定时运行和助理回复来自本地样例。编辑、命名视图和对话保存在内存，重启后恢复样例。详见[当前限制](known-limitations.md)和[模拟模式开发入口](../desktop/cmd/apilot-mockup/README.md)。

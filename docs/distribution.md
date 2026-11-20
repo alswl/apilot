@@ -6,8 +6,8 @@ The image contains apilot and an Applications shortcut with a Finder drag layout
 `packaging/darwin/package-downloads.sh` verifies signatures and the image checksum, then
 exports DMG, App ZIP, CLI archive, provenance and SHA256SUMS into `dist/`.
 
-`mygo.json` is the shared configuration. `make app` stages the CLI under
-`resources/darwin-GOARCH/bin/`, then explicitly selects that MyGo build target;
+`desktop/mygo.json` is the shared configuration. `make app` stages the CLI under
+`desktop/resources/darwin-GOARCH/bin/`, then explicitly selects that MyGo build target;
 resources from other targets are excluded. Current download packaging remains
 macOS arm64. Linux/Windows application builds are not yet supported.
 
@@ -61,7 +61,7 @@ When enabled, a missing/invalid secret or failed notarization fails the signed b
 it never silently publishes an unsigned replacement.
 
 Pushed `v*` tags use signing/notarization when enabled; the tag must match
-`mygo.json`. To build a signed temporary package without a tag or Release, run
+`desktop/mygo.json`. To build a signed temporary package without a tag or Release, run
 the workflow on the desired branch with `notarize=true`. Its verified files are
 available as an Actions artifact for seven days. PRs, regular pushes and manual
 runs without that option never receive signing secrets. No `pull_request_target`,

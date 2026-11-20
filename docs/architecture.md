@@ -2,27 +2,27 @@
 
 A single local runtime owns SQLite, scheduling, task execution and the current-user Unix socket for each data directory. Run it in the foreground with `apilot-app --serve` or let the app host it. The workbench UI and CLI share a generated OpenAPI client and use HTTP over `http.sock`. Automation commands and older Workbench clients use the versioned JSON IPC at `ipc.sock`. The Workbench hosts the automation panels in its main window, with settings and CLI installation in its Preferences window. When attached to a separate local runtime, the automation panels use the same legacy IPC; when the App owns the runtime, they use the in-process Application Service. Both sockets are restricted to the current user and share the same Application Service and SQLite database.
 
-The Workbench HTTP API uses Huma and chi with the standard `net/http` server. HTTP handlers register and validate operations and translate domain errors into Problem Details. The stable domain error code is available in an error detail with location `code`. Run `make generate-openapi` to export `api/openapi.yaml` from the Huma registration and generate the Go client in `pkg/integrations`. CI runs `make check-openapi` to verify both artifacts. The client uses `http://apilot` as a logical URL and dials the Unix socket.
+The Workbench HTTP API uses Huma and chi with the standard `net/http` server. HTTP handlers register and validate operations and translate domain errors into Problem Details. The stable domain error code is available in an error detail with location `code`. Run `make generate-openapi` to export `api/openapi.yaml` from the Huma registration and generate the Go client in `core/pkg/integrations`. CI runs `make check-openapi` to verify both artifacts. The client uses `http://apilot` as a logical URL and dials the Unix socket.
 
 | Location | Responsibility |
 | --- | --- |
-| `cmd/apilot/` | CLI root and one file per command; each command self-registers in `init()` and parses flags/args before calling services. |
-| `cmd/apilot-app/` | Thin native entry point; `Execute` dispatches helper mode before wiring the App. |
-| `pkg/server/` | App/IPC startup, protocol dispatch, rollback, maintenance and ordered shutdown. |
-| `pkg/services/` | Business use cases, revisions, mutations, admission, recovery and retention; injected `Store` interface. |
-| `pkg/managers/` | Schedule parsing and next-occurrence calculations. |
-| `pkg/dal/` | SQLite connection, migrations and entity queries; the only SQL layer. |
-| `pkg/integrations/` | Process execution/cleanup and Unix Socket client adapters. |
-| `pkg/common/` | Domain values, errors and wire types; terminology is in [GLOSSARY](../GLOSSARY.md). |
-| `pkg/config/` | Data-directory and Socket configuration. |
-| `internal/presentation/` | Framework-independent drafts, field errors, projections and operation/refresh tokens. |
-| `internal/ui/` | Private MyGo rendering, windows, menus, language and platform callbacks. |
+| `core/cmd/apilot/` | CLI root and one file per command; each command self-registers in `init()` and parses flags/args before calling services. |
+| `desktop/cmd/apilot-app/` | Thin native entry point; `Execute` dispatches helper mode before wiring the App. |
+| `core/pkg/server/` | App/IPC startup, protocol dispatch, rollback, maintenance and ordered shutdown. |
+| `core/pkg/services/` | Business use cases, revisions, mutations, admission, recovery and retention; injected `Store` interface. |
+| `core/pkg/managers/` | Schedule parsing and next-occurrence calculations. |
+| `core/pkg/dal/` | SQLite connection, migrations and entity queries; the only SQL layer. |
+| `core/pkg/integrations/` | Process execution/cleanup and Unix Socket client adapters. |
+| `core/pkg/common/` | Domain values, errors and wire types; terminology is in [GLOSSARY](../GLOSSARY.md). |
+| `core/pkg/config/` | Data-directory and Socket configuration. |
+| `core/pkg/presentation/` | Framework-independent drafts, field errors, projections and operation/refresh tokens. |
+| `desktop/internal/ui/` | Private MyGo rendering, windows, menus, language and platform callbacks. |
 
 Dependencies flow from commands/server to services, then managers/DAL/integrations/common. Production service code does not depend on the concrete DAL; the App server constructs it. SQL migrations and saved data remain compatible.
 
-The shared MyGo UI stays in `internal/ui`; this project uses its own Go layering rather than the starter template layout. OS adapters use Go platform file suffixes/build tags within their owning layer: file locks and execution in integrations, IPC authentication in server, and desktop integration in UI. Services hold a closeable lock lease without making OS syscalls.
+The shared MyGo UI stays in `desktop/internal/ui`; this project uses its own Go layering rather than the starter template layout. OS adapters use Go platform file suffixes/build tags within their owning layer: file locks and execution in integrations, IPC authentication in server, and desktop integration in UI. Services hold a closeable lock lease without making OS syscalls.
 
-The root `mygo.json` configures the desktop app. `resources/` is MyGo's runtime resource tree: shared assets live at its root and target executables under `<goos>-<goarch>/bin/`; MyGo merges the selected overlay into the installed resources. `design/` holds brand masters and export tooling; `packaging/darwin/` holds current distribution scripts. Platform directories are added with implementations, not empty placeholders.
+`desktop/mygo.json` configures the desktop app. `desktop/resources/` is MyGo's runtime resource tree: shared assets live at its root and target executables under `<goos>-<goarch>/bin/`; MyGo merges the selected overlay into the installed resources. `design/` holds brand masters and export tooling; `packaging/darwin/` holds current distribution scripts. Platform directories are added with implementations, not empty placeholders.
 
 Only macOS Apple Silicon has application acceptance. Shared domain, configuration, scheduling and presentation packages are also compiled for Linux and Windows. Other platforms still need execution, IPC/locking, desktop integration and packaging acceptance; SQLite currently requires a target C toolchain.
 

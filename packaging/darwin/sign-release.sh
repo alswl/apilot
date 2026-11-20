@@ -16,10 +16,10 @@ work=$(mktemp -d)
 keychain="$work/apilot-signing.keychain-db"
 keychain_password=$(openssl rand -hex 24)
 security list-keychains -d user > "$work/original-keychains"
-cp mygo.json "$work/mygo.json"
+cp desktop/mygo.json "$work/mygo.json"
 cleanup() {
   set +e
-  cp "$work/mygo.json" mygo.json
+  cp "$work/mygo.json" desktop/mygo.json
   python3 - "$work/original-keychains" <<'PY'
 import shlex, subprocess, sys
 subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', *shlex.split(open(sys.argv[1]).read())], check=True)
@@ -44,7 +44,7 @@ xcrun notarytool store-credentials apilot-notary --key "$work/AuthKey.p8" --key-
 python3 - "$keychain" <<'PY'
 import json, os, re, sys
 from pathlib import Path
-p = Path('mygo.json')
+p = Path('desktop/mygo.json')
 c = json.loads(p.read_text())
 c['macos']['signingIdentity'] = os.environ['APPLE_SIGNING_IDENTITY']
 c['macos']['notarize'] = {'keychainProfile': 'apilot-notary', 'keychain': sys.argv[1]}
@@ -61,7 +61,7 @@ PY
 # the DMG, submits it once, and staples the DMG and original App bundle.
 make app MYGO_BUILD_FLAGS=
 xcrun stapler validate build/darwin-arm64/Apilot.app
-version=$(python3 -c 'import json; print(json.load(open("mygo.json"))["version"])')
+version=$(python3 -c 'import json; print(json.load(open("desktop/mygo.json"))["version"])')
 xcrun stapler validate "build/darwin-arm64/apilot-$version-arm64.dmg"
 spctl --assess --type execute --verbose build/darwin-arm64/Apilot.app
 # Distribute the very same signed CLI that Apple scanned inside the App.
