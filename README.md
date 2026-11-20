@@ -187,6 +187,7 @@ directory using your agent runtime's skill loader.
 
 ## Documentation
 
+- [Documentation index](docs/README.md) — guides for users and contributors.
 - [Architecture](docs/architecture.md) — ownership, scheduling, IPC and process lifecycle.
 - [Distribution](docs/distribution.md) — CI artifacts, Developer ID signing and notarization setup.
 - [Known limitations](docs/known-limitations.md) — including unverified OS integration, sleep/resume and accessibility behavior.

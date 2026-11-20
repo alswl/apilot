@@ -78,6 +78,18 @@ open -n -a Apilot --args --mock
 - CLI 能连上但看不到工作台里的任务时，检查两个进程是否使用同一数据目录。使用自定义目录时，在启动服务、CLI 和 UI 的终端中设定同一个绝对路径。都省略 `APILOT_DATA_DIR` 时，使用当前用户的默认目录。
 - 从 CLI 执行 `apilot doctor --json` 查看所连接服务报告的 `data_dir`。执行 `apilot workbench connection list --json` 可核对连接名称。
 
+### 排查 Obsidian CLI 连接和同步超时
+
+以下命令只读取 vault。将示例中的 `VAULT_NAME` 替换为目标 vault 的名称。
+
+1. 执行 `obsidian vaults`。如果 CLI 无法连接 Obsidian，先保存笔记，再完全退出并重新打开 Obsidian。重试命令。
+2. 执行 `obsidian vault=VAULT_NAME vault info=path`。将返回路径与 Apilot 连接的 Vault 路径比对。有多个 vault 时，后续命令也指定目标 vault。
+3. 执行 `obsidian vault=VAULT_NAME files total`，记录文件枚举耗时。文件总数包含非 Markdown 文件。
+4. 执行 `obsidian vault=VAULT_NAME files ext=md`，统计 Markdown 笔记。用 `obsidian vault=VAULT_NAME read path=PATH.md` 测量小范围内多篇笔记的读取耗时。将 `PATH.md` 替换为 vault 内的相对路径。
+5. 在 Apilot 中同步相同范围。查看已读数和同步日志。小范围成功后再验证整个 vault，记录本轮用时和最后可见进度。超时会记录为失败，并保留上次确认的任务。
+
+如果直接读取报告路径不存在，检查连接保存的 Vault 路径是否指向现有目录。CLI 可访问性通过前两步单独检查。
+
 ## 管理自动化
 
 启动 Apilot 会打开工作台主窗口，并显示 Dock 图标。关闭窗口后，状态栏菜单和定时执行继续运行。点击 Dock 图标，或在状态栏菜单选「打开 Apilot」，可以重新打开主窗口。
