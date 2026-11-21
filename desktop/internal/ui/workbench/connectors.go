@@ -17,9 +17,10 @@ import (
 
 type connectorEdit struct {
 	connection
-	problem       string
-	configureREST bool
-	bridge        common.WorkbenchBridgeInput
+	problem         string
+	bridge          common.WorkbenchBridgeInput
+	permissionVault string
+	permissionScope string
 }
 
 type syncEvent struct {
@@ -271,12 +272,54 @@ func (m *mockup) liveSyncResults(c *ui.Context, conn *connection) {
 		return
 	}
 	for _, receipt := range m.syncDetail.PendingWrites {
-		label := "来源尚未确认，重试可核对本次提交"
-		if receipt.SyncState == "conflict" {
+		label := "等待来源确认"
+		switch receipt.SyncState {
+		case common.WorkbenchOperationNeedsReview:
+			label = "来源尚未确认"
+		case common.WorkbenchOperationConflict:
 			label = "来源已变化，请刷新写入位置"
+		case common.WorkbenchOperationNotExecuted:
+			label = "操作未执行"
 		}
-		components.ActivityRow(c.Key(receipt.RequestID), receipt.RequestID, tr(label))
+		ui.Column(c.Key(receipt.RequestID)).FillWidth().Gap(4).Children(func() {
+			components.ActivityRow(c.Key("receipt"), receipt.RequestID, tr(label))
+			if receipt.SyncState == common.WorkbenchOperationNeedsReview {
+				button := ui.Button(c.Key("check"), tr("核对操作")).Label(tr("核对操作") + " · " + receipt.RequestID).Disabled(m.checkingOperations[receipt.RequestID])
+				if button.Clicked() {
+					m.reconcileLiveOperation(receipt.RequestID)
+				}
+			}
+		})
 	}
+}
+
+func (m *mockup) reconcileLiveOperation(requestID string) {
+	if m.live == nil || requestID == "" || m.checkingOperations[requestID] {
+		return
+	}
+	if m.checkingOperations == nil {
+		m.checkingOperations = make(map[string]bool)
+	}
+	m.checkingOperations[requestID] = true
+	remote := m.live
+	go func() {
+		receipt, err := remote.ReconcileWorkbenchTaskOperation(requestID)
+		mygo.RunOnMain(func() {
+			delete(m.checkingOperations, requestID)
+			if err != nil {
+				m.syncDetailProblem = common.ProtocolError(err).Message
+			} else if receipt.SyncState == common.WorkbenchOperationNeedsReview {
+				m.syncDetailProblem = tr("暂时无法确认操作结果")
+			} else {
+				m.syncDetailProblem = ""
+			}
+			m.liveGeneration++
+			if m.win != nil && !m.win.IsDestroyed() {
+				m.win.Invalidate()
+				m.refreshLive()
+			}
+		})
+	}()
 }
 
 func (m *mockup) removeConnectionControl(c *ui.Context, conn *connection, problem *string) bool {
@@ -363,7 +406,7 @@ func (m *mockup) editConnector(conn connection) {
 	if conn.StatusLabels == nil {
 		conn.StatusLabels = make(map[string]string)
 	}
-	m.connectorEditor = &connectorEdit{connection: conn}
+	m.connectorEditor = &connectorEdit{connection: conn, permissionVault: conn.VaultPath, permissionScope: conn.Scope}
 }
 
 func (m *mockup) connectorDialog(c *ui.Context) {
@@ -435,9 +478,6 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 				}
 				if ui.PrimaryButton(c.Key("save"), tr("保存配置")).Clicked() {
 					if m.live != nil && edit.SourceKind == obsidianTasks {
-						if edit.ReadMethod == common.WorkbenchObsidianCLI {
-							edit.bridge = common.WorkbenchBridgeInput{}
-						}
 						edit.bridge.WriteEnabled = &edit.WriteEnabled
 						edit.problem = m.saveLiveConnection(edit.connection, edit.bridge)
 					} else {
@@ -458,23 +498,6 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 
 func (m *mockup) obsidianBridgeFields(c *ui.Context, edit *connectorEdit) {
 	ui.Checkbox(c.Key("writable"), &edit.WriteEnabled, tr("允许回写"))
-	if !edit.WriteEnabled || edit.ReadMethod == common.WorkbenchObsidianCLI {
-		return
-	}
-	if !edit.BridgeConfigured && !edit.configureREST {
-		if ui.Button(c.Key("configure-rest"), tr("配置 REST 桥接…")).Clicked() {
-			edit.configureREST = true
-		}
-		return
-	}
-	if edit.BridgeConfigured {
-		components.Muted(c, tr("已保存桥接凭据。留空以继续使用。"))
-	}
-	components.TextField(c.Key("endpoint"), tr("桥接地址"), &edit.bridge.Endpoint).Placeholder("https://127.0.0.1:27124")
-	ui.TextInput(c.Key("token"), &edit.bridge.Token).Label(tr("桥接令牌")).Password().FillWidth()
-	ui.Field(c.Key("certificate"), tr("桥接证书"), func() {
-		ui.TextArea(c, &edit.bridge.Certificate).Label(tr("桥接证书")).FillWidth().Height(75)
-	})
 }
 
 func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
@@ -510,20 +533,9 @@ func (m *mockup) obsidianConnectorFields(c *ui.Context, edit *connectorEdit) {
 			m.chooseObsidianVault(edit)
 		}
 	})
-	if m.live != nil {
-		method := "直接读取 Markdown"
-		if edit.ReadMethod == common.WorkbenchObsidianCLI {
-			method = "Obsidian CLI"
-		}
-		previous := edit.ReadMethod
-		choiceField(c.Key("read-method"), "读取方式", &method, []string{"直接读取 Markdown", "Obsidian CLI"})
-		edit.ReadMethod = ""
-		if method == "Obsidian CLI" {
-			edit.ReadMethod = common.WorkbenchObsidianCLI
-		}
-		if edit.ReadMethod != previous {
-			edit.WriteEnabled = false
-		}
+	if edit.ID != "" && (edit.VaultPath != edit.permissionVault || edit.Scope != edit.permissionScope) {
+		edit.WriteEnabled = false
+		edit.permissionVault, edit.permissionScope = edit.VaultPath, edit.Scope
 	}
 }
 

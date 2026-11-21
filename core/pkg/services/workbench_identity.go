@@ -10,6 +10,71 @@ import (
 	"github.com/alswl/apilot/core/pkg/integrations"
 )
 
+func ambiguousWorkbenchNativeIdentities(before, after []common.WorkbenchTask) map[string]bool {
+	known := make(map[string]bool, len(before))
+	for _, task := range before {
+		if task.NativeID != "" {
+			known[task.NativeID] = true
+		}
+	}
+	counts := map[string]int{}
+	ambiguous := map[string]bool{}
+	for _, task := range after {
+		if task.NativeID != "" && known[task.NativeID] {
+			counts[task.NativeID]++
+			if counts[task.NativeID] > 1 {
+				ambiguous[task.NativeID] = true
+			}
+		}
+	}
+	return ambiguous
+}
+
+// partitionWorkbenchAmbiguous keeps previously confirmed mappings for known
+// duplicate identities while allowing other source tasks to be reconciled.
+func partitionWorkbenchAmbiguous(before, after []common.WorkbenchTask, ambiguous map[string]bool) (matchBefore, filtered, preserved []common.WorkbenchTask) {
+	if len(ambiguous) == 0 {
+		return before, after, nil
+	}
+	for _, task := range before {
+		if ambiguous[task.NativeID] {
+			preserved = append(preserved, task)
+		} else {
+			matchBefore = append(matchBefore, task)
+		}
+	}
+	for _, task := range after {
+		if !ambiguous[task.NativeID] {
+			filtered = append(filtered, task)
+		}
+	}
+	return matchBefore, filtered, preserved
+}
+
+// missingWorkbenchTaskIDs compares stable mappings after identity matching.
+// Ambiguous identities remain visible and are not treated as removals.
+func missingWorkbenchTaskIDs(c common.WorkbenchConnection, before, observed []common.WorkbenchTask) map[string]bool {
+	ambiguous := ambiguousWorkbenchNativeIdentities(before, observed)
+	matchBefore, candidates, preserved := partitionWorkbenchAmbiguous(before, observed, ambiguous)
+	candidates = append([]common.WorkbenchTask(nil), candidates...)
+	matchWorkbench(c, matchBefore, candidates)
+	recordObsidianImport(c, matchBefore, candidates, time.Time{})
+	seen := make(map[string]bool, len(candidates)+len(preserved))
+	for _, task := range candidates {
+		seen[task.ID] = true
+	}
+	for _, task := range preserved {
+		seen[task.ID] = true
+	}
+	missing := make(map[string]bool)
+	for _, task := range before {
+		if !seen[task.ID] {
+			missing[task.ID] = true
+		}
+	}
+	return missing
+}
+
 func matchWorkbench(c common.WorkbenchConnection, before, after []common.WorkbenchTask) {
 	prior := map[string][]common.WorkbenchTask{}
 	groups := map[string][]int{}
@@ -123,9 +188,26 @@ func recordObsidianImport(c common.WorkbenchConnection, before, after []common.W
 				assigned[id], task.ID = true, id
 			}
 		}
-		task.Activity = previous[task.ID].Activity
+		prior, existed := previous[task.ID]
+		task.Activity = prior.Activity
 		if len(task.Activity) == 0 {
 			task.Activity = []common.WorkbenchTaskEvent{{Time: now, Text: "从 Obsidian 导入"}}
 		}
+		if existed && !now.IsZero() {
+			recordWorkbenchStateChange(prior, task, now)
+		}
 	}
+}
+
+func recordWorkbenchStateChange(before common.WorkbenchTask, after *common.WorkbenchTask, now time.Time) {
+	if before.State == "" || before.State == after.State {
+		return
+	}
+	text := map[string]string{
+		"open": "状态改为待处理", "in_progress": "状态改为进行中", "done": "状态改为已完成", "cancelled": "状态改为已取消",
+	}[after.State]
+	if text == "" {
+		text = "任务状态已变化"
+	}
+	after.Activity = append(append([]common.WorkbenchTaskEvent(nil), after.Activity...), common.WorkbenchTaskEvent{Time: now, Text: text})
 }

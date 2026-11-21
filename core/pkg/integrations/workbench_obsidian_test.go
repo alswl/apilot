@@ -54,6 +54,29 @@ func TestWorkbenchObsidianScopeAndParse(t *testing.T) {
 	}
 }
 
+func TestWorkbenchObsidianDefaultAndConfiguredStatuses(t *testing.T) {
+	vault := t.TempDir()
+	content := "- [ ] Open\n- [/] In progress\n- [x] Done\n- [-] Cancelled\n- [?] Unknown\n"
+	if err := os.WriteFile(filepath.Join(vault, "tasks.md"), []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+	connection := common.WorkbenchConnection{Vault: vault, Scope: "."}
+	tasks, err := ReadWorkbenchObsidian(context.Background(), connection)
+	if err != nil || len(tasks) != 5 {
+		t.Fatalf("tasks: %+v %v", tasks, err)
+	}
+	for i, state := range []string{"open", "in_progress", "done", "cancelled", "unknown"} {
+		if tasks[i].State != state {
+			t.Errorf("task %d: got %q, want %q", i, tasks[i].State, state)
+		}
+	}
+	connection.Statuses = map[string]string{"/": "cancelled", "?": "in_progress"}
+	tasks, err = ReadWorkbenchObsidian(context.Background(), connection)
+	if err != nil || tasks[1].State != "cancelled" || tasks[4].State != "in_progress" {
+		t.Fatalf("configured symbols must override defaults: %+v %v", tasks, err)
+	}
+}
+
 func TestWorkbenchObsidianHeadingTargets(t *testing.T) {
 	vault := t.TempDir()
 	work := filepath.Join(vault, "Work")
@@ -176,5 +199,54 @@ func TestWorkbenchObsidianCompletionKeepsTaskFormatAndNoteTail(t *testing.T) {
 	reopened, err := SetWorkbenchObsidianCheckbox(connection, closed, task, "open", tomorrow)
 	if err != nil || string(reopened) != open {
 		t.Fatalf("reopened: %q %v", reopened, err)
+	}
+}
+
+func TestWorkbenchObsidianReadsSingleScopedNote(t *testing.T) {
+	vault := t.TempDir()
+	if err := os.Mkdir(filepath.Join(vault, "Work"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(vault, "Work", "Note.md")
+	if err := os.WriteFile(path, []byte("# Project\n- [ ] Task\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	conn := common.WorkbenchConnection{Vault: vault, Scope: "Work"}
+	tasks, err := ReadWorkbenchObsidianTasksInNote(context.Background(), conn, "Work/Note.md")
+	if err != nil || len(tasks) != 1 || tasks[0].Title != "Task" {
+		t.Fatalf("tasks: %+v %v", tasks, err)
+	}
+	observation, err := ObserveWorkbenchObsidianNote(context.Background(), conn, "Work/Note.md")
+	if err != nil || observation.Coverage != common.WorkbenchCoverageRead || len(observation.Tasks) != 1 {
+		t.Fatalf("observation: %+v %v", observation, err)
+	}
+	observation, err = ObserveWorkbenchObsidianNote(context.Background(), conn, "outside.md")
+	if err == nil || observation.Coverage != common.WorkbenchCoverageOutside {
+		t.Fatalf("outside: %+v %v", observation, err)
+	}
+	if _, err := ReadWorkbenchObsidianTasksInNote(context.Background(), conn, "outside.md"); err == nil {
+		t.Fatal("accepted out-of-scope note")
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadWorkbenchObsidianTasksInNote(context.Background(), conn, "Work/Note.md"); err == nil {
+		t.Fatal("missing note accepted as empty")
+	}
+	observation, err = ObserveWorkbenchObsidianNote(context.Background(), conn, "Work/Note.md")
+	if err != nil || observation.Coverage != common.WorkbenchCoverageMissing {
+		t.Fatalf("missing: %+v %v", observation, err)
+	}
+	if err := os.Remove(filepath.Join(vault, "Work")); err != nil {
+		t.Fatal(err)
+	}
+	observation, err = ObserveWorkbenchObsidianNote(context.Background(), conn, "Work/Note.md")
+	if err == nil || observation.Coverage != common.WorkbenchCoverageFailed {
+		t.Fatalf("missing scope: %+v %v", observation, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ReadWorkbenchObsidianTasksInNote(ctx, conn, "Work/Note.md"); err != context.Canceled {
+		t.Fatalf("cancelled: %v", err)
 	}
 }

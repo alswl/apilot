@@ -16,6 +16,105 @@ import (
 	"github.com/alswl/apilot/core/pkg/common"
 )
 
+func TestWorkbenchBridgeWritesStayInSelectedVault(t *testing.T) {
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	original := "# Tasks\n- [ ] Shared 🆔 shared\n"
+	type fixture struct{ id, path, taskID string }
+	var fixtures []fixture
+	for i := range 2 {
+		vault := t.TempDir()
+		note := filepath.Join(vault, "tasks.md")
+		if err := os.WriteFile(note, []byte(original), 0600); err != nil {
+			t.Fatal(err)
+		}
+		bridge := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := filepath.Join(vault, strings.TrimPrefix(r.URL.Path, "/vault/"))
+			data, err := os.ReadFile(path)
+			if err != nil {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			tag := `"` + workbenchFingerprint(string(data)) + `"`
+			if r.Method == http.MethodGet {
+				w.Header().Set("X-Apilot-Conditional-Write", "vault-process-v1")
+				w.Header().Set("ETag", tag)
+				_, _ = w.Write(data)
+				return
+			}
+			if r.Method != http.MethodPut || r.Header.Get("If-Match") != tag {
+				w.WriteHeader(http.StatusPreconditionFailed)
+				return
+			}
+			data, err = io.ReadAll(r.Body)
+			if err == nil {
+				err = os.WriteFile(path, data, 0600)
+			}
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer bridge.Close()
+		certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: bridge.Certificate().Raw})
+		enabled := true
+		id, err := s.ConfigureWorkbench(common.WorkbenchConnection{Kind: common.WorkbenchObsidianTasks, Name: string(rune('A' + i)), Vault: vault}, common.WorkbenchBridgeInput{Endpoint: bridge.URL, Token: "token", Certificate: string(certificate), WriteEnabled: &enabled})
+		if err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		var taskID string
+		for time.Now().Before(deadline) {
+			page, err := s.WorkbenchTasks(common.WorkbenchQuery{Connection: id})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(page.Items) == 1 {
+				taskID = page.Items[0].ID
+				break
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		if taskID == "" {
+			t.Fatal("vault did not synchronize")
+		}
+		fixtures = append(fixtures, fixture{id: id, path: note, taskID: taskID})
+	}
+	if fixtures[0].taskID == fixtures[1].taskID {
+		t.Fatal("independent vaults shared a task identity")
+	}
+	for i, fixture := range fixtures {
+		task, err := s.WorkbenchTask(fixture.taskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if i == 0 {
+			_, err := s.SubmitWorkbenchTaskOperation(common.WorkbenchTaskWrite{RequestID: "wrong-vault", ConnectionID: fixtures[1].id, ConnectionVersion: task.ConnectionVersion, SourceObjectID: task.ID, TargetVersion: task.TargetVersion, State: "done"})
+			if err == nil {
+				t.Fatal("accepted a task belonging to another connection")
+			}
+		}
+		receipt, err := s.WriteWorkbenchTask(common.WorkbenchTaskWrite{RequestID: "complete-" + fixture.id, ConnectionID: fixture.id, ConnectionVersion: task.ConnectionVersion, SourceObjectID: task.ID, TargetVersion: task.TargetVersion, State: "done"})
+		if err != nil || receipt.SyncState != "confirmed" || receipt.SourceObjectID != task.ID {
+			t.Fatalf("complete vault %d: %+v %v", i, receipt, err)
+		}
+		for j, other := range fixtures {
+			data, err := os.ReadFile(other.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			done := strings.Contains(string(data), "- [x] Shared")
+			if done != (j <= i) {
+				t.Fatalf("vault %d after write %d: %q", j, i, data)
+			}
+		}
+	}
+}
+
 func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 	vault := t.TempDir()
 	note := filepath.Join(vault, "List.md")
@@ -144,7 +243,7 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 		t.Fatalf("complete replay: %+v %v", replay, err)
 	}
 	task, err = s.WorkbenchTask(task.ID)
-	if err != nil || task.State != "done" || len(task.Activity) != 1 || !task.Activity[0].Time.Equal(importedAt) {
+	if err != nil || task.State != "done" || len(task.Activity) != 2 || !task.Activity[0].Time.Equal(importedAt) || task.Activity[1].Text != "状态改为已完成" {
 		t.Fatalf("completed task: %+v %v", task, err)
 	}
 	status.RequestID, status.State, status.TargetVersion = "reopen-bridge-task", "open", task.TargetVersion
@@ -159,6 +258,9 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 	task, err = s.WorkbenchTask(task.ID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(task.Activity) != 3 || task.Activity[2].Text != "状态改为待处理" {
+		t.Fatalf("reopen activity: %+v", task.Activity)
 	}
 	status.RequestID, status.State, status.TargetVersion = "competing-state-write", "done", task.TargetVersion
 	competingSave.Store(true)
@@ -178,6 +280,14 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	connection.Name = "Renamed vault"
+	if _, err := s.ConfigureWorkbench(connection.WorkbenchConnection, common.WorkbenchBridgeInput{}); err != nil {
+		t.Fatal(err)
+	}
+	connection, err = s.WorkbenchSnapshot(connectionID)
+	if err != nil || !connection.WriteEnabled || !connection.BridgeConfigured {
+		t.Fatalf("business edit changed write authorization: %+v %v", connection, err)
+	}
 	disabled := false
 	if _, err := s.ConfigureWorkbench(connection.WorkbenchConnection, common.WorkbenchBridgeInput{WriteEnabled: &disabled}); err != nil {
 		t.Fatal(err)
@@ -191,4 +301,117 @@ func TestWorkbenchObsidianCreateThroughBridge(t *testing.T) {
 		t.Fatalf("write after revocation modified the note: %q %v", data, err)
 	}
 
+}
+
+func TestWorkbenchBridgeVerificationDoesNotBlockOrOverwriteConcurrentEdit(t *testing.T) {
+	vault := t.TempDir()
+	started, release := make(chan struct{}), make(chan struct{})
+	bridge := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		path := filepath.Join(vault, strings.TrimPrefix(r.URL.Path, "/vault/"))
+		data, err := os.ReadFile(path)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("X-Apilot-Conditional-Write", "vault-process-v1")
+		w.Header().Set("ETag", "\"proof\"")
+		_, _ = w.Write(data)
+	}))
+	defer bridge.Close()
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	id, err := s.SaveWorkbench(common.WorkbenchConnection{Kind: common.WorkbenchObsidianTasks, Name: "Original", Vault: vault})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, err := s.WorkbenchSnapshot(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: bridge.Certificate().Raw})
+	enabled := true
+	verified := make(chan error, 1)
+	go func() {
+		_, err := s.ConfigureWorkbench(original.WorkbenchConnection, common.WorkbenchBridgeInput{Endpoint: bridge.URL, Token: "token", Certificate: string(certificate), WriteEnabled: &enabled})
+		verified <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("bridge verification did not start")
+	}
+	edited := original.WorkbenchConnection
+	edited.Name = "Changed while verifying"
+	changed := make(chan error, 1)
+	go func() {
+		_, err := s.SaveWorkbench(edited)
+		changed <- err
+	}()
+	select {
+	case err := <-changed:
+		if err != nil {
+			close(release)
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		close(release)
+		t.Fatal("external verification blocked another connection edit")
+	}
+	close(release)
+	if err := <-verified; err == nil || common.ProtocolError(err).Code != "STALE_REVISION" {
+		t.Fatalf("outdated verification was not rejected: %v", err)
+	}
+	current, err := s.WorkbenchSnapshot(id)
+	if err != nil || current.Name != edited.Name || current.WriteEnabled || current.BridgeConfigured {
+		t.Fatalf("outdated verification changed connection: %+v %v", current, err)
+	}
+}
+
+func TestWorkbenchBridgeVerificationStopsWithService(t *testing.T) {
+	vault := t.TempDir()
+	started := make(chan struct{})
+	bridge := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-r.Context().Done()
+	}))
+	defer bridge.Close()
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: bridge.Certificate().Raw})
+	enabled := true
+	finished := make(chan error, 1)
+	go func() {
+		_, err := s.ConfigureWorkbench(common.WorkbenchConnection{Kind: common.WorkbenchObsidianTasks, Name: "Vault", Vault: vault}, common.WorkbenchBridgeInput{Endpoint: bridge.URL, Token: "token", Certificate: string(certificate), WriteEnabled: &enabled})
+		finished <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		_ = s.Close()
+		t.Fatal("bridge verification did not start")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- s.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("service shutdown did not cancel verification")
+	}
+	if err := <-finished; err == nil || common.ProtocolError(err).Code != "CONFLICT" {
+		t.Fatalf("verification survived service shutdown: %v", err)
+	}
 }

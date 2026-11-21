@@ -66,5 +66,13 @@ func (r *Runtime) Close() error {
 }
 
 func OpenService(dir string) (*services.Service, error) {
-	return services.NewWithWorkbenchPlugins(dir, func(path string) (services.Store, error) { return dal.Open(path) }, services.BuiltinWorkbenchPluginRegistry())
+	settings, err := config.LoadObsidianSync(dir)
+	options := services.ObsidianSyncOptions{
+		ScanInterval: settings.ScanInterval, ScanTimeout: settings.ScanTimeout,
+		MaxRetries: settings.MaxRetries, ScanTimeoutConfigured: settings.ScanTimeoutConfigured,
+	}
+	if err != nil {
+		options.Diagnostic = err.Error()
+	}
+	return services.NewWithWorkbenchOptions(dir, func(path string) (services.Store, error) { return dal.Open(path) }, services.BuiltinWorkbenchPluginRegistry(), options)
 }

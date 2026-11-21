@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -81,7 +82,13 @@ func TestWorkbenchSyncSupersededAndIsolated(t *testing.T) {
 	}
 	await(cancelled)
 	current := wait(id, "success")
-	if current.Version != 2 || len(current.Attempts) < 2 || current.Attempts[1].State != "superseded" {
+	superseded := false
+	for _, attempt := range current.Attempts[1:] {
+		if attempt.State == "superseded" {
+			superseded = true
+		}
+	}
+	if current.Version != 2 || !superseded {
 		t.Fatalf("%+v", current)
 	}
 	page, err := s.WorkbenchTasks(common.WorkbenchQuery{Connection: id})
@@ -255,6 +262,9 @@ func TestLocalWorkbenchSingleWriteReplayAndStaleState(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || page.Items[0].State != "done" {
 		t.Fatalf("Local tasks: %+v %v", page, err)
 	}
+	if len(page.Items[0].Activity) != 1 || page.Items[0].Activity[0].Text != "状态改为已完成" {
+		t.Fatalf("Local status activity: %+v", page.Items[0].Activity)
+	}
 }
 
 func TestWorkbenchCapabilitiesFollowConnectionPolicy(t *testing.T) {
@@ -346,7 +356,7 @@ func TestWorkbenchReadDeadlineFailsWithoutPublishingPartialTasks(t *testing.T) {
 
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	s.wg.Add(1)
-	s.runWorkbench(ctx, cancel, store, connection, attempts, func(context.Context, common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
+	s.runWorkbench(ctx, cancel, store, connection, attempts, 0, nil, func(context.Context, common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
 		return []common.WorkbenchTask{{SourceKey: "partial", Title: "Partial", State: "open"}}, context.DeadlineExceeded
 	})
 	snapshot, err := s.WorkbenchSnapshot(connection.ID)
@@ -359,5 +369,183 @@ func TestWorkbenchReadDeadlineFailsWithoutPublishingPartialTasks(t *testing.T) {
 	page, err := s.WorkbenchTasks(common.WorkbenchQuery{Connection: connection.ID})
 	if err != nil || len(page.Items) != 0 {
 		t.Fatalf("deadline published a partial snapshot: %+v %v", page, err)
+	}
+}
+
+func TestWorkbenchSourceChangeDuringReadSchedulesAnotherRead(t *testing.T) {
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	store, err := s.workbenchStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := common.WorkbenchConnection{ID: "watch-queue", Name: "Vault", Kind: common.WorkbenchObsidianTasks, Vault: t.TempDir(), Version: 1}
+	if err := store.SaveWorkbench(conn, false); err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+	s.mu.Lock()
+	s.workbenchReader = func(ctx context.Context, _ common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
+		started <- struct{}{}
+		select {
+		case <-release:
+			return nil, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	s.mu.Unlock()
+	s.enqueueWorkbenchSourceChange(store, conn.ID)
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("first read did not start")
+	}
+	s.enqueueWorkbenchSourceChange(store, conn.ID)
+	s.enqueueWorkbenchSourceChange(store, conn.ID)
+	close(release)
+	select {
+	case <-started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("change during read was not replayed")
+	}
+}
+
+func TestWorkbenchDuplicateIdentityPreservesOnlyAmbiguousTasks(t *testing.T) {
+	vault := t.TempDir()
+	note := filepath.Join(vault, "tasks.md")
+	if err := os.WriteFile(note, []byte("- [ ] First 🆔 a\n- [ ] Other 🆔 b\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	store, err := s.workbenchStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := common.WorkbenchConnection{ID: "ambiguous", Kind: common.WorkbenchObsidianTasks, Name: "Vault", Vault: vault, Scope: ".", Version: 1}
+	if err := store.SaveWorkbench(conn, false); err != nil {
+		t.Fatal(err)
+	}
+	before, err := readWorkbenchObsidianWrittenVault(context.Background(), conn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matchWorkbench(conn, nil, before)
+	confirmedAt := time.Now().UTC().Add(-time.Minute)
+	if err := store.RecordWorkbench(conn, nil, nil, before, &confirmedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(note, []byte("- [x] Changed 🆔 a\n- [ ] Duplicate 🆔 a\n- [x] Updated 🆔 b\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SyncWorkbench(conn.ID); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		snapshot, err := s.WorkbenchSnapshot(conn.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(snapshot.Attempts) > 0 && snapshot.Attempts[0].State == "failed" {
+			if snapshot.Attempts[0].Scope != "full" || snapshot.Attempts[0].Coverage != "partial" {
+				t.Fatalf("ambiguous scan coverage: %+v", snapshot.Attempts[0])
+			}
+			if snapshot.LastSuccess == nil || !snapshot.LastSuccess.Equal(confirmedAt) {
+				t.Fatalf("ambiguous scan advanced full confirmation: %+v", snapshot)
+			}
+			page, err := s.WorkbenchTasks(common.WorkbenchQuery{Connection: conn.ID})
+			if err != nil || len(page.Items) != 2 {
+				t.Fatalf("tasks: %+v %v", page, err)
+			}
+			byNative := map[string]common.WorkbenchTask{}
+			for _, task := range page.Items {
+				byNative[task.NativeID] = task
+			}
+			if byNative["a"].ID != before[0].ID || byNative["a"].Title != "First" || byNative["a"].State != "open" {
+				t.Fatalf("ambiguous task changed: %+v", byNative["a"])
+			}
+			if byNative["b"].ID != before[1].ID || byNative["b"].Title != "Updated" || byNative["b"].State != "done" {
+				t.Fatalf("unambiguous task did not update: %+v", byNative["b"])
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("ambiguous scan did not finish")
+}
+
+func TestWorkbenchMissingTaskRequiresStableSecondRead(t *testing.T) {
+	for _, restored := range []bool{true, false} {
+		t.Run(fmt.Sprintf("restored=%t", restored), func(t *testing.T) {
+			vault := t.TempDir()
+			if err := os.WriteFile(filepath.Join(vault, "task.md"), []byte("- [ ] Task 🆔 stable\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := openService(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			store, err := s.workbenchStore()
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn := common.WorkbenchConnection{ID: "vault", Kind: common.WorkbenchObsidianTasks, Name: "Vault", Vault: "mock", Scope: ".", Version: 1}
+			sourceConn := conn
+			sourceConn.Vault = vault
+			if err := store.SaveWorkbench(conn, false); err != nil {
+				t.Fatal(err)
+			}
+			before, err := readWorkbenchObsidianWrittenVault(context.Background(), sourceConn)
+			if err != nil || len(before) != 1 {
+				t.Fatalf("source: %+v %v", before, err)
+			}
+			matchWorkbench(conn, nil, before)
+			now := time.Now().UTC()
+			if err := store.RecordWorkbench(conn, nil, nil, before, &now); err != nil {
+				t.Fatal(err)
+			}
+			snapshot, err := s.WorkbenchSnapshot(conn.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			attempt := common.WorkbenchAttempt{ID: time.Now().UnixNano(), State: "running", Started: time.Now().UTC()}
+			if err := store.RecordWorkbench(conn, []common.WorkbenchAttempt{attempt}, nil, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			reads := 0
+			reader := func(ctx context.Context, _ common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
+				reads++
+				if reads == 1 || !restored {
+					return []common.WorkbenchTask{}, nil
+				}
+				return readWorkbenchObsidianWrittenVault(ctx, sourceConn)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			s.wg.Add(1)
+			s.runWorkbench(ctx, cancel, store, conn, []common.WorkbenchAttempt{attempt}, snapshot.SnapshotVersion, nil, reader)
+			if reads != 2 {
+				t.Fatalf("missing task was read %d times", reads)
+			}
+			tasks, err := store.WorkbenchObjects(conn.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if restored && (len(tasks) != 1 || tasks[0].ID != before[0].ID) {
+				t.Fatalf("transient absence lost identity: %+v", tasks)
+			}
+			if !restored && len(tasks) != 0 {
+				t.Fatalf("confirmed removal still visible: %+v", tasks)
+			}
+		})
 	}
 }

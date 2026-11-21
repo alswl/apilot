@@ -23,7 +23,14 @@ func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, erro
 			return dialer.DialContext(ctx, "unix", socket)
 		},
 	}
-	client, err := NewClient("http://apilot", WithHTTPClient(&http.Client{Transport: transport, Timeout: 3 * time.Second}),
+	timeout := 3 * time.Second
+	switch method {
+	case "workbench.operation.reconcile":
+		timeout = 35 * time.Second
+	case "workbench.task.create", "workbench.task.complete", "workbench.task.reopen":
+		timeout = 25 * time.Second
+	}
+	client, err := NewClient("http://apilot", WithHTTPClient(&http.Client{Transport: transport, Timeout: timeout}),
 		WithRequestEditorFn(func(_ context.Context, request *http.Request) error {
 			request.Header.Set(common.WorkbenchAPIVersionHeader, common.WorkbenchAPIVersion)
 			return nil
@@ -72,12 +79,16 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return client.ListWorkbenchConnectors(ctx)
 	case "workbench.connection.list":
 		return client.ListWorkbenchConnections(ctx)
+	case "workbench.label.list":
+		return client.ListWorkbenchLabels(ctx)
 	}
 	input, err := json.Marshal(params)
 	if err != nil {
 		return nil, common.Err("INVALID_ARGUMENT", "Invalid workbench request")
 	}
 	switch method {
+	case "workbench.operation.submit":
+		return client.SubmitWorkbenchTaskOperationWithBody(ctx, "application/json", bytes.NewReader(input))
 	case "workbench.plugin.list":
 		return client.ListWorkbenchPlugins(ctx)
 	case "workbench.task.list":
@@ -86,6 +97,9 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 			return nil, common.Err("INVALID_ARGUMENT", "Invalid task query")
 		}
 		mapped := &ListWorkbenchTasksParams{}
+		if q.LabelID != "" {
+			mapped.LabelId = &q.LabelID
+		}
 		if q.Connection != "" {
 			mapped.Connection = &q.Connection
 		}
@@ -127,17 +141,38 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return client.ImportWorkbenchTasksWithBody(ctx, "application/json", bytes.NewReader(input))
 	}
 	var p struct {
-		ID        string `json:"id"`
-		Version   int64  `json:"version"`
-		Paused    bool   `json:"paused"`
-		Enabled   bool   `json:"enabled"`
-		NotePath  string `json:"note_path"`
-		AttemptID int64  `json:"attempt_id"`
+		ID           string   `json:"id"`
+		Version      int64    `json:"version"`
+		Paused       bool     `json:"paused"`
+		Enabled      bool     `json:"enabled"`
+		NotePath     string   `json:"note_path"`
+		AttemptID    int64    `json:"attempt_id"`
+		AnnotationID string   `json:"annotation_id"`
+		Names        []string `json:"names"`
+		Body         string   `json:"body"`
 	}
 	if err := json.Unmarshal(input, &p); err != nil || p.ID == "" {
 		return nil, common.Err("INVALID_ARGUMENT", "A workbench ID is required")
 	}
 	switch method {
+	case "workbench.operation.show":
+		return client.GetWorkbenchTaskOperation(ctx, p.ID)
+	case "workbench.operation.reconcile":
+		return client.ReconcileWorkbenchTaskOperation(ctx, p.ID)
+	case "workbench.label.set":
+		return client.SetWorkbenchLabels(ctx, p.ID, SetWorkbenchLabelsJSONRequestBody{Names: &p.Names})
+	case "workbench.annotation.list":
+		return client.ListWorkbenchAnnotations(ctx, p.ID)
+	case "workbench.annotation.put":
+		if p.AnnotationID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "Annotation ID is required")
+		}
+		return client.PutWorkbenchAnnotation(ctx, p.ID, p.AnnotationID, PutWorkbenchAnnotationJSONRequestBody{Body: p.Body})
+	case "workbench.annotation.delete":
+		if p.AnnotationID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "Annotation ID is required")
+		}
+		return client.DeleteWorkbenchAnnotation(ctx, p.ID, p.AnnotationID)
 	case "workbench.task.show":
 		return client.GetWorkbenchTask(ctx, p.ID)
 	case "workbench.connection.show":

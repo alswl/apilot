@@ -27,6 +27,12 @@ var workbenchLocalSchema string
 //go:embed migrations/005_workbench_plugins.sql
 var workbenchPluginSchema string
 
+//go:embed migrations/006_workbench_sync.sql
+var workbenchSyncSchema string
+
+//go:embed migrations/007_workbench_task_metadata.sql
+var workbenchMetadataSchema string
+
 type Store struct{ db *sql.DB }
 
 func Open(path string) (*Store, error) {
@@ -50,11 +56,11 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, e
 	}
-	if version > 5 {
+	if version > 7 {
 		db.Close()
-		return nil, fmt.Errorf("database schema %d is newer than supported 5", version)
+		return nil, fmt.Errorf("database schema %d is newer than supported 7", version)
 	}
-	for index, migration := range []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema} {
+	for index, migration := range []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema} {
 		next := index + 1
 		if next <= version {
 			continue

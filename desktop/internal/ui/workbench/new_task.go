@@ -23,6 +23,11 @@ func (m *mockup) writableConnections() []string {
 
 func (m *mockup) openNewTask() {
 	if m.newTaskPending {
+		m.newTaskOpen = true
+		return
+	}
+	if m.newTaskRequest.RequestID != "" && m.newTaskTargets.problem != "" {
+		m.newTaskOpen = true
 		return
 	}
 	sources := m.writableConnections()
@@ -53,6 +58,9 @@ func (m *mockup) newTaskDialog(c *ui.Context) {
 					}
 				}
 				components.StatusLabel(c.Key("pending"), components.Status{Text: tr("等待来源确认"), Loading: true, Color: c.Theme().Warning})
+				if ui.Button(c.Key("background"), tr("后台处理")).Clicked() {
+					open = false
+				}
 				return
 			}
 			var submitted bool
@@ -86,9 +94,7 @@ func (m *mockup) newTaskDialog(c *ui.Context) {
 			})
 		})
 	})
-	if !m.newTaskPending {
-		m.newTaskOpen = open
-	}
+	m.newTaskOpen = open
 }
 
 func (m *mockup) createTask(title string) {
@@ -157,6 +163,9 @@ func (m *mockup) createTask(title string) {
 }
 
 func (m *mockup) finishLiveTaskCreate(receipt common.WorkbenchTaskReceipt, err error) {
+	if err == nil && workbenchOperationInProgress(receipt.SyncState) {
+		return
+	}
 	m.newTaskPending = false
 	if err != nil {
 		problem := common.ProtocolError(err)
@@ -168,8 +177,12 @@ func (m *mockup) finishLiveTaskCreate(receipt common.WorkbenchTaskReceipt, err e
 	}
 	switch receipt.SyncState {
 	case "confirmed":
+		wasOpen := m.newTaskOpen
 		m.newTaskOpen = false
-		m.navigate(tasksPage)
+		m.newTaskRequest = common.WorkbenchTaskWrite{}
+		if wasOpen {
+			m.navigate(tasksPage)
+		}
 	case "conflict":
 		m.newTaskTargets.problem = "来源已变化，请刷新写入位置"
 		m.newTaskRequest = common.WorkbenchTaskWrite{}

@@ -11,21 +11,6 @@ import (
 	"github.com/alswl/apilot/core/pkg/integrations"
 )
 
-func (s *Service) openWorkbenchBridge(connection common.WorkbenchSnapshot) (*integrations.WorkbenchObsidianBridge, error) {
-	if s.workbenchActive[connection.ID] != nil {
-		return nil, common.Err("CONFLICT", "Enable Obsidian writes and wait for the active synchronization to finish")
-	}
-	store, ok := s.store.(workbenchBridgeStore)
-	if !ok {
-		return nil, common.Err("INTERNAL", "Obsidian bridge settings unavailable")
-	}
-	settings, err := store.WorkbenchBridge(connection.ID)
-	if err != nil {
-		return nil, err
-	}
-	return integrations.OpenWorkbenchObsidianBridge(settings.Endpoint, settings.Token, settings.Certificate)
-}
-
 func (s *Service) writeObsidianWorkbenchTask(store workbenchStore, writer workbenchTaskWriteStore, connection common.WorkbenchSnapshot, input common.WorkbenchTaskWrite, fingerprint string, task common.WorkbenchTask) (common.WorkbenchTaskReceipt, error) {
 	if input.SourceObjectID != "" {
 		return s.setWorkbenchObsidianState(store, writer, connection, input, fingerprint, task)
@@ -35,20 +20,28 @@ func (s *Service) writeObsidianWorkbenchTask(store workbenchStore, writer workbe
 
 func (s *Service) createWorkbenchObsidianTask(store workbenchStore, writer workbenchTaskWriteStore, connection common.WorkbenchSnapshot, input common.WorkbenchTaskWrite, fingerprint string) (common.WorkbenchTaskReceipt, error) {
 	var empty common.WorkbenchTaskReceipt
-	title := strings.TrimSpace(input.Title)
-	if title == "" || len(title) > 1024 || input.State != "" {
-		return empty, common.Err("INVALID_ARGUMENT", "Provide a valid task title")
-	}
-	content, err := integrations.ReadWorkbenchObsidianNote(connection.WorkbenchConnection, input.NotePath)
-	if err != nil {
-		return empty, common.Err("CONFLICT", "Could not read the selected note")
-	}
-	marker := obsidianCreationMarker(fingerprint)
-	replacement, err := integrations.InsertWorkbenchObsidianTask(content, input.HeadingPath, input.TargetVersion, title, marker)
+	content, replacement, err := prepareWorkbenchObsidianCreation(connection.WorkbenchConnection, input, fingerprint)
 	if err != nil {
 		return empty, err
 	}
 	return s.writeWorkbenchObsidianNote(store, writer, connection, input, fingerprint, input.NotePath, content, replacement)
+}
+
+func prepareWorkbenchObsidianCreation(connection common.WorkbenchConnection, input common.WorkbenchTaskWrite, fingerprint string) ([]byte, []byte, error) {
+	title := strings.TrimSpace(input.Title)
+	if title == "" || len(title) > 1024 || input.State != "" || len(fingerprint) < 32 {
+		return nil, nil, common.Err("INVALID_ARGUMENT", "Provide a valid task title and request")
+	}
+	content, err := integrations.ReadWorkbenchObsidianNote(connection, input.NotePath)
+	if err != nil {
+		return nil, nil, common.Err("CONFLICT", "Could not read the selected note")
+	}
+	marker := obsidianCreationMarker(fingerprint)
+	replacement, err := integrations.InsertWorkbenchObsidianTask(content, input.HeadingPath, input.TargetVersion, title, marker)
+	if err != nil {
+		return nil, nil, err
+	}
+	return content, replacement, nil
 }
 
 func (s *Service) writeWorkbenchObsidianNote(store workbenchStore, writer workbenchTaskWriteStore, connection common.WorkbenchSnapshot, input common.WorkbenchTaskWrite, fingerprint, path string, content, replacement []byte) (common.WorkbenchTaskReceipt, error) {
@@ -77,13 +70,27 @@ func (s *Service) writeWorkbenchObsidianNote(store workbenchStore, writer workbe
 }
 
 func (s *Service) prepareWorkbenchObsidianNoteWrite(ctx context.Context, connection common.WorkbenchSnapshot, path string, content, replacement []byte) (func() error, error) {
+	if s.workbenchActive[connection.ID] != nil {
+		return nil, common.Err("CONFLICT", "Wait for the active synchronization to finish")
+	}
+	return s.prepareWorkbenchObsidianNoteWriteUnlocked(ctx, connection, path, content, replacement)
+}
+
+// prepareWorkbenchObsidianNoteWriteUnlocked does source I/O without accessing
+// the service's mutable scan state. Dispatch authorization is checked separately.
+func (s *Service) prepareWorkbenchObsidianNoteWriteUnlocked(ctx context.Context, connection common.WorkbenchSnapshot, path string, content, replacement []byte) (func() error, error) {
 	if connection.ReadMethod == common.WorkbenchObsidianCLI || !connection.BridgeConfigured {
-		if s.workbenchActive[connection.ID] != nil {
-			return nil, common.Err("CONFLICT", "Wait for the active synchronization to finish")
-		}
 		return integrations.PrepareWorkbenchObsidianCLIWrite(ctx, connection.WorkbenchConnection, path, content, replacement)
 	}
-	bridge, err := s.openWorkbenchBridge(connection)
+	store, ok := s.store.(workbenchBridgeStore)
+	if !ok {
+		return nil, common.Err("INTERNAL", "Obsidian bridge settings unavailable")
+	}
+	settings, err := store.WorkbenchBridge(connection.ID)
+	if err != nil {
+		return nil, err
+	}
+	bridge, err := integrations.OpenWorkbenchObsidianBridge(settings.Endpoint, settings.Token, settings.Certificate)
 	if err != nil {
 		return nil, err
 	}

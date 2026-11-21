@@ -4,6 +4,7 @@ go 1.27.3
 
 require (
 	github.com/danielgtaylor/huma/v2 v2.41.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/mattn/go-sqlite3 v1.14.53
 	github.com/oapi-codegen/runtime v1.9.0

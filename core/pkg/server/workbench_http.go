@@ -24,6 +24,9 @@ type workbenchItems[T any] struct {
 type workbenchID struct {
 	ID string `path:"id" minLength:"1"`
 }
+type workbenchOperationID struct {
+	RequestID string `path:"request_id" minLength:"1"`
+}
 type workbenchPluginInput struct {
 	ID   string `path:"id" minLength:"1"`
 	Body struct {
@@ -58,7 +61,25 @@ type workbenchSetTaskState struct {
 	ID   string `path:"id" minLength:"1"`
 	Body common.WorkbenchTaskWrite
 }
+type workbenchLabelsInput struct {
+	ID   string `path:"id" minLength:"1"`
+	Body struct {
+		Names []string `json:"names"`
+	}
+}
+type workbenchAnnotationInput struct {
+	ID           string `path:"id" minLength:"1"`
+	AnnotationID string `path:"annotation_id" minLength:"1"`
+	Body         struct {
+		Body string `json:"body" minLength:"1"`
+	}
+}
+type workbenchAnnotationID struct {
+	ID           string `path:"id" minLength:"1"`
+	AnnotationID string `path:"annotation_id" minLength:"1"`
+}
 type workbenchTaskList struct {
+	LabelID    string `query:"label_id"`
 	Connection string `query:"connection"`
 	State      string `query:"state" enum:"open,in_progress,done,cancelled,unknown"`
 	Offset     int    `query:"offset" minimum:"0"`
@@ -70,7 +91,7 @@ type workbenchConnectionInput struct {
 	ID         string            `json:"id,omitempty"`
 	Kind       string            `json:"kind" enum:"obsidian_tasks,github_issues"`
 	Name       string            `json:"name" minLength:"1" maxLength:"256"`
-	ReadMethod string            `json:"read_method,omitempty"`
+	ReadMethod *string           `json:"read_method,omitempty" hidden:"true"`
 	Vault      string            `json:"vault,omitempty"`
 	Scope      string            `json:"scope,omitempty"`
 	Repository string            `json:"repository,omitempty"`
@@ -100,6 +121,20 @@ func WorkbenchOpenAPI() ([]byte, error) {
 }
 
 func registerWorkbenchHTTP(api huma.API, s *services.Service) {
+	registerWorkbench(api, http.MethodPost, workbenchPath+"/task-operations", "submitWorkbenchTaskOperation", "Accept a task operation", "Tasks", []int{400, 404, 409},
+		func(in *workbenchBody[common.WorkbenchTaskWrite]) (common.WorkbenchTaskReceipt, error) {
+			return s.SubmitWorkbenchTaskOperation(in.Body)
+		})
+	registerWorkbench(api, http.MethodGet, workbenchPath+"/task-operations/{request_id}", "getWorkbenchTaskOperation", "Read a task operation receipt", "Tasks", []int{404},
+		func(in *workbenchOperationID) (common.WorkbenchTaskReceipt, error) {
+			return s.WorkbenchTaskOperationReceipt(in.RequestID)
+		})
+	registerWorkbench(api, http.MethodPost, workbenchPath+"/task-operations/{request_id}/reconcile", "reconcileWorkbenchTaskOperation", "Check the original task operation against its source", "Tasks", []int{404, 409},
+		func(in *workbenchOperationID) (common.WorkbenchTaskReceipt, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			return s.ReconcileWorkbenchTaskOperation(ctx, in.RequestID)
+		})
 	registerWorkbench(api, http.MethodGet, "/health", "health", "Check whether the HTTP service is listening", "System", nil,
 		func(_ *struct{}) (workbenchHealth, error) { return workbenchHealth{"ok"}, nil })
 	registerWorkbench(api, http.MethodGet, "/ready", "ready", "Check whether the workbench database is readable", "System", []int{503},
@@ -132,7 +167,17 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		func(in *workbenchID) (common.WorkbenchSnapshot, error) { return s.WorkbenchSnapshot(in.ID) })
 	registerWorkbench(api, http.MethodPut, workbenchPath+"/connections", "saveWorkbenchConnection", "Save a connection", "Connections", []int{400, 404, 409},
 		func(in *workbenchBody[workbenchConnectionInput]) (common.WorkbenchSnapshot, error) {
-			id, err := s.ConfigureWorkbench(common.WorkbenchConnection{ID: in.Body.ID, Kind: in.Body.Kind, Name: in.Body.Name, Vault: in.Body.Vault, ReadMethod: in.Body.ReadMethod, Scope: in.Body.Scope, Repository: in.Body.Repository, Statuses: in.Body.Statuses, Version: in.Body.Version}, in.Body.WorkbenchBridgeInput)
+			readMethod := ""
+			if in.Body.ReadMethod != nil {
+				readMethod = *in.Body.ReadMethod
+			} else if in.Body.ID != "" {
+				prior, err := s.WorkbenchSnapshot(in.Body.ID)
+				if err != nil {
+					return common.WorkbenchSnapshot{}, err
+				}
+				readMethod = prior.ReadMethod
+			}
+			id, err := s.ConfigureWorkbench(common.WorkbenchConnection{ID: in.Body.ID, Kind: in.Body.Kind, Name: in.Body.Name, Vault: in.Body.Vault, ReadMethod: readMethod, Scope: in.Body.Scope, Repository: in.Body.Repository, Statuses: in.Body.Statuses, Version: in.Body.Version}, in.Body.WorkbenchBridgeInput)
 			if err != nil {
 				return common.WorkbenchSnapshot{}, err
 			}
@@ -169,7 +214,32 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/tasks", "listWorkbenchTasks", "Search the committed task snapshot", "Tasks", []int{400, 409},
 		func(in *workbenchTaskList) (common.WorkbenchPage, error) {
-			return s.WorkbenchTasks(common.WorkbenchQuery{Connection: in.Connection, State: in.State, Offset: in.Offset, Limit: in.Limit, Revision: in.Revision})
+			return s.WorkbenchTasks(common.WorkbenchQuery{LabelID: in.LabelID, Connection: in.Connection, State: in.State, Offset: in.Offset, Limit: in.Limit, Revision: in.Revision})
+		})
+	registerWorkbench(api, http.MethodGet, workbenchPath+"/labels", "listWorkbenchLabels", "List local task labels", "Tasks", nil,
+		func(_ *struct{}) (workbenchItems[common.WorkbenchLabel], error) {
+			items, err := s.WorkbenchLabels()
+			return workbenchItems[common.WorkbenchLabel]{items}, err
+		})
+	registerWorkbench(api, http.MethodPut, workbenchPath+"/tasks/{id}/labels", "setWorkbenchLabels", "Set local task labels", "Tasks", []int{400, 404},
+		func(in *workbenchLabelsInput) (workbenchResultID, error) {
+			err := s.SetWorkbenchLabels(in.ID, in.Body.Names)
+			return workbenchResultID{in.ID}, err
+		})
+	registerWorkbench(api, http.MethodGet, workbenchPath+"/tasks/{id}/annotations", "listWorkbenchAnnotations", "List local task annotations", "Tasks", []int{404},
+		func(in *workbenchID) (workbenchItems[common.WorkbenchAnnotation], error) {
+			items, err := s.WorkbenchAnnotations(in.ID)
+			return workbenchItems[common.WorkbenchAnnotation]{items}, err
+		})
+	registerWorkbench(api, http.MethodPut, workbenchPath+"/tasks/{id}/annotations/{annotation_id}", "putWorkbenchAnnotation", "Save a local task annotation", "Tasks", []int{400, 404, 409},
+		func(in *workbenchAnnotationInput) (workbenchResultID, error) {
+			err := s.PutWorkbenchAnnotation(in.ID, in.AnnotationID, in.Body.Body)
+			return workbenchResultID{in.AnnotationID}, err
+		})
+	registerWorkbench(api, http.MethodDelete, workbenchPath+"/tasks/{id}/annotations/{annotation_id}", "deleteWorkbenchAnnotation", "Delete a local task annotation", "Tasks", []int{404},
+		func(in *workbenchAnnotationID) (workbenchResultID, error) {
+			err := s.DeleteWorkbenchAnnotation(in.ID, in.AnnotationID)
+			return workbenchResultID{in.AnnotationID}, err
 		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/tasks/{id}", "getWorkbenchTask", "Read a task", "Tasks", []int{404},
 		func(in *workbenchID) (common.WorkbenchTask, error) { return s.WorkbenchTask(in.ID) })
@@ -203,8 +273,28 @@ func registerWorkbench[I, O any](api huma.API, method, path, id, summary, tag st
 		if err != nil {
 			return nil, workbenchHTTPError(err)
 		}
-		return &workbenchBody[O]{Body: result}, nil
+		return &workbenchBody[O]{Body: publicWorkbenchResult(result)}, nil
 	})
+}
+
+func publicWorkbenchSnapshot(snapshot common.WorkbenchSnapshot) common.WorkbenchSnapshot {
+	snapshot.ReadMethod = ""
+	snapshot.BridgeConfigured = false
+	return snapshot
+}
+
+func publicWorkbenchResult[O any](result O) O {
+	switch value := any(result).(type) {
+	case common.WorkbenchSnapshot:
+		return any(publicWorkbenchSnapshot(value)).(O)
+	case workbenchItems[common.WorkbenchSnapshot]:
+		for i := range value.Items {
+			value.Items[i] = publicWorkbenchSnapshot(value.Items[i])
+		}
+		return any(value).(O)
+	default:
+		return result
+	}
 }
 
 func workbenchHTTPError(err error) error {

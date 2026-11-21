@@ -72,6 +72,18 @@ func (r *Remote) WriteWorkbenchTask(input common.WorkbenchTaskWrite) (common.Wor
 	return remoteResult[common.WorkbenchTaskReceipt](r, method, input)
 }
 
+func (r *Remote) WorkbenchTaskOperationReceipt(requestID string) (common.WorkbenchTaskReceipt, error) {
+	return remoteResult[common.WorkbenchTaskReceipt](r, "workbench.operation.show", map[string]string{"id": requestID})
+}
+
+func (r *Remote) SubmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) (common.WorkbenchTaskReceipt, error) {
+	return remoteResult[common.WorkbenchTaskReceipt](r, "workbench.operation.submit", input)
+}
+
+func (r *Remote) ReconcileWorkbenchTaskOperation(requestID string) (common.WorkbenchTaskReceipt, error) {
+	return remoteResult[common.WorkbenchTaskReceipt](r, "workbench.operation.reconcile", map[string]string{"id": requestID})
+}
+
 func (r *Remote) ConfigureWorkbench(c common.WorkbenchConnection, bridge common.WorkbenchBridgeInput) (common.WorkbenchSnapshot, error) {
 	return remoteResult[common.WorkbenchSnapshot](r, "workbench.connection.save", struct {
 		common.WorkbenchConnection
@@ -115,4 +127,29 @@ func (r *Remote) RemoveWorkbench(id string) error {
 
 func (r *Remote) WorkbenchSyncDetails(id string) (common.WorkbenchSnapshot, error) {
 	return remoteResult[common.WorkbenchSnapshot](r, "workbench.sync.show", map[string]string{"id": id})
+}
+
+func (r *Remote) WorkbenchLabels() ([]common.WorkbenchLabel, error) {
+	result, err := remoteResult[struct {
+		Items []common.WorkbenchLabel `json:"items"`
+	}](r, "workbench.label.list", nil)
+	return result.Items, err
+}
+func (r *Remote) SetWorkbenchLabels(taskID string, names []string) error {
+	_, err := r.Call("workbench.label.set", map[string]any{"id": taskID, "names": names})
+	return err
+}
+func (r *Remote) WorkbenchAnnotations(taskID string) ([]common.WorkbenchAnnotation, error) {
+	result, err := remoteResult[struct {
+		Items []common.WorkbenchAnnotation `json:"items"`
+	}](r, "workbench.annotation.list", map[string]string{"id": taskID})
+	return result.Items, err
+}
+func (r *Remote) PutWorkbenchAnnotation(taskID, annotationID, body string) error {
+	_, err := r.Call("workbench.annotation.put", map[string]string{"id": taskID, "annotation_id": annotationID, "body": body})
+	return err
+}
+func (r *Remote) DeleteWorkbenchAnnotation(taskID, annotationID string) error {
+	_, err := r.Call("workbench.annotation.delete", map[string]string{"id": taskID, "annotation_id": annotationID})
+	return err
 }

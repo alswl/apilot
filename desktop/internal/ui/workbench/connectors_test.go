@@ -67,6 +67,21 @@ func TestConnectorInstancesAndSyncLog(t *testing.T) {
 	}
 }
 
+func TestSyncLogOffersRecoveryForUncertainCreation(t *testing.T) {
+	m := newFramework()
+	m.live = services.NewRemote("")
+	conn := connection{ID: "vault", Name: "Vault", SourceKind: obsidianTasks}
+	m.syncDetail = common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{ID: conn.ID}, PendingWrites: []common.WorkbenchTaskReceipt{
+		{RequestID: "pending", SyncState: common.WorkbenchOperationDispatching},
+		{RequestID: "uncertain-create", SyncState: common.WorkbenchOperationNeedsReview},
+		{RequestID: "not-executed", SyncState: common.WorkbenchOperationNotExecuted},
+	}}
+	p := ui.NewTester(func(c *ui.Context) { m.liveSyncResults(c, &conn) }, 680, 480)
+	if !p.HasText("等待来源确认") || !p.HasText("来源尚未确认") || !p.HasText("核对操作") || !p.HasText("操作未执行") {
+		t.Fatal("sync log must distinguish active, uncertain and undispatched operations")
+	}
+}
+
 func TestTaskKeyboardOpenAndStatusMenu(t *testing.T) {
 	m := newMockup()
 	m.useAdaptiveLayout()
@@ -257,22 +272,52 @@ func TestLiveSyncDisplaysReadCountsWhenAvailable(t *testing.T) {
 	}
 }
 
-func TestObsidianWriteUsesCLIUnlessRESTConfigured(t *testing.T) {
+func TestObsidianConnectionShowsWritePermissionWithoutTransportSettings(t *testing.T) {
 	m := newMockup()
-	edit := &connectorEdit{connection: connection{ReadMethod: common.WorkbenchObsidianCLI}}
-	p := ui.NewTester(func(c *ui.Context) { m.obsidianBridgeFields(c, edit) }, 460, 240)
+	m.live = services.NewRemote("")
+	edit := &connectorEdit{}
+	p := ui.NewTester(func(c *ui.Context) {
+		m.obsidianConnectorFields(c, edit)
+		m.obsidianBridgeFields(c, edit)
+	}, 460, 300)
 	click(t, p, "允许回写")
-	if !edit.WriteEnabled || p.HasText("桥接地址") || p.HasText("桥接令牌") || p.HasText("桥接证书") {
-		t.Fatal("CLI should allow writeback without REST settings")
+	if !edit.WriteEnabled || p.HasText("读取方式") || p.HasText("配置 REST 桥接…") || p.HasText("桥接地址") {
+		t.Fatal("connection editor exposed internal transport settings")
 	}
-	edit.ReadMethod = ""
-	p.Frame()
-	if p.HasText("桥接地址") {
-		t.Fatal("Markdown reads should allow CLI writeback without REST settings")
+	previousLanguage := englishUI.Swap(true)
+	t.Cleanup(func() { englishUI.Store(previousLanguage) })
+	for _, width := range []int{320, 760} {
+		view := ui.NewTester(func(c *ui.Context) {
+			m.obsidianConnectorFields(c, edit)
+			m.obsidianBridgeFields(c, edit)
+		}, width, 300)
+		if !view.HasText("Allow writeback") || view.HasText("Read method") || view.HasText("REST bridge") {
+			t.Fatalf("unexpected English connection controls at width %d", width)
+		}
 	}
-	click(t, p, "配置 REST 桥接…")
+}
+
+func TestObsidianTargetChangeRequiresWritePermissionAgain(t *testing.T) {
+	m := newMockup()
+	m.live = services.NewRemote("")
+	edit := &connectorEdit{connection: connection{ID: "vault", VaultPath: "/old", Scope: ".", WriteEnabled: true}, permissionVault: "/old", permissionScope: "."}
+	p := ui.NewTester(func(c *ui.Context) {
+		m.obsidianConnectorFields(c, edit)
+		m.obsidianBridgeFields(c, edit)
+	}, 460, 300)
+	edit.VaultPath = "/new"
 	p.Frame()
-	if !p.HasText("桥接地址") {
-		t.Fatal("explicitly configuring a REST bridge should show its settings")
+	if edit.WriteEnabled {
+		t.Fatal("changing the vault retained write permission")
+	}
+	click(t, p, "允许回写")
+	p.Frame()
+	if !edit.WriteEnabled {
+		t.Fatal("explicitly renewed write permission was not retained")
+	}
+	edit.Scope = "Work"
+	p.Frame()
+	if edit.WriteEnabled {
+		t.Fatal("changing the scope retained write permission")
 	}
 }

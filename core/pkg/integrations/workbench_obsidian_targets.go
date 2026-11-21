@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"os"
@@ -333,4 +334,57 @@ func WorkbenchObsidianWithoutCompletionDate(body string) string {
 		}
 		result.WriteString("-->")
 	}
+}
+
+// ReadWorkbenchObsidianTasksInNote parses one authorized note. A missing note
+// is an error because removal requires a broader coverage check.
+func ReadWorkbenchObsidianTasksInNote(ctx context.Context, c common.WorkbenchConnection, notePath string) ([]common.WorkbenchTask, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	content, err := ReadWorkbenchObsidianTarget(ctx, c, notePath)
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	tasks := parseWorkbenchNote(c, notePath, string(content))
+	for _, task := range tasks {
+		if len(task.Summary) > 12<<10 {
+			return nil, common.Err("CONFLICT", "Obsidian task line exceeds the read limit")
+		}
+	}
+	return tasks, nil
+}
+
+// ObserveWorkbenchObsidianNote distinguishes verified absence of a location
+// from an incomplete read. Absence alone does not prove task deletion.
+func ObserveWorkbenchObsidianNote(ctx context.Context, c common.WorkbenchConnection, notePath string) (common.WorkbenchNoteObservation, error) {
+	observation := common.WorkbenchNoteObservation{Path: notePath, Coverage: common.WorkbenchCoverageFailed}
+	tasks, err := ReadWorkbenchObsidianTasksInNote(ctx, c, notePath)
+	if err == nil {
+		observation.Coverage, observation.Tasks = common.WorkbenchCoverageRead, tasks
+		return observation, nil
+	}
+	if problem, ok := errors.AsType[*common.Error](err); ok && problem.Code == "INVALID_ARGUMENT" {
+		observation.Coverage = common.WorkbenchCoverageOutside
+		return observation, err
+	}
+	if c.ReadMethod != common.WorkbenchObsidianCLI && errors.Is(err, os.ErrNotExist) && ctx.Err() == nil {
+		root, rootErr := openWorkbenchNoteRoot(c)
+		if rootErr != nil {
+			return observation, err
+		}
+		defer root.Close()
+		relative, relErr := filepath.Rel(filepath.Clean(c.Scope), notePath)
+		if relErr == nil && workbenchVisiblePath(relative) {
+			_, statErr := root.Lstat(relative)
+			if errors.Is(statErr, os.ErrNotExist) {
+				observation.Coverage = common.WorkbenchCoverageMissing
+				return observation, nil
+			}
+		}
+	}
+	return observation, err
 }

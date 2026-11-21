@@ -27,6 +27,14 @@ func TestWorkbenchSnapshotTransaction(t *testing.T) {
 	if err != nil || len(page.Items) != 1 {
 		t.Fatalf("%+v %v", page, err)
 	}
+	stale := task
+	stale.State = "done"
+	if err := s.RecordWorkbenchIfVersion(c, nil, []common.WorkbenchTask{task}, []common.WorkbenchTask{stale}, &now, 0); err == nil {
+		t.Fatal("accepted observation based on an older snapshot")
+	}
+	if current, err := s.WorkbenchObject(task.ID); err != nil || current.State != "open" {
+		t.Fatalf("stale observation changed the task: %+v %v", current, err)
+	}
 	other := task
 	other.ID = "collision"
 	if err := s.RecordWorkbench(c, nil, page.Items, []common.WorkbenchTask{task, other}, &now); err == nil {
@@ -55,6 +63,25 @@ func TestWorkbenchSnapshotTransaction(t *testing.T) {
 	}
 }
 
+func restoreLegacyWorkbenchSchema(t *testing.T, s *Store) {
+	t.Helper()
+	_, err := s.db.Exec(`PRAGMA foreign_keys=OFF;
+DROP TABLE workbench_task_labels;
+DROP TABLE workbench_task_annotations;
+DROP TABLE workbench_labels;
+CREATE TABLE legacy_objects (id TEXT PRIMARY KEY, connection_id TEXT NOT NULL REFERENCES workbench_connections(id) ON DELETE CASCADE, source_key TEXT NOT NULL, title TEXT NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE (connection_id, source_key));
+INSERT INTO legacy_objects SELECT id, connection_id, source_key, title, state, payload FROM workbench_objects;
+DROP TABLE workbench_objects;
+DROP TABLE workbench_tasks;
+ALTER TABLE workbench_connections DROP COLUMN snapshot_version;
+ALTER TABLE legacy_objects RENAME TO workbench_objects;
+CREATE INDEX workbench_object_list ON workbench_objects(connection_id, state, title, id);
+PRAGMA foreign_keys=ON;`)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWorkbenchMigratesV2(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
 	s, err := Open(path)
@@ -64,6 +91,7 @@ func TestWorkbenchMigratesV2(t *testing.T) {
 	if err := s.SaveTask(common.Task{ID: "keep", Name: "Keep", Executable: "/bin/echo", CreatedAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyWorkbenchSchema(t, s)
 	_, err = s.db.Exec("DROP TABLE workbench_objects; DROP TABLE workbench_connections; DROP TABLE workbench_revision; DROP TABLE workbench_plugin_settings; DROP TABLE workbench_task_writes; DROP TABLE workbench_obsidian_bridges; PRAGMA user_version=2")
 	s.Close()
 	if err != nil {
@@ -96,6 +124,7 @@ func TestWorkbenchMigratesImportedConnection(t *testing.T) {
 	if err := s.CommitWorkbenchImport(c, attempts, nil, []common.WorkbenchTask{task}, &now); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyWorkbenchSchema(t, s)
 	if _, err := s.db.Exec("DELETE FROM workbench_connections WHERE id='local'; DROP TABLE workbench_plugin_settings; DROP TABLE workbench_task_writes; DROP TABLE workbench_obsidian_bridges; PRAGMA user_version=3"); err != nil {
 		t.Fatal(err)
 	}
@@ -136,6 +165,7 @@ func TestWorkbenchMigratesV4PluginAndTaskIdentity(t *testing.T) {
 	if err := s.CommitWorkbenchImport(connection, attempts, nil, []common.WorkbenchTask{task}, &now); err != nil {
 		t.Fatal(err)
 	}
+	restoreLegacyWorkbenchSchema(t, s)
 	_, err = s.db.Exec("DROP TABLE workbench_plugin_settings; DROP TABLE workbench_task_writes; DROP TABLE workbench_obsidian_bridges; PRAGMA user_version=4")
 	if closeErr := s.Close(); err != nil || closeErr != nil {
 		t.Fatalf("fixture: %v %v", err, closeErr)
@@ -191,4 +221,116 @@ func TestWorkbenchSnapshotReassignsSourceKeysAtomically(t *testing.T) {
 			t.Fatalf("task %s: %+v %v", want.ID, got, err)
 		}
 	}
+}
+
+func TestWorkbenchPartialObservationTransaction(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "data.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	c := common.WorkbenchConnection{ID: "partial", Version: 1}
+	if err := s.SaveWorkbench(c, false); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	a := common.WorkbenchTask{ID: "a", ConnectionID: c.ID, SourceKey: "a", Title: "A", State: "open"}
+	b := common.WorkbenchTask{ID: "b", ConnectionID: c.ID, SourceKey: "b", Title: "B", State: "open"}
+	if err := s.RecordWorkbench(c, nil, nil, []common.WorkbenchTask{a, b}, &now); err != nil {
+		t.Fatal(err)
+	}
+	snapshots, err := s.WorkbenchConnections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var original common.WorkbenchSnapshot
+	for _, v := range snapshots {
+		if v.ID == c.ID {
+			original = v
+		}
+	}
+	a.State = "done"
+	if err := s.CommitWorkbenchObservedTasks(c, original.SnapshotVersion, []common.WorkbenchTask{a}); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := s.WorkbenchObject("b")
+	if err != nil || kept.State != "open" {
+		t.Fatalf("uncovered task: %+v %v", kept, err)
+	}
+	snapshots, err = s.WorkbenchConnections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var updated common.WorkbenchSnapshot
+	for _, v := range snapshots {
+		if v.ID == c.ID {
+			updated = v
+		}
+	}
+	if updated.LastSuccess == nil || !updated.LastSuccess.Equal(*original.LastSuccess) || updated.SnapshotVersion != original.SnapshotVersion+1 {
+		t.Fatalf("full verification changed: %+v", updated)
+	}
+	bad := a
+	bad.ID = "missing"
+	a.State = "open"
+	if err := s.CommitWorkbenchObservedTasks(c, updated.SnapshotVersion, []common.WorkbenchTask{a, bad}); err == nil {
+		t.Fatal("accepted missing mapping")
+	}
+	got, err := s.WorkbenchObject("a")
+	if err != nil || got.State != "done" {
+		t.Fatalf("partial transaction did not roll back: %+v %v", got, err)
+	}
+	if err := s.CommitWorkbenchObservedTasks(c, original.SnapshotVersion, []common.WorkbenchTask{a}); err == nil {
+		t.Fatal("accepted stale partial observation")
+	}
+	newConfig := c
+	newConfig.Version++
+	newConfig.Paused = true
+	if err := s.SaveWorkbench(newConfig, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CommitWorkbenchObservedTasks(c, updated.SnapshotVersion, []common.WorkbenchTask{a}); err == nil {
+		t.Fatal("accepted an observation from the previous connection configuration")
+	}
+	if err := s.CommitWorkbenchObservedTasks(newConfig, updated.SnapshotVersion, []common.WorkbenchTask{a}); err == nil {
+		t.Fatal("accepted an observation for a paused connection")
+	}
+	got, err = s.WorkbenchObject("a")
+	if err != nil || got.State != "done" {
+		t.Fatalf("stale configuration changed task: %+v %v", got, err)
+	}
+}
+
+func TestWorkbenchScopeResetRemovesHistoricalAttemptPaths(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "data.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	conn := common.WorkbenchConnection{ID: "vault", Kind: common.WorkbenchObsidianTasks, Version: 1, Scope: "."}
+	if err := s.SaveWorkbench(conn, false); err != nil {
+		t.Fatal(err)
+	}
+	attempt := common.WorkbenchAttempt{ID: 1, State: "success", Scope: "notes", Paths: []string{"private/secret.md"}, Coverage: "complete", Started: time.Now().UTC()}
+	if err := s.RecordWorkbench(conn, []common.WorkbenchAttempt{attempt}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	conn.Version++
+	conn.Scope = "public"
+	if err := s.SaveWorkbench(conn, true); err != nil {
+		t.Fatal(err)
+	}
+	connections, err := s.WorkbenchConnections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range connections {
+		if snapshot.ID == conn.ID {
+			if len(snapshot.Attempts) != 1 || len(snapshot.Attempts[0].Paths) != 0 || snapshot.Attempts[0].Scope != "notes" {
+				t.Fatalf("scope reset leaked historical paths: %+v", snapshot.Attempts)
+			}
+			return
+		}
+	}
+	t.Fatal("connection missing")
 }

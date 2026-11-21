@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/desktop/internal/ui/components"
 	"github.com/egoist/mygo/ui"
 )
@@ -43,9 +44,10 @@ func (m *mockup) taskStateMenu(o sourceObject, menu *ui.Menu) {
 		return
 	}
 	current := sourceState(o, conn.SourceKind)
-	disabled := !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID)
+	disabled := !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID) || m.serverTaskOperations[o.ID].SyncState == common.WorkbenchOperationNeedsReview
 	for _, state := range conn.stateMappings() {
-		if menu.Item(conn.displayState(state.label)).Radio(state.label == current).Disabled(disabled).Chosen() {
+		unsupportedLiveState := m.live != nil && state.label != "待处理" && state.label != "开放" && state.label != "已完成"
+		if menu.Item(conn.displayState(state.label)).Radio(state.label == current).Disabled(disabled || unsupportedLiveState).Chosen() {
 			m.setTaskState(o, state.label)
 		}
 	}
@@ -56,16 +58,17 @@ func (m *mockup) taskStatusCheckbox(c *ui.Context, o sourceObject) {
 	checked := confirmed
 	label := tr(m.sourceToggleLabel(o))
 	box := ui.CheckboxBase(c, &checked).Checked(confirmed).Label(label).Tooltip(label).
-		Disabled(!m.canToggleSourceTask(o) || m.sourceWritePending(o.ID))
+		Disabled(!m.canToggleSourceTask(o) || m.sourceWritePending(o.ID) || m.serverTaskOperations[o.ID].SyncState == common.WorkbenchOperationNeedsReview)
 	box.ContextMenu(func(menu *ui.Menu) { m.taskStateMenu(o, menu) })
 	if box.Changed() {
 		m.toggleSourceTask(o)
 		c.Invalidate()
 	}
 	box.Children(func() {
-		icon, color := "square", c.Theme().TextMuted
-		if confirmed {
-			icon, color = "checkmark.square.fill", c.Theme().Accent
+		icon := taskStatusSymbol(o)
+		color := c.Theme().TextMuted
+		if icon == "checkmark.square.fill" {
+			color = c.Theme().Accent
 		}
 		components.Symbol(c, icon, color)
 	})
@@ -76,7 +79,44 @@ func (m *mockup) taskStatusCheckbox(c *ui.Context, o sourceObject) {
 			ui.Box(c.Key("write-problem")).Label(tr(problem)).Tooltip(tr(problem)).Children(func() {
 				components.Symbol(c, "exclamationmark.circle", c.Theme().Warning)
 			})
+		} else if m.serverTaskOperations[o.ID].SyncState == common.WorkbenchOperationNeedsReview {
+			ui.Box(c.Key("needs-review")).Label(tr("来源尚未确认")).Tooltip(tr("来源尚未确认")).Children(func() {
+				components.Symbol(c, "exclamationmark.circle", c.Theme().Warning)
+			})
 		}
+	}
+}
+
+func taskStatusSymbol(o sourceObject) string {
+	state := o.State
+	if state == "" {
+		switch o.NativeFields["status"] {
+		case "待处理", "开放", "open":
+			state = "open"
+		case "进行中", "in_progress":
+			state = "in_progress"
+		case "已完成", "done":
+			state = "done"
+		case "不计划处理", "cancelled":
+			state = "cancelled"
+		}
+	}
+	switch state {
+	case "open":
+		return "square"
+	case "in_progress":
+		return "square.lefthalf.filled"
+	case "done":
+		return "checkmark.square.fill"
+	case "cancelled":
+		return "minus.square"
+	case "unknown":
+		return "questionmark.square"
+	default:
+		if taskClosed(o) {
+			return "checkmark.square.fill"
+		}
+		return "square"
 	}
 }
 

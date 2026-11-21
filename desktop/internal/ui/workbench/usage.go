@@ -4,7 +4,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"time"
 
+	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/desktop/internal/ui/components"
 	"github.com/egoist/mygo/ui"
 )
@@ -43,6 +45,10 @@ type usageMetric struct {
 func (m *mockup) usage(c *ui.Context) {
 	ui.Tabs(c.Key("tabs"), &m.usageTab, tr("模型"), tr("会话"), tr("同步")).FillWidth()
 	if m.framework {
+		if m.live != nil && m.usageTab == 2 {
+			m.liveSyncUsage(c.Key("live-sync"))
+			return
+		}
 		components.Muted(c.Key("period"), tr("暂无用量数据"))
 		components.Muted(c.Key("guidance"), tr("有模型请求或同步记录后，会在这里显示用量。"))
 		return
@@ -57,6 +63,90 @@ func (m *mockup) usage(c *ui.Context) {
 	case 2:
 		m.syncUsage(c.Key("syncs"))
 	}
+}
+
+type syncUsageSummary struct {
+	name                            string
+	attempts, failures, full, notes int
+	successDuration                 time.Duration
+	successDurationCount            int
+}
+
+// Sync attempts are bounded per connection by the persisted history, not a
+// time window. Exclude writes and imports, which are different operations.
+func summarizeSyncUsage(snapshots []common.WorkbenchSnapshot) []syncUsageSummary {
+	var summaries []syncUsageSummary
+	for _, snapshot := range snapshots {
+		if snapshot.Kind == common.WorkbenchLocal {
+			continue
+		}
+		summary := syncUsageSummary{name: snapshot.Name}
+		for _, attempt := range snapshot.Attempts {
+			if attempt.Trigger == "write" || attempt.Trigger == "import" || (attempt.State != "success" && attempt.State != "failed") {
+				continue
+			}
+			summary.attempts++
+			if attempt.State == "failed" {
+				summary.failures++
+			}
+			if attempt.Scope == common.WorkbenchReadFull {
+				summary.full++
+			} else if attempt.Scope == common.WorkbenchReadNotes {
+				summary.notes++
+			}
+			if attempt.State == "success" && attempt.Finished != nil && !attempt.Started.IsZero() && !attempt.Finished.Before(attempt.Started) {
+				summary.successDuration += attempt.Finished.Sub(attempt.Started)
+				summary.successDurationCount++
+			}
+		}
+		if summary.attempts > 0 {
+			summaries = append(summaries, summary)
+		}
+	}
+	return summaries
+}
+
+func (m *mockup) liveSyncUsage(c *ui.Context) {
+	if m.liveError {
+		components.Muted(c.Key("error"), tr("无法读取同步数据"))
+		return
+	}
+	summaries := summarizeSyncUsage(m.liveConnections)
+	if len(summaries) == 0 {
+		components.Muted(c.Key("empty"), tr("暂无同步记录"))
+		components.Muted(c.Key("guidance"), tr("连接来源并完成同步后，会在这里显示记录。"))
+		if ui.Button(c.Key("connections"), tr("查看连接器")).Clicked() {
+			m.navigate(connectionsPage)
+		}
+		return
+	}
+	components.Muted(c.Key("period"), tr("每个连接最近 20 条记录中的已完成同步"))
+	ui.Divider(c)
+	var total syncUsageSummary
+	var scopes, failures, durations []components.ChartBar
+	for _, item := range summaries {
+		total.attempts += item.attempts
+		total.failures += item.failures
+		total.successDuration += item.successDuration
+		total.successDurationCount += item.successDurationCount
+		scopes = append(scopes, countBar(item.name+" · "+tr("全范围"), item.full), countBar(item.name+" · "+tr("受影响笔记"), item.notes))
+		failures = append(failures, countBar(item.name, item.failures))
+		if item.successDurationCount > 0 {
+			average := item.successDuration / time.Duration(item.successDurationCount)
+			durations = append(durations, components.ChartBar{Label: item.name, Value: float64(average) / float64(time.Millisecond), Caption: average.Round(time.Millisecond).String()})
+		}
+	}
+	duration := "—"
+	if total.successDurationCount > 0 {
+		duration = (total.successDuration / time.Duration(total.successDurationCount)).Round(time.Millisecond).String()
+	}
+	usageMetrics(c, usageMetric{"同步次数", fmt.Sprint(total.attempts), "arrow.triangle.2.circlepath"}, usageMetric{"失败次数", fmt.Sprint(total.failures), "exclamationmark.circle"}, usageMetric{"成功平均耗时", duration, "clock"})
+	components.BarChart(c.Key("scopes"), tr("按连接与读取范围"), scopes)
+	components.BarChart(c.Key("failures"), tr("按连接失败次数"), failures)
+	if len(durations) > 0 {
+		components.BarChart(c.Key("durations"), tr("按连接的成功平均耗时"), durations)
+	}
+	components.Muted(c.Key("scope-note"), tr("旧记录可能没有读取范围；写入确认和导入不计入同步次数。"))
 }
 
 func usageMetrics(c *ui.Context, metrics ...usageMetric) {

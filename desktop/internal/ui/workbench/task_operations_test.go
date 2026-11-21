@@ -136,6 +136,11 @@ func TestLiveTaskToggleFollowsConfirmedConnectionCapabilities(t *testing.T) {
 	if !m.canToggleSourceTask(task) || m.editableSource(task) {
 		t.Fatal("live task should allow status changes and reject mock editor")
 	}
+	unknown := task
+	unknown.State = "unknown"
+	if m.canToggleSourceTask(unknown) {
+		t.Fatal("an unknown source status must be mapped before writing")
+	}
 	snapshot.Attempts[0].State = "failed"
 	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
 	if m.canToggleSourceTask(task) || m.objects[0].State != "open" {
@@ -146,6 +151,17 @@ func TestLiveTaskToggleFollowsConfirmedConnectionCapabilities(t *testing.T) {
 	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
 	if m.canToggleSourceTask(task) {
 		t.Fatal("read-only connection exposed a status toggle")
+	}
+}
+
+func TestTaskStatusSymbolsDistinguishSourceStates(t *testing.T) {
+	for _, test := range []struct{ state, symbol string }{
+		{"open", "square"}, {"in_progress", "square.lefthalf.filled"}, {"done", "checkmark.square.fill"},
+		{"cancelled", "minus.square"}, {"unknown", "questionmark.square"},
+	} {
+		if got := taskStatusSymbol(sourceObject{State: test.state}); got != test.symbol {
+			t.Errorf("state %q: got %q, want %q", test.state, got, test.symbol)
+		}
 	}
 }
 
@@ -162,6 +178,12 @@ func TestLiveTaskWriteWaitsForConfirmationAndKeepsStateOnConflict(t *testing.T) 
 	m.pendingTaskEdits[open.ID] = true
 	m.liveTaskRequests = map[string]common.WorkbenchTaskWrite{open.ID: {RequestID: "complete-once"}}
 	m.liveTaskProblems = make(map[string]string)
+	for _, state := range []string{common.WorkbenchOperationAccepted, common.WorkbenchOperationDispatching} {
+		m.finishLiveTaskToggle(open.ID, common.WorkbenchTaskReceipt{RequestID: "complete-once", SyncState: state}, nil)
+		if !m.sourceWritePending(open.ID) || m.liveTaskRequests[open.ID].RequestID != "complete-once" {
+			t.Fatalf("%s must retain the pending operation", state)
+		}
+	}
 
 	confirmed := open
 	confirmed.State, confirmed.TargetVersion = "done", "v2"
@@ -190,6 +212,60 @@ func TestLiveTaskWriteWaitsForConfirmationAndKeepsStateOnConflict(t *testing.T) 
 	}
 }
 
+func TestLiveTaskSelectionMovesWhenConfirmedTaskLeavesFilter(t *testing.T) {
+	m := newFramework()
+	m.live = services.NewRemote("")
+	m.page, m.statusFilter = tasksPage, "待处理"
+	m.taskSort = ui.SortOrder{Column: "title"}
+	m.objects = []sourceObject{
+		{ID: "a", Title: "A", State: "open"},
+		{ID: "b", Title: "B", State: "open"},
+		{ID: "c", Title: "C", State: "open"},
+	}
+	m.taskSelection = "b"
+	updated := slices.Clone(m.objects)
+	updated[1].State = "done"
+	m.replaceLiveTasks(updated)
+	if m.taskSelection != "c" || m.statusFilter != "待处理" || !m.restoreTaskFocus {
+		t.Fatalf("selection=%q filter=%q focus=%t", m.taskSelection, m.statusFilter, m.restoreTaskFocus)
+	}
+}
+
+func TestLiveTaskRecoversOperationFromConnectionSnapshot(t *testing.T) {
+	m := newFramework()
+	m.live = services.NewRemote("")
+	task := sourceObject{ID: "task", ConnectionID: "vault", Kind: obsidianTasks, State: "open", TargetVersion: "v1"}
+	snapshot := common.WorkbenchSnapshot{
+		WorkbenchConnection: common.WorkbenchConnection{ID: "vault", Name: "Vault", Kind: obsidianTasks, WriteEnabled: true},
+		Capabilities:        common.WorkbenchCapabilities{Create: true, SetState: true},
+		Attempts:            []common.WorkbenchAttempt{{State: "success"}},
+		PendingWrites:       []common.WorkbenchTaskReceipt{{RequestID: "recovered", SourceObjectID: task.ID, SyncState: common.WorkbenchOperationDispatching}},
+	}
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+	if !m.sourceWritePending(task.ID) {
+		t.Fatal("a recovered operation should be shown as pending")
+	}
+	snapshot.PendingWrites[0].SyncState = common.WorkbenchOperationNeedsReview
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+	if m.sourceWritePending(task.ID) {
+		t.Fatal("an uncertain operation should not appear to be running")
+	}
+	p := ui.NewTester(func(c *ui.Context) { m.taskSourceActions(c, &m.objects[0]) }, 400, 160)
+	if !p.HasText("核对操作") || !p.HasText("来源尚未确认") {
+		t.Fatal("an uncertain recovered operation needs a review action")
+	}
+	m.toggleSourceTask(task)
+	if len(m.liveTaskRequests) != 0 {
+		t.Fatal("an uncertain operation must not be replaced by a new write")
+	}
+	snapshot.PendingWrites = nil
+	task.State = "done"
+	m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+	if m.sourceWritePending(task.ID) || m.serverTaskOperations[task.ID].RequestID != "" || !taskClosed(m.objects[0]) {
+		t.Fatal("a settled operation should leave the confirmed snapshot visible")
+	}
+}
+
 func TestLiveTaskCreateKeepsDraftUntilConfirmed(t *testing.T) {
 	m := newMockup()
 	m.newTaskOpen, m.newTaskPending, m.newTaskDraft = true, true, "Write once"
@@ -198,6 +274,18 @@ func TestLiveTaskCreateKeepsDraftUntilConfirmed(t *testing.T) {
 	p := ui.NewTester(m.newTaskDialog, 680, 480)
 	if !p.HasText("等待来源确认") || p.HasText("创建任务") {
 		t.Fatal("pending create should show progress and hide the submit action")
+	}
+	m.finishLiveTaskCreate(common.WorkbenchTaskReceipt{SyncState: common.WorkbenchOperationAccepted}, nil)
+	if !m.newTaskPending || !m.newTaskOpen {
+		t.Fatal("accepted create must wait for source confirmation")
+	}
+	click(t, p, "后台处理")
+	if m.newTaskOpen || !m.newTaskPending {
+		t.Fatal("backgrounding should close the dialog without ending the operation")
+	}
+	m.openNewTask()
+	if !m.newTaskOpen || m.newTaskRequest.RequestID != "create-once" {
+		t.Fatal("reopening should restore the pending operation")
 	}
 	m.finishLiveTaskCreate(common.WorkbenchTaskReceipt{SyncState: "needs_review"}, nil)
 	if !m.newTaskOpen || m.newTaskPending || m.newTaskDraft != "Write once" || m.newTaskRequest.RequestID != "create-once" || len(m.objects) != count {

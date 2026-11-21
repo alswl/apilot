@@ -36,6 +36,8 @@ type mockup struct {
 	livePlugins                          []services.WorkbenchPlugin
 	liveTaskRequests                     map[string]common.WorkbenchTaskWrite
 	liveTaskProblems                     map[string]string
+	serverTaskOperations                 map[string]common.WorkbenchTaskReceipt
+	checkingOperations                   map[string]bool
 	livePluginProblem                    string
 	syncDetail                           common.WorkbenchSnapshot
 	syncDetailProblem                    string

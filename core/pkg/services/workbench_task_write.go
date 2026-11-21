@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"strings"
 	"time"
 
@@ -23,7 +24,26 @@ func workbenchFingerprint(value any) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func (s *Service) WriteWorkbenchTask(input common.WorkbenchTaskWrite) (common.WorkbenchTaskReceipt, error) {
+// workbenchTaskTargetVersion excludes mutable location details when a native ID
+// identifies an Obsidian task. Source fields and the checkbox remain guarded.
+func workbenchTaskTargetVersion(task common.WorkbenchTask) string {
+	task.WorkbenchLabels = nil
+	if task.Kind == common.WorkbenchObsidianTasks && task.NativeID != "" {
+		task.Locator = ""
+		task.Activity = nil
+		task.NativeFields = maps.Clone(task.NativeFields)
+		for _, key := range []string{"path", "file", "line", "section", "heading_path"} {
+			delete(task.NativeFields, key)
+		}
+	}
+	return workbenchFingerprint(task)
+}
+
+func workbenchTaskMatchesTarget(task common.WorkbenchTask, target string) bool {
+	return target == workbenchTaskTargetVersion(task) || target == workbenchFingerprint(task)
+}
+
+func (s *Service) writeWorkbenchTaskLegacy(input common.WorkbenchTaskWrite) (common.WorkbenchTaskReceipt, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var empty common.WorkbenchTaskReceipt
@@ -126,6 +146,7 @@ func (s *Service) writeLocalWorkbenchTask(_ workbenchStore, writer workbenchTask
 		}
 		before = []common.WorkbenchTask{task}
 		task.State = input.State
+		recordWorkbenchStateChange(before[0], &task, now)
 		fields := make(map[string]string, len(task.NativeFields)+1)
 		for key, value := range task.NativeFields {
 			fields[key] = value
