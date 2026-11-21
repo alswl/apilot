@@ -139,7 +139,7 @@ func (m *mockup) refreshLive() {
 			}
 			hadError := m.liveError
 			m.liveError = err != nil
-			if err == nil && (!reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(tasks, m.objects)) {
+			if err == nil && (!m.liveLoaded || !reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(tasks, m.objects)) {
 				m.liveConnections = connections
 				m.livePlugins = plugins
 				m.applyLive(connections, tasks)
@@ -159,6 +159,7 @@ func workbenchOperationInProgress(state string) bool {
 }
 
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
+	m.liveLoaded = true
 	m.serverTaskOperations = make(map[string]common.WorkbenchTaskReceipt)
 	for _, snapshot := range snapshots {
 		for _, receipt := range snapshot.PendingWrites {

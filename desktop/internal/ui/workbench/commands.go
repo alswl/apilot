@@ -18,6 +18,9 @@ type command struct {
 }
 
 func (m *mockup) navigate(page int) {
+	if m.page == connectionsPage && page != connectionsPage {
+		m.connectionReturnToTasks = false
+	}
 	if page == nowPage {
 		m.nowLibraryOpen = false
 	}
@@ -28,6 +31,30 @@ func (m *mockup) navigate(page int) {
 	}
 	if page == tasksPage && !m.inspector {
 		m.restoreTaskFocus = true
+	}
+}
+
+func (m *mockup) openTaskConnections() {
+	m.navigate(connectionsPage)
+	m.connectionReturnToTasks = true
+}
+
+func (m *mockup) returnToTaskList() {
+	m.navigate(tasksPage)
+	filtered := m.search != "" || m.statusFilter != "全部状态" || m.sourceFilter != "全部来源" || m.taskWatchOnly
+	_, problem := m.parseSearch()
+	entryVisible := m.hasUnavailableTaskSource() || (len(m.taskRows()) == 0 && problem == "" && (m.liveError || (!filtered && m.liveLoaded)))
+	m.restoreConnectionEntryFocus = entryVisible
+	if !entryVisible {
+		m.restoreTaskFocus = false
+		m.keyboard.focusSearch = true
+	}
+}
+
+func (m *mockup) focusTaskConnectionEntry(focus func()) {
+	if m.restoreConnectionEntryFocus {
+		focus()
+		m.restoreConnectionEntryFocus = false
 	}
 }
 
@@ -176,6 +203,11 @@ func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 	if k.palette || m.assistantOpen || m.connectorEditor != nil || m.syncLogID != "" || m.newTaskOpen || m.debugOpen || m.saveTaskViewOpen || m.taskResourceOpen || m.sourceEditor != nil || m.labelEditor != nil ||
 		(m.compactTaskList() && (m.taskDisplayOpen || m.searchExpanded)) {
 		k.prefix = keystroke{}
+		return
+	}
+	if m.page == connectionsPage && m.connectionReturnToTasks && c.Shortcut(0, ui.KeyEscape) {
+		m.returnToTaskList()
+		c.Invalidate()
 		return
 	}
 	if k.editingText || time.Now().After(k.expires) {

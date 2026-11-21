@@ -43,7 +43,7 @@ type mockup struct {
 	syncDetailProblem                    string
 	removeConnectionID                   string
 	live                                 *services.Remote
-	liveBusy, liveError                  bool
+	liveBusy, liveError, liveLoaded      bool
 	liveGeneration                       uint64
 	framework                            bool
 	layout                               workbenchLayout
@@ -98,6 +98,8 @@ type mockup struct {
 	search                               string
 	taskSelection                        string
 	restoreTaskFocus                     bool
+	connectionReturnToTasks              bool
+	restoreConnectionEntryFocus          bool
 	statusFilter, sourceFilter           string
 	taskTable                            ui.ListState
 	taskSort                             ui.SortOrder
@@ -877,6 +879,10 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 		components.Muted(c.Key("live-error"), tr("无法读取工作台数据"))
 	}
 	rows := m.taskRows()
+	filtered := m.search != "" || m.statusFilter != "全部状态" || m.sourceFilter != "全部来源" || m.taskWatchOnly
+	if m.live != nil && (len(rows) > 0 || filtered) && m.hasUnavailableTaskSource() {
+		m.connectionGuidance(c.Key("partial-sources"), tr("部分来源无法同步，列表可能不完整。"))
+	}
 	if !m.unifiedTasks() && m.inspector && !slices.Contains(rows, m.selected) {
 		m.closeInspector()
 	}
@@ -889,7 +895,9 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 	}
 	m.taskTables(c.Key("tables"), m.pagedTaskRows(rows))
 
-	if m.framework && len(m.objects) == 0 && problem == "" {
+	if m.live != nil && problem == "" && len(rows) == 0 {
+		m.liveTaskEmptyState(c.Key("empty-tasks"))
+	} else if m.framework && len(m.objects) == 0 && problem == "" {
 		ui.Column(c.Key("empty-tasks")).FillWidth().Padding(0, 8).Gap(8).Children(func() {
 			components.Heading(c, tr("暂无任务"))
 			m.connectionGuidance(c.Key("guidance"), tr("任务会在来源同步后出现在这里。"))
@@ -913,6 +921,68 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 				}
 			}
 		})
+	}
+}
+
+func (m *mockup) liveTaskEmptyState(c *ui.Context) {
+	ui.Column(c).FillWidth().Padding(0, 8).Gap(8).AlignItems(ui.Start).Children(func() {
+		switch {
+		case m.liveError:
+			components.Muted(c, tr("暂时无法确认任务列表，请检查连接。"))
+			button := ui.Button(c.Key("connections"), tr("查看连接器"))
+			m.focusTaskConnectionEntry(func() { button.Focus() })
+			if button.Clicked() {
+				m.openTaskConnections()
+			}
+		case !m.liveLoaded:
+			components.Muted(c, tr("正在读取任务…"))
+		case m.search != "" || m.statusFilter != "全部状态" || m.sourceFilter != "全部来源" || m.taskWatchOnly:
+			components.Muted(c, tr("没有符合条件的任务"))
+			if ui.Button(c.Key("clear"), tr("清除筛选")).Clicked() {
+				m.search, m.statusFilter, m.sourceFilter, m.taskWatchOnly = "", "全部状态", "全部来源", false
+			}
+		default:
+			m.unfilteredLiveTaskEmptyState(c)
+		}
+	})
+}
+
+func (m *mockup) hasUnavailableTaskSource() bool {
+	for _, conn := range m.connectionsData {
+		if conn.SourceKind != common.WorkbenchLocal && (conn.Status == "同步失败" || conn.Status == "连接断开" || conn.Paused || conn.PluginDisabled) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *mockup) unfilteredLiveTaskEmptyState(c *ui.Context) {
+	external, pending, waiting := false, false, false
+	for _, conn := range m.connectionsData {
+		if conn.SourceKind == common.WorkbenchLocal {
+			continue
+		}
+		external = true
+		pending = pending || m.pendingSync[conn.ID]
+		waiting = waiting || conn.Status == "等待首次同步"
+	}
+	components.Heading(c, tr("暂无任务"))
+	switch {
+	case m.hasUnavailableTaskSource():
+		m.connectionGuidance(c.Key("guidance"), tr("部分来源无法同步，请检查连接状态。"))
+	case pending:
+		m.connectionGuidance(c.Key("guidance"), tr("来源正在同步，任务确认后会显示在这里。"))
+	case waiting:
+		m.connectionGuidance(c.Key("guidance"), tr("来源尚未完成首次同步。"))
+	case !external:
+		components.Muted(c.Key("guidance"), tr("添加连接后，来源任务会显示在这里。"))
+		button := ui.Button(c.Key("add-connection"), tr("添加连接"))
+		m.focusTaskConnectionEntry(func() { button.Focus() })
+		if button.Clicked() {
+			m.openTaskConnections()
+		}
+	default:
+		m.connectionGuidance(c.Key("guidance"), tr("已确认的来源中没有任务。"))
 	}
 }
 

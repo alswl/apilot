@@ -37,6 +37,11 @@ func (m *mockup) connectionByID(id string) *connection {
 }
 
 func (m *mockup) connections(c *ui.Context) {
+	if m.connectionReturnToTasks {
+		if components.IconButton(c.Key("return-tasks"), "chevron.left", tr("返回")+tr("任务"), false).Clicked() {
+			m.returnToTaskList()
+		}
+	}
 	if m.framework && m.live == nil {
 		components.Muted(c.Key("guidance"), tr("通过齿轮查看配置。同步尚未接入，配置只在本次运行中保留。"))
 	}
@@ -61,8 +66,16 @@ func (m *mockup) connections(c *ui.Context) {
 func (m *mockup) connectionGuidance(c *ui.Context, hint string) {
 	ui.Column(c).FillWidth().Gap(8).AlignItems(ui.Start).Children(func() {
 		components.Muted(c, hint)
-		if ui.Button(c.Key("connections"), tr("查看连接器")).Clicked() {
-			m.navigate(connectionsPage)
+		button := ui.Button(c.Key("connections"), tr("查看连接器"))
+		if m.page == tasksPage {
+			m.focusTaskConnectionEntry(func() { button.Focus() })
+		}
+		if button.Clicked() {
+			if m.page == tasksPage {
+				m.openTaskConnections()
+			} else {
+				m.navigate(connectionsPage)
+			}
 		}
 	})
 }
