@@ -89,7 +89,7 @@ func (c *WorkbenchGitHubClient) WriteIssue(ctx context.Context, connection commo
 		if resp.StatusCode == http.StatusTooManyRequests || (resp.StatusCode == http.StatusForbidden && (secondaryLimit || resp.Header.Get("Retry-After") != "" || resp.Header.Get("X-RateLimit-Remaining") == "0")) {
 			return common.WorkbenchTask{}, common.Err("RATE_LIMITED", "GitHub API rate limit reached")
 		}
-		if resp.StatusCode == http.StatusForbidden && !secondaryLimit && resp.Header.Get("Retry-After") == "" && resp.Header.Get("X-RateLimit-Remaining") != "0" {
+		if resp.StatusCode == http.StatusForbidden {
 			return common.WorkbenchTask{}, common.Err("FORBIDDEN", "GitHub denied write permission")
 		}
 		return common.WorkbenchTask{}, common.Err("SOURCE_UNAVAILABLE", fmt.Sprintf("GitHub write returned HTTP %d", resp.StatusCode))

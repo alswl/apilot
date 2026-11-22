@@ -101,6 +101,32 @@ func testGitHubVisibilityClearsPendingTaskAndDrafts(t *testing.T, state string) 
 	}
 }
 
+func TestGitHubVisibilityClearsUnsubmittedCreateDraft(t *testing.T) {
+	for _, target := range []string{"github", "obsidian"} {
+		t.Run(target, func(t *testing.T) {
+			m := newMockup()
+			snapshot := common.WorkbenchSnapshot{WorkbenchConnection: common.WorkbenchConnection{
+				ID: "github", Kind: common.WorkbenchGitHubRepository, Name: "Repo", Version: 1, AccessState: "available",
+			}}
+			m.applyLive([]common.WorkbenchSnapshot{snapshot}, nil)
+			m.newTaskOpen = true
+			m.newTaskSourceID = target
+			m.newTaskDraft, m.newTaskBody = "title", "body"
+			snapshot.Version++
+			snapshot.AccessState = "pending"
+			m.applyLive([]common.WorkbenchSnapshot{snapshot}, nil)
+
+			if target == "github" {
+				if m.newTaskOpen || m.newTaskDraft != "" || m.newTaskBody != "" {
+					t.Fatal("old account's unsubmitted draft survived the account change")
+				}
+			} else if !m.newTaskOpen || m.newTaskDraft != "title" || m.newTaskBody != "body" {
+				t.Fatal("the other connection's draft was cleared")
+			}
+		})
+	}
+}
+
 func TestGitHubVisibilityDetectsAuthorizationChanges(t *testing.T) {
 	before := []common.WorkbenchSnapshot{{WorkbenchConnection: common.WorkbenchConnection{ID: "repo", Kind: common.WorkbenchGitHubRepository, Version: 1, AccessState: "available", AccountLogin: "one"}}}
 	after := append([]common.WorkbenchSnapshot(nil), before...)

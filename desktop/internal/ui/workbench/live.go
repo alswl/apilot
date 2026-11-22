@@ -374,8 +374,10 @@ func (m *mockup) clearGitHubTaskDrafts(connectionID string) {
 			m.mutation = mutation{}
 		}
 	}
-	if m.newTaskRequest.ConnectionID == connectionID {
+	if m.newTaskSourceID == connectionID || m.newTaskRequest.ConnectionID == connectionID {
 		m.newTaskRequest = common.WorkbenchTaskWrite{}
+		m.newTaskTargets = taskDestinations{}
+		m.newTaskSource, m.newTaskSourceID = "", ""
 		m.newTaskDraft, m.newTaskBody = "", ""
 		m.newTaskPending, m.newTaskOpen = false, false
 	}

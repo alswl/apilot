@@ -10,7 +10,6 @@ import (
 	"github.com/alswl/apilot/core/pkg/common"
 )
 
-// mergeGitHubIncremental preserves unobserved tasks and rejects older observations.
 func mergeGitHubIncremental(before, observed []common.WorkbenchTask) []common.WorkbenchTask {
 	merged := make([]common.WorkbenchTask, len(before))
 	copy(merged, before)
@@ -42,7 +41,6 @@ type workbenchGitHubSyncStore interface {
 	CommitWorkbenchGitHubSync(common.WorkbenchConnection, []common.WorkbenchAttempt, []common.WorkbenchTask, []common.WorkbenchTask, time.Time, int64, time.Time, bool) error
 }
 
-// readWorkbenchGitHub obtains a complete page set before returning any updates.
 func (s *Service) readWorkbenchGitHub(ctx context.Context, c common.WorkbenchConnection, before []common.WorkbenchTask) ([]common.WorkbenchTask, time.Time, bool, error) {
 	store, ok := s.store.(workbenchGitHubSyncStore)
 	if !ok {
@@ -114,12 +112,12 @@ func (s *Service) readWorkbenchGitHub(ctx context.Context, c common.WorkbenchCon
 		current, err := client.Issue(ctx, c, number)
 		if err != nil {
 			var problem *common.Error
-			if errors.As(err, &problem) && problem.Code == "ISSUE_MOVED" {
+			if errors.As(err, &problem) && (problem.Code == "ISSUE_MOVED" || problem.Code == "ISSUE_DELETED") {
 				repo, repoErr := client.Repository(ctx, c.Repository)
 				if repoErr != nil {
 					return nil, started, full, repoErr
 				}
-				if repo.ID != progress.RepositoryID || !strings.EqualFold(repo.FullName, c.Repository) {
+				if repo.ID != progress.RepositoryID || !strings.EqualFold(repo.FullName, c.Repository) || !repo.HasIssues {
 					return nil, started, full, common.Err("CONFLICT", "GitHub repository identity or name changed")
 				}
 				continue

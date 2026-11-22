@@ -283,6 +283,68 @@ func TestGitHubUnauthorizedWriteInvalidatesAccess(t *testing.T) {
 	}
 }
 
+func TestGitHubReadbackAuthorizationFailure(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		access string
+	}{
+		{http.StatusUnauthorized, "unavailable"},
+		{http.StatusForbidden, "unavailable"},
+		{http.StatusNotFound, "available"},
+		{http.StatusBadGateway, "available"},
+	} {
+		t.Run(fmt.Sprint(tc.status), func(t *testing.T) {
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if respondGitHubOperationRepository(w, r) {
+					return
+				}
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/repos/owner/repo/issues":
+					w.WriteHeader(http.StatusCreated)
+					fmt.Fprint(w, `{"id":123,"number":7,"title":"created","state":"open"}`)
+				case r.Method == http.MethodGet && r.URL.Path == "/repos/owner/repo/issues/7":
+					w.WriteHeader(tc.status)
+				default:
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			s, err := openService(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			s.githubCredentials, s.githubBaseURL, s.githubTransport = githubTestCredentials{}, server.URL, server.Client().Transport
+			store := s.store.(interface {
+				workbenchGitHubStore
+				workbenchTaskOperationStore
+			})
+			c := common.WorkbenchConnection{ID: "github", Kind: common.WorkbenchGitHubRepository, Repository: "owner/repo", Version: 1, WriteEnabled: true}
+			p := common.WorkbenchGitHubProgress{ConnectionID: c.ID, RepositoryID: 42, AccountID: 1, CredentialRef: "ref", AccessState: "available"}
+			if err := store.SaveWorkbenchGitHub(c, 0, p); err != nil {
+				t.Fatal(err)
+			}
+			input := common.WorkbenchTaskWrite{RequestID: "create", ConnectionID: c.ID, ConnectionVersion: 1, Title: "created"}
+			if _, _, err := store.AdmitWorkbenchTaskOperation(input, c.ID, workbenchFingerprint(input)); err != nil {
+				t.Fatal(err)
+			}
+			receipt, err := s.executeGitHubTaskOperation(context.Background(), input.RequestID)
+			if err == nil || receipt.SyncState != common.WorkbenchOperationNeedsReview {
+				t.Fatalf("readback failure: %+v %v", receipt, err)
+			}
+			progress, err := store.WorkbenchGitHubProgress(c.ID)
+			if err != nil || progress.AccessState != tc.access {
+				t.Fatalf("expected %s authorization: %+v %v", tc.access, progress, err)
+			}
+			_, err = s.WorkbenchTaskOperationReceipt(input.RequestID)
+			if (err == nil) != (tc.access == "available") {
+				t.Fatalf("unexpected receipt visibility for %s: %v", tc.access, err)
+			}
+		})
+	}
+}
+
 func TestGitHubSecondaryLimitDoesNotDisableWritePermission(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if respondGitHubOperationRepository(w, r) {

@@ -47,7 +47,6 @@ func githubSecondaryRateLimit(resp *http.Response) bool {
 	if err != nil {
 		return false
 	}
-	resp.Body = io.NopCloser(bytes.NewReader(body))
 	message := bytes.ToLower(body)
 	return bytes.Contains(message, []byte("secondary rate limit")) || bytes.Contains(message, []byte("api rate limit exceeded"))
 }
@@ -93,8 +92,7 @@ func NewWorkbenchGitHubClient(baseURL, token string, transport http.RoundTripper
 		if len(via) > 0 && via[0].Context().Value(githubIssueRedirectProbe{}) != nil {
 			return http.ErrUseLastResponse
 		}
-		// A transferred issue may redirect within api.github.com to a different
-		// repository. It is not evidence that the original repository still owns it.
+		// Same-origin redirects can point to issues transferred out of the repository.
 		if len(via) > 0 && strings.Contains(via[0].URL.Path, "/issues") && req.URL.Path != via[0].URL.Path {
 			return common.Err("INVALID_ARGUMENT", "GitHub redirected outside the selected issue path")
 		}
@@ -160,6 +158,8 @@ func (c *WorkbenchGitHubClient) getURL(ctx context.Context, u *url.URL, result a
 			return nil, common.Err("UNAUTHORIZED", "GitHub credentials are invalid or expired")
 		case resp.StatusCode == http.StatusForbidden:
 			return nil, common.Err("FORBIDDEN", "GitHub access is not permitted")
+		case resp.StatusCode == http.StatusGone && ctx.Value(githubIssueRedirectProbe{}) != nil:
+			return nil, common.Err("ISSUE_DELETED", "GitHub issue was deleted")
 		case resp.StatusCode == http.StatusNotFound:
 			return nil, common.Err("NOT_FOUND", "GitHub resource is unavailable")
 		default:

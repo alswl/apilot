@@ -212,40 +212,73 @@ func TestGitHubIncrementalFailureDoesNotAdvanceSnapshotOrCursor(t *testing.T) {
 	}
 }
 
-func TestGitHubFullReconciliationDetectsTransfer(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if respondGitHubOperationRepository(w, r) {
-			return
-		}
-		switch r.URL.Path {
-		case "/repos/owner/repo/issues":
-			fmt.Fprint(w, `[]`)
-		case "/repos/owner/repo/issues/1":
-			http.Redirect(w, r, "/repos/other/repo/issues/9", http.StatusMovedPermanently)
-		case "/repos/owner/repo":
-			fmt.Fprint(w, `{"id":42,"full_name":"owner/repo","has_issues":true}`)
-		default:
-			t.Errorf("unexpected request: %s", r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-	s, err := openService(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer s.Close()
-	s.githubCredentials, s.githubBaseURL, s.githubTransport = githubTestCredentials{}, server.URL, server.Client().Transport
-	store := s.store.(workbenchGitHubStore)
-	c := common.WorkbenchConnection{ID: "github", Kind: common.WorkbenchGitHubRepository, Repository: "owner/repo", Version: 1}
-	p := common.WorkbenchGitHubProgress{ConnectionID: c.ID, RepositoryID: 42, AccountID: 1, CredentialRef: "ref", AccessState: "available"}
-	if err := store.SaveWorkbenchGitHub(c, 0, p); err != nil {
-		t.Fatal(err)
-	}
-	before := []common.WorkbenchTask{{ID: "old", SourceKey: "issue:1\x000", NativeID: "1"}}
-	tasks, _, full, err := s.readWorkbenchGitHub(context.Background(), c, before)
-	if err != nil || !full || len(tasks) != 0 {
-		t.Fatalf("transfer not reconciled: %+v %t %v", tasks, full, err)
+func TestGitHubFullReconciliationOfMissingIssue(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		status     int
+		repoStatus int
+		wantTasks  int
+		wantError  string
+	}{
+		{name: "transferred", status: http.StatusMovedPermanently},
+		{name: "deleted", status: http.StatusGone},
+		{name: "ambiguous", status: http.StatusNotFound, wantTasks: 1},
+		{name: "issue read revoked", status: http.StatusForbidden, wantError: "FORBIDDEN"},
+		{name: "repository access lost after deletion response", status: http.StatusGone, repoStatus: http.StatusNotFound, wantError: "NOT_FOUND"},
+		{name: "temporary failure", status: http.StatusBadGateway, wantError: "SOURCE_UNAVAILABLE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var probed atomic.Bool
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/repos/owner/repo":
+					if probed.Load() && tc.repoStatus != 0 {
+						w.WriteHeader(tc.repoStatus)
+						return
+					}
+					fmt.Fprint(w, `{"id":42,"full_name":"owner/repo","has_issues":true}`)
+				case "/repos/owner/repo/issues":
+					fmt.Fprint(w, `[]`)
+				case "/repos/owner/repo/issues/1":
+					probed.Store(true)
+					if tc.status == http.StatusMovedPermanently {
+						w.Header().Set("Location", "/repos/other/repo/issues/9")
+					}
+					w.WriteHeader(tc.status)
+				default:
+					t.Errorf("unexpected request: %s", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			s, err := openService(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			s.githubCredentials, s.githubBaseURL, s.githubTransport = githubTestCredentials{}, server.URL, server.Client().Transport
+			store := s.store.(workbenchGitHubStore)
+			c := common.WorkbenchConnection{ID: "github", Kind: common.WorkbenchGitHubRepository, Repository: "owner/repo", Version: 1}
+			p := common.WorkbenchGitHubProgress{ConnectionID: c.ID, RepositoryID: 42, AccountID: 1, CredentialRef: "ref", AccessState: "available"}
+			if err := store.SaveWorkbenchGitHub(c, 0, p); err != nil {
+				t.Fatal(err)
+			}
+			before := []common.WorkbenchTask{{ID: "old", SourceKey: "issue:1\x000", NativeID: "1", Title: "last confirmed"}}
+			tasks, _, full, err := s.readWorkbenchGitHub(context.Background(), c, before)
+			if !full || !probed.Load() || len(tasks) != tc.wantTasks {
+				t.Fatalf("reconciliation: tasks=%+v full=%t error=%v", tasks, full, err)
+			}
+			var code string
+			if err != nil {
+				code = common.ProtocolError(err).Code
+			}
+			if code != tc.wantError {
+				t.Fatalf("expected error code %q, got %q (%v)", tc.wantError, code, err)
+			}
+			if tc.wantTasks == 1 && (tasks[0].ID != before[0].ID || tasks[0].Title != before[0].Title) {
+				t.Fatalf("last confirmed task changed: %+v", tasks[0])
+			}
+		})
 	}
 }
 
@@ -606,6 +639,10 @@ func TestGitHubIncrementalReorderingAndFullReconciliation(t *testing.T) {
 		if respondGitHubOperationRepository(w, r) {
 			return
 		}
+		if r.URL.Path == "/repos/owner/repo/issues/5" && phase.Load() == 3 {
+			w.WriteHeader(http.StatusGone)
+			return
+		}
 		if r.URL.Path != "/repos/owner/repo/issues" {
 			http.NotFound(w, r)
 			return
@@ -616,7 +653,7 @@ func TestGitHubIncrementalReorderingAndFullReconciliation(t *testing.T) {
 			if q.Get("since") != "" || q.Get("sort") != "created" {
 				t.Error("baseline was not a full read")
 			}
-			fmt.Fprintf(w, "[%s,%s,%s,%s]", issue(1, "old-1", base.Add(-30*time.Minute)), issue(2, "old-2", base.Add(-30*time.Minute)), issue(3, "old-3", base.Add(-30*time.Minute)), issue(4, "old-4", base.Add(-30*time.Minute)))
+			fmt.Fprintf(w, "[%s,%s,%s,%s,%s]", issue(1, "old-1", base.Add(-30*time.Minute)), issue(2, "old-2", base.Add(-30*time.Minute)), issue(3, "old-3", base.Add(-30*time.Minute)), issue(4, "old-4", base.Add(-30*time.Minute)), issue(5, "old-5", base.Add(-30*time.Minute)))
 		case 1:
 			since, err := time.Parse(time.RFC3339, q.Get("since"))
 			if err != nil || since.After(base.Add(-10*time.Minute)) || q.Get("sort") != "updated" {
@@ -698,7 +735,7 @@ func TestGitHubIncrementalReorderingAndFullReconciliation(t *testing.T) {
 	}
 	run()
 	baseline := lookup()
-	if len(baseline) != 4 {
+	if len(baseline) != 5 {
 		t.Fatalf("baseline: %+v", baseline)
 	}
 	if err := s.SetWorkbenchLabels(baseline["2"].ID, []string{"retained"}); err != nil {
@@ -718,7 +755,7 @@ func TestGitHubIncrementalReorderingAndFullReconciliation(t *testing.T) {
 	phase.Store(2)
 	second := run()
 	items = lookup()
-	if second.PageCount != 1 || second.RequestCount != 2 || items["2"].Title != "new-2" || items["4"].Title != "old-4" {
+	if second.PageCount != 1 || second.RequestCount != 2 || items["5"].ID != baseline["5"].ID || items["2"].Title != "new-2" || items["4"].Title != "old-4" {
 		t.Fatalf("overlap did not recover recent item: %+v", items)
 	}
 	clock.Store(base.Add(25 * time.Hour).Unix())
@@ -728,7 +765,13 @@ func TestGitHubIncrementalReorderingAndFullReconciliation(t *testing.T) {
 	if full.SyncType != "full" || items["4"].Title != "new-4" {
 		t.Fatalf("full reconciliation did not recover older item: %+v", items)
 	}
+	if _, exists := items["5"]; exists {
+		t.Fatal("confirmed deleted issue survived full reconciliation")
+	}
 	for id, before := range baseline {
+		if id == "5" {
+			continue
+		}
 		if items[id].ID != before.ID {
 			t.Fatalf("identity changed for %s", id)
 		}

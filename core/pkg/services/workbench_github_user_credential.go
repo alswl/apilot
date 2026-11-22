@@ -83,8 +83,7 @@ func (s *Service) verifyGitHubCredentialInstallation(ctx context.Context, client
 	return client.VerifyInstallationRepository(ctx, s.githubAppSlug, repositoryID)
 }
 
-// readGitHubStoredCredential is called under the service credential lock so a
-// refresh token cannot be exchanged concurrently by two repository workers.
+// Callers must serialize refresh-token exchanges so two repositories cannot rotate the same token.
 func readGitHubStoredCredential(ctx context.Context, store integrations.WorkbenchCredentialStore, ref string, refresher githubCredentialRefresher, now time.Time) (string, error) {
 	value, err := store.Get(ctx, ref)
 	if err != nil {

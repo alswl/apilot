@@ -428,7 +428,7 @@ func workbenchHTTPError(err error) error {
 		}
 	}
 	switch domain.Code {
-	case "NOT_FOUND":
+	case "NOT_FOUND", "ISSUE_DELETED":
 		return huma.Error404NotFound(domain.Message, details...)
 	case "INVALID_ARGUMENT":
 		return huma.Error400BadRequest(domain.Message, details...)

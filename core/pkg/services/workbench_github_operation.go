@@ -207,8 +207,14 @@ func (s *Service) reconcileGitHubTaskOperation(ctx context.Context, requestID st
 	}
 	defer releaseCredential()
 	task, err := client.Issue(ctx, connection.WorkbenchConnection, op.Binding.IssueNumber)
-	if err != nil || task.NativeFields["issue_id"] != strconv.FormatInt(op.Binding.IssueID, 10) {
+	if err != nil {
+		if invalidateErr := s.invalidateGitHubOperationAuthorization(connection, err); invalidateErr != nil {
+			return op.Receipt, invalidateErr
+		}
 		return op.Receipt, err
+	}
+	if task.NativeFields["issue_id"] != strconv.FormatInt(op.Binding.IssueID, 10) {
+		return op.Receipt, nil
 	}
 	if op.Input.State != "" && task.State != op.Input.State {
 		return op.Receipt, nil
