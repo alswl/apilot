@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -28,36 +30,47 @@ type ObsidianSyncOptions struct {
 }
 
 type Service struct {
-	workbenchActive     map[string]context.CancelFunc
-	workbenchDirty      map[string]bool
-	workbenchPaths      map[string]map[string]bool
-	workbenchWatchReady map[string]workbenchWatchReadiness
-	workbenchWatchWake  chan struct{}
-	readProgress        sync.Map // attempt ID to common.WorkbenchReadProgress
-	operationNotes      workbenchNoteGates
-	operationRunning    map[string]bool
-	workbenchReader     workbenchReader
-	obsidianSync        ObsidianSyncOptions
-	workbenchPlugins    map[string]workbenchPlugin
-	observers           map[string]common.Observer
-	observing           map[string]active
-	observerNext        map[string]time.Time
-	closeOnce           sync.Once
-	closeError          error
-	suspended           bool
-	mu                  sync.Mutex
-	store               Store
-	dir                 string
-	lock                io.Closer
-	ctx                 context.Context
-	cancel              context.CancelFunc
-	wg                  sync.WaitGroup
-	tasks               map[string]common.Task
-	runs                map[string]common.Run
-	running             map[string]active
-	settings            common.Settings
-	stopping            bool
-	lastError           string
+	workbenchActive       map[string]context.CancelFunc
+	workbenchDirty        map[string]bool
+	workbenchPaths        map[string]map[string]bool
+	workbenchWatchReady   map[string]workbenchWatchReadiness
+	workbenchWatchWake    chan struct{}
+	readProgress          sync.Map // attempt ID to common.WorkbenchReadProgress
+	operationNotes        workbenchNoteGates
+	operationRunning      map[string]bool
+	githubRate            *integrations.WorkbenchGitHubRate
+	githubCredentialMu    sync.Mutex
+	githubCredentialGates sync.Map
+	githubCredentials     integrations.WorkbenchCredentialStore
+	githubBaseURL         string
+	githubTransport       http.RoundTripper
+	githubAppClientID     string
+	githubAppSlug         string
+	githubAuthBaseURL     string
+	githubAuthorization   *githubAuthorizationManager
+	githubNow             func() time.Time
+	workbenchReader       workbenchReader
+	obsidianSync          ObsidianSyncOptions
+	workbenchPlugins      map[string]workbenchPlugin
+	observers             map[string]common.Observer
+	observing             map[string]active
+	observerNext          map[string]time.Time
+	closeOnce             sync.Once
+	closeError            error
+	suspended             bool
+	mu                    sync.Mutex
+	store                 Store
+	dir                   string
+	lock                  io.Closer
+	ctx                   context.Context
+	cancel                context.CancelFunc
+	wg                    sync.WaitGroup
+	tasks                 map[string]common.Task
+	runs                  map[string]common.Run
+	running               map[string]active
+	settings              common.Settings
+	stopping              bool
+	lastError             string
 }
 
 func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
@@ -69,6 +82,19 @@ func NewWithWorkbenchPlugins(dir string, openStore func(string) (Store, error), 
 }
 
 func NewWithWorkbenchOptions(dir string, openStore func(string) (Store, error), registry WorkbenchPluginRegistry, options ObsidianSyncOptions) (*Service, error) {
+	return NewWithWorkbenchDependencies(dir, openStore, registry, options, WorkbenchGitHubDependencies{})
+}
+
+// WorkbenchGitHubDependencies supplies optional adapters for the GitHub connector.
+type WorkbenchGitHubDependencies struct {
+	Credentials integrations.WorkbenchCredentialStore
+	APIURL      string
+	AuthURL     string
+	Transport   http.RoundTripper
+}
+
+// NewWithWorkbenchDependencies opens a service with optional GitHub adapters.
+func NewWithWorkbenchDependencies(dir string, openStore func(string) (Store, error), registry WorkbenchPluginRegistry, options ObsidianSyncOptions, github WorkbenchGitHubDependencies) (*Service, error) {
 	if e := os.MkdirAll(dir, 0700); e != nil {
 		return nil, e
 	}
@@ -91,9 +117,31 @@ func NewWithWorkbenchOptions(dir string, openStore func(string) (Store, error), 
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Service{workbenchActive: make(map[string]context.CancelFunc), workbenchDirty: make(map[string]bool), workbenchPaths: make(map[string]map[string]bool), workbenchWatchReady: make(map[string]workbenchWatchReadiness), workbenchWatchWake: make(chan struct{}, 1), operationRunning: make(map[string]bool), workbenchPlugins: registry.plugins, observers: map[string]common.Observer{}, observing: map[string]active{}, observerNext: map[string]time.Time{}, store: db, dir: dir, lock: lock, ctx: ctx, cancel: cancel, tasks: map[string]common.Task{}, runs: map[string]common.Run{}, running: map[string]active{}}
 	s.workbenchReader = s.readWorkbench
+	s.githubCredentials, s.githubBaseURL, s.githubTransport = github.Credentials, github.APIURL, github.Transport
+	s.githubAuthBaseURL = github.AuthURL
+	s.githubAppClientID = GitHubAppClientID
+	s.githubAppSlug = GitHubAppSlug
+	s.githubRate = integrations.NewWorkbenchGitHubRate(4)
 	s.obsidianSync = options
 	s.lastError = options.Diagnostic
 	fail := func(e error) (*Service, error) { cancel(); db.Close(); lock.Close(); return nil, e }
+	if rates, ok := db.(interface {
+		WorkbenchGitHubAccountBackoffs() (map[int64]time.Time, error)
+		RecordWorkbenchGitHubAccountBackoff(int64, time.Time) error
+	}); ok {
+		backoffs, err := rates.WorkbenchGitHubAccountBackoffs()
+		if err != nil {
+			return fail(err)
+		}
+		for accountID, until := range backoffs {
+			s.githubRate.RestoreBackoff(accountID, until)
+		}
+		s.githubRate.SetBackoffPersistence(func(accountID int64, until time.Time) {
+			if err := rates.RecordWorkbenchGitHubAccountBackoff(accountID, until); err != nil {
+				log.Printf("workbench: could not persist GitHub account backoff: %v", err)
+			}
+		})
+	}
 	if operations, ok := db.(interface{ RecoverWorkbenchTaskOperations() error }); ok {
 		if err := operations.RecoverWorkbenchTaskOperations(); err != nil {
 			return fail(err)
@@ -140,6 +188,10 @@ func NewWithWorkbenchOptions(dir string, openStore func(string) (Store, error), 
 		s.observers[v.ID] = v
 		s.observerNext[v.ID] = now.Add(time.Duration(v.IntervalMS) * time.Millisecond)
 	}
+	if credentials, err := s.workbenchGitHubCredentials(); err == nil {
+		s.wg.Add(1)
+		go func() { defer s.wg.Done(); _ = s.cleanupWorkbenchGitHubCredentials(ctx, credentials) }()
+	}
 	s.wg.Add(1)
 	go s.tick()
 	if wb, ok := db.(workbenchStore); ok {
@@ -166,6 +218,9 @@ func (s *Service) StopAdmission() {
 	}
 	s.stopping = true
 	s.cancel()
+	if s.githubAuthorization != nil {
+		s.githubAuthorization.close()
+	}
 	for id, a := range s.running {
 		a.cancelRequested = true
 		s.running[id] = a

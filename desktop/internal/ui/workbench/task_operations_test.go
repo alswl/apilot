@@ -84,6 +84,7 @@ func TestSourceActionsInTaskDetailsFollowConnector(t *testing.T) {
 func TestCreateUsesRepositoryAndIssueNumber(t *testing.T) {
 	m := newMockup()
 	m.newTaskSource = m.connectionsData[1].Name
+	m.bindNewTaskSource()
 	m.createTask("Verify deployment")
 	o := m.objects[m.selected]
 	if o.NativeID != "41" || o.NativeFields["repo"] != "example/payments" ||

@@ -236,7 +236,7 @@ func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, er
 	if q.Revision != 0 && page.Revision != q.Revision {
 		return page, common.Err("STALE_REVISION", "Task list changed")
 	}
-	filter := " WHERE (?='' OR connection_id=?) AND (?='' OR state=?) AND (?='' OR EXISTS (SELECT 1 FROM workbench_task_labels WHERE task_id=workbench_objects.id AND label_id=?))"
+	filter := " WHERE NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=workbench_objects.connection_id AND g.access_state<>'available') AND (?='' OR connection_id=?) AND (?='' OR state=?) AND (?='' OR EXISTS (SELECT 1 FROM workbench_task_labels WHERE task_id=workbench_objects.id AND label_id=?))"
 	args := []any{q.Connection, q.Connection, q.State, q.State, q.LabelID, q.LabelID}
 	if err := tx.QueryRow("SELECT COUNT(*) FROM workbench_objects"+filter, args...).Scan(&page.Total); err != nil {
 		return page, err
@@ -274,7 +274,7 @@ func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, er
 }
 
 func (s *Store) WorkbenchObject(id string) (common.WorkbenchTask, error) {
-	task, err := scanWorkbench(s.db.QueryRow("SELECT source_key,payload FROM workbench_objects WHERE id=?", id))
+	task, err := scanWorkbench(s.db.QueryRow("SELECT source_key,payload FROM workbench_objects WHERE id=? AND NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=workbench_objects.connection_id AND g.access_state<>'available')", id))
 	if err == sql.ErrNoRows {
 		return task, common.Err("NOT_FOUND", "Unknown workbench task")
 	}

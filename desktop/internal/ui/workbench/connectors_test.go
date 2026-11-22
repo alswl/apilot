@@ -34,7 +34,7 @@ func TestConnectorInstancesAndSyncLog(t *testing.T) {
 		t.Fatal("saving the GitHub panel should apply the instance's state display mapping")
 	}
 
-	m.addConnector(githubIssues)
+	m.addConnector(common.WorkbenchGitHubRepository)
 	draft := m.connectorEditor.connection
 	draft.Name, draft.Identity, draft.Repository = "发布备份", "demo-alt", "example/releases"
 	if problem := m.saveConnector(draft); problem != "" {

@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -94,6 +95,7 @@ func TestHostedTaskViewSurvivesWorkspaceRestart(t *testing.T) {
 	open := func() *mockup {
 		t.Helper()
 		m := newFramework()
+		m.connectionsData = []connection{{ID: "work-id", Name: "Work"}}
 		if err := m.loadTaskViewStore(path); err != nil {
 			t.Fatal(err)
 		}
@@ -125,6 +127,79 @@ func TestHostedTaskViewSurvivesWorkspaceRestart(t *testing.T) {
 	third := open()
 	if len(third.savedTaskViews) != 1 || third.savedTaskViews[0].ID != view.ID || third.savedTaskViews[0].State.Query != second.search {
 		t.Fatalf("updated view was not persisted in place: %+v", third.savedTaskViews)
+	}
+}
+
+func TestSavedTaskViewTracksConnectionIDAcrossRenameAndRemoval(t *testing.T) {
+	m := newMockup()
+	m.connectionsData = []connection{{ID: "original", Name: "Old name"}}
+	m.sourceFilter = "Old name"
+	state := m.viewState()
+	if state.SourceID != "original" {
+		t.Fatalf("source ID was not saved: %+v", state)
+	}
+	m.connectionsData[0].Name = "New name"
+	m.restoreView(state)
+	if m.sourceFilter != "New name" {
+		t.Fatalf("renamed source not restored: %q", m.sourceFilter)
+	}
+	m.connectionsData = []connection{{ID: "replacement", Name: "Old name"}}
+	m.restoreView(state)
+	if !m.taskSourceUnavailable() || len(m.taskRows()) != 0 {
+		t.Fatal("removed source selected a replacement")
+	}
+	if got := m.viewState(); got.SourceID != "original" {
+		t.Fatalf("lost unresolved identity: %+v", got)
+	}
+}
+
+func TestSavedTaskViewFiltersByIDWhenNamesMatch(t *testing.T) {
+	m := newMockup()
+	m.connectionsData = []connection{{ID: "one", Name: "Shared"}, {ID: "two", Name: "Shared"}}
+	m.objects = []sourceObject{{ID: "first", ConnectionID: "one"}, {ID: "second", ConnectionID: "two"}}
+	m.restoreView(taskViewState{Source: "Shared", SourceID: "one", Status: "全部状态"})
+	rows := m.taskRows()
+	if len(rows) != 1 || m.objects[rows[0]].ID != "first" || m.viewState().SourceID != "one" {
+		t.Fatalf("saved source did not preserve exact connection: rows=%v state=%+v", rows, m.viewState())
+	}
+}
+
+func TestSourceFilterDoesNotSelectSameNameReplacement(t *testing.T) {
+	m := newMockup()
+	m.sourceFilter, m.sourceFilterID = "Shared", "removed"
+	m.connectionsData = []connection{{ID: "replacement", Name: "Shared"}}
+	m.objects = []sourceObject{{ID: "task", ConnectionID: "replacement"}}
+	if rows := m.taskRows(); len(rows) != 0 {
+		t.Fatalf("removed source selected replacement: %v", rows)
+	}
+}
+
+func TestLiveRenameOfOtherSameNameConnectionPreservesSource(t *testing.T) {
+	m := newMockup()
+	m.connectionsData = []connection{{ID: "one", Name: "Shared", SourceKind: common.WorkbenchGitHubRepository}, {ID: "two", Name: "Shared", SourceKind: common.WorkbenchGitHubRepository}}
+	m.sourceFilter, m.sourceFilterID = "Shared", "one"
+	snapshots := []common.WorkbenchSnapshot{
+		{WorkbenchConnection: common.WorkbenchConnection{ID: "one", Name: "Shared", Kind: common.WorkbenchGitHubRepository, AccessState: "available"}},
+		{WorkbenchConnection: common.WorkbenchConnection{ID: "two", Name: "Renamed", Kind: common.WorkbenchGitHubRepository, AccessState: "available"}},
+	}
+	m.applyLive(snapshots, nil)
+	if m.sourceFilter != "Shared" || m.sourceFilterID != "one" {
+		t.Fatalf("selection changed: %q %q", m.sourceFilter, m.sourceFilterID)
+	}
+}
+
+func TestLegacyTaskViewRequiresUniqueSourceName(t *testing.T) {
+	m := newMockup()
+	state := taskViewState{Source: "Shared", Status: "全部状态"}
+	m.connectionsData = []connection{{ID: "one", Name: "Shared"}, {ID: "two", Name: "Shared"}}
+	m.restoreView(state)
+	if !m.taskSourceUnavailable() || len(m.taskRows()) != 0 {
+		t.Fatal("ambiguous legacy source selected connections")
+	}
+	m.connectionsData = m.connectionsData[:1]
+	m.restoreView(state)
+	if m.sourceFilter != "Shared" || m.viewState().SourceID != "one" {
+		t.Fatal("unique legacy source did not resolve")
 	}
 }
 

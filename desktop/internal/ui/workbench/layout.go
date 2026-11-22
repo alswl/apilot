@@ -221,7 +221,7 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 			})
 		})
 		if detail.tab == taskCommentsTab {
-			m.taskCommentComposer(c.Key("comment"), detail, &thread.scroll)
+			m.taskCommentComposer(c.Key("comment"), object, detail, &thread.scroll)
 		} else {
 			m.taskAssistantComposer(c.Key("composer"), object, thread, true)
 		}

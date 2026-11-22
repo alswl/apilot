@@ -58,14 +58,17 @@ func (e WorkbenchAttemptScope) Valid() bool {
 
 // Defines values for WorkbenchConnectionInputKind.
 const (
-	GithubIssues  WorkbenchConnectionInputKind = "github_issues"
-	ObsidianTasks WorkbenchConnectionInputKind = "obsidian_tasks"
+	GithubIssues     WorkbenchConnectionInputKind = "github_issues"
+	GithubRepository WorkbenchConnectionInputKind = "github_repository"
+	ObsidianTasks    WorkbenchConnectionInputKind = "obsidian_tasks"
 )
 
 // Valid indicates whether the value is a known member of the WorkbenchConnectionInputKind enum.
 func (e WorkbenchConnectionInputKind) Valid() bool {
 	switch e {
 	case GithubIssues:
+		return true
+	case GithubRepository:
 		return true
 	case ObsidianTasks:
 		return true
@@ -149,6 +152,20 @@ type ErrorModel struct {
 	Type *string `json:"type,omitempty"`
 }
 
+// GitHubAuthorizationStatus defines model for GitHubAuthorizationStatus.
+type GitHubAuthorizationStatus struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/GitHubAuthorizationStatus.json
+	Schema          *string   `json:"$schema,omitempty"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	Id              string    `json:"id"`
+	InstallationUrl *string   `json:"installation_url,omitempty"`
+	State           string    `json:"state"`
+	UserCode        *string   `json:"user_code,omitempty"`
+	VerificationUri *string   `json:"verification_uri,omitempty"`
+}
+
 // WorkbenchAnnotation defines model for WorkbenchAnnotation.
 type WorkbenchAnnotation struct {
 	Body      string `json:"body"`
@@ -174,14 +191,18 @@ type WorkbenchAttempt struct {
 	Coverage          *WorkbenchAttemptCoverage `json:"coverage,omitempty"`
 	Error             *string                   `json:"error,omitempty"`
 	Finished          *time.Time                `json:"finished,omitempty"`
+	FirstPageMs       *int64                    `json:"first_page_ms,omitempty"`
 	Id                int64                     `json:"id"`
+	PageCount         *int64                    `json:"page_count,omitempty"`
 	Paths             *[]string                 `json:"paths,omitempty"`
 	Progress          *WorkbenchReadProgress    `json:"progress,omitempty"`
 	Removed           int64                     `json:"removed"`
+	RequestCount      *int64                    `json:"request_count,omitempty"`
 	Scope             *WorkbenchAttemptScope    `json:"scope,omitempty"`
 	SnapshotVersion   *int64                    `json:"snapshot_version,omitempty"`
 	Started           time.Time                 `json:"started"`
 	State             string                    `json:"state"`
+	SyncType          *string                   `json:"sync_type,omitempty"`
 	Trigger           string                    `json:"trigger"`
 	Updated           int64                     `json:"updated"`
 }
@@ -207,17 +228,19 @@ type WorkbenchConnectionInput struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchConnectionInput.json
-	Schema       *string                      `json:"$schema,omitempty"`
-	Id           *string                      `json:"id,omitempty"`
-	Kind         WorkbenchConnectionInputKind `json:"kind"`
-	Mode         *string                      `json:"mode,omitempty"`
-	Name         string                       `json:"name"`
-	Repository   *string                      `json:"repository,omitempty"`
-	Scope        *string                      `json:"scope,omitempty"`
-	Statuses     *map[string]string           `json:"statuses,omitempty"`
-	Vault        *string                      `json:"vault,omitempty"`
-	Version      *int64                       `json:"version,omitempty"`
-	WriteEnabled *bool                        `json:"write_enabled,omitempty"`
+	Schema                *string                      `json:"$schema,omitempty"`
+	GithubAuthorizationId *string                      `json:"github_authorization_id,omitempty"`
+	GithubToken           *string                      `json:"github_token,omitempty"`
+	Id                    *string                      `json:"id,omitempty"`
+	Kind                  WorkbenchConnectionInputKind `json:"kind"`
+	Mode                  *string                      `json:"mode,omitempty"`
+	Name                  string                       `json:"name"`
+	Repository            *string                      `json:"repository,omitempty"`
+	Scope                 *string                      `json:"scope,omitempty"`
+	Statuses              *map[string]string           `json:"statuses,omitempty"`
+	Vault                 *string                      `json:"vault,omitempty"`
+	Version               *int64                       `json:"version,omitempty"`
+	WriteEnabled          *bool                        `json:"write_enabled,omitempty"`
 }
 
 // WorkbenchConnectionInputKind defines model for WorkbenchConnectionInput.Kind.
@@ -267,6 +290,15 @@ type WorkbenchImportTask struct {
 	State   string  `json:"state"`
 	Summary *string `json:"summary,omitempty"`
 	Title   string  `json:"title"`
+}
+
+// WorkbenchItemsString defines model for WorkbenchItemsString.
+type WorkbenchItemsString struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchItemsString.json
+	Schema *string   `json:"$schema,omitempty"`
+	Items  *[]string `json:"items"`
 }
 
 // WorkbenchItemsWorkbenchAnnotation defines model for WorkbenchItemsWorkbenchAnnotation.
@@ -414,6 +446,8 @@ type WorkbenchSnapshot struct {
 	//
 	// Examples: http://apilot/schemas/WorkbenchSnapshot.json
 	Schema         *string                 `json:"$schema,omitempty"`
+	AccessState    *string                 `json:"access_state,omitempty"`
+	AccountLogin   *string                 `json:"account_login,omitempty"`
 	Attempts       *[]WorkbenchAttempt     `json:"attempts"`
 	Capabilities   WorkbenchCapabilities   `json:"capabilities"`
 	Id             string                  `json:"id"`
@@ -424,11 +458,13 @@ type WorkbenchSnapshot struct {
 	Paused         *bool                   `json:"paused,omitempty"`
 	PendingWrites  *[]WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
 	PluginDisabled *bool                   `json:"plugin_disabled,omitempty"`
+	RateLimitUntil *time.Time              `json:"rate_limit_until,omitempty"`
 	Repository     *string                 `json:"repository,omitempty"`
 	Scope          *string                 `json:"scope,omitempty"`
 	Statuses       *map[string]string      `json:"statuses,omitempty"`
 	Vault          *string                 `json:"vault,omitempty"`
 	Version        int64                   `json:"version"`
+	WriteDenied    *bool                   `json:"write_denied,omitempty"`
 	WriteEnabled   *bool                   `json:"write_enabled,omitempty"`
 }
 
@@ -502,6 +538,7 @@ type WorkbenchTaskWrite struct {
 	//
 	// Examples: http://apilot/schemas/WorkbenchTaskWrite.json
 	Schema            *string   `json:"$schema,omitempty"`
+	Body              *string   `json:"body,omitempty"`
 	ConnectionId      *string   `json:"connection_id,omitempty"`
 	ConnectionVersion int64     `json:"connection_version"`
 	HeadingPath       *[]string `json:"heading_path,omitempty"`
@@ -516,6 +553,11 @@ type WorkbenchTaskWrite struct {
 // ListWorkbenchHeadingsParams defines parameters for ListWorkbenchHeadings.
 type ListWorkbenchHeadingsParams struct {
 	NotePath string `form:"note_path" json:"note_path"`
+}
+
+// ListGitHubRepositoriesParams defines parameters for ListGitHubRepositories.
+type ListGitHubRepositoriesParams struct {
+	AuthorizationId *string `form:"authorization_id,omitempty" json:"authorization_id,omitempty"`
 }
 
 // ListWorkbenchTasksParams defines parameters for ListWorkbenchTasks.
@@ -714,6 +756,26 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 	ListWorkbenchConnectors(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartGitHubAuthorization Start GitHub browser authorization
+	//
+	// Corresponds with POST /v1/workbench/github-authorizations (the `StartGitHubAuthorization` operationId).
+	StartGitHubAuthorization(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CancelGitHubAuthorization Cancel GitHub browser authorization
+	//
+	// Corresponds with DELETE /v1/workbench/github-authorizations/{id} (the `CancelGitHubAuthorization` operationId).
+	CancelGitHubAuthorization(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetGitHubAuthorization Read GitHub browser authorization status
+	//
+	// Corresponds with GET /v1/workbench/github-authorizations/{id} (the `GetGitHubAuthorization` operationId).
+	GetGitHubAuthorization(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListGitHubRepositories List authorized GitHub Issues repositories
+	//
+	// Corresponds with GET /v1/workbench/github-repositories (the `ListGitHubRepositories` operationId).
+	ListGitHubRepositories(ctx context.Context, params *ListGitHubRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListWorkbenchLabels List local task labels
 	//
@@ -1077,6 +1139,66 @@ func (c *Client) CancelWorkbenchSync(ctx context.Context, id string, attemptId i
 // Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 func (c *Client) ListWorkbenchConnectors(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWorkbenchConnectorsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// StartGitHubAuthorization Start GitHub browser authorization
+//
+// Corresponds with POST /v1/workbench/github-authorizations (the `StartGitHubAuthorization` operationId).
+func (c *Client) StartGitHubAuthorization(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartGitHubAuthorizationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CancelGitHubAuthorization Cancel GitHub browser authorization
+//
+// Corresponds with DELETE /v1/workbench/github-authorizations/{id} (the `CancelGitHubAuthorization` operationId).
+func (c *Client) CancelGitHubAuthorization(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCancelGitHubAuthorizationRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetGitHubAuthorization Read GitHub browser authorization status
+//
+// Corresponds with GET /v1/workbench/github-authorizations/{id} (the `GetGitHubAuthorization` operationId).
+func (c *Client) GetGitHubAuthorization(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetGitHubAuthorizationRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListGitHubRepositories List authorized GitHub Issues repositories
+//
+// Corresponds with GET /v1/workbench/github-repositories (the `ListGitHubRepositories` operationId).
+func (c *Client) ListGitHubRepositories(ctx context.Context, params *ListGitHubRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListGitHubRepositoriesRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1908,6 +2030,155 @@ func NewListWorkbenchConnectorsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewStartGitHubAuthorizationRequest constructs an http.Request for the StartGitHubAuthorization method
+func NewStartGitHubAuthorizationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/github-authorizations")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCancelGitHubAuthorizationRequest constructs an http.Request for the CancelGitHubAuthorization method
+func NewCancelGitHubAuthorizationRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/github-authorizations/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetGitHubAuthorizationRequest constructs an http.Request for the GetGitHubAuthorization method
+func NewGetGitHubAuthorizationRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/github-authorizations/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListGitHubRepositoriesRequest constructs an http.Request for the ListGitHubRepositories method
+func NewListGitHubRepositoriesRequest(server string, params *ListGitHubRepositoriesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/github-repositories")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.AuthorizationId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "authorization_id", *params.AuthorizationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListWorkbenchLabelsRequest constructs an http.Request for the ListWorkbenchLabels method
 func NewListWorkbenchLabelsRequest(server string) (*http.Request, error) {
 	var err error
@@ -2717,6 +2988,34 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 	ListWorkbenchConnectorsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkbenchConnectorsResponse, error)
 
+	// StartGitHubAuthorizationWithResponse Start GitHub browser authorization
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/github-authorizations (the `StartGitHubAuthorization` operationId).
+	StartGitHubAuthorizationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartGitHubAuthorizationResponse, error)
+
+	// CancelGitHubAuthorizationWithResponse Cancel GitHub browser authorization
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /v1/workbench/github-authorizations/{id} (the `CancelGitHubAuthorization` operationId).
+	CancelGitHubAuthorizationWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*CancelGitHubAuthorizationResponse, error)
+
+	// GetGitHubAuthorizationWithResponse Read GitHub browser authorization status
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/github-authorizations/{id} (the `GetGitHubAuthorization` operationId).
+	GetGitHubAuthorizationWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetGitHubAuthorizationResponse, error)
+
+	// ListGitHubRepositoriesWithResponse List authorized GitHub Issues repositories
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/github-repositories (the `ListGitHubRepositories` operationId).
+	ListGitHubRepositoriesWithResponse(ctx context.Context, params *ListGitHubRepositoriesParams, reqEditors ...RequestEditorFn) (*ListGitHubRepositoriesResponse, error)
+
 	// ListWorkbenchLabelsWithResponse List local task labels
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -3030,14 +3329,22 @@ type SaveWorkbenchConnectionResponse struct {
 	JSON200 *WorkbenchSnapshot
 	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
 	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *ErrorModel
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *ErrorModel
 	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
 	ApplicationproblemJSON404 *ErrorModel
 	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
 	ApplicationproblemJSON409 *ErrorModel
 	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
 	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
 	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
 	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -3048,6 +3355,16 @@ func (r SaveWorkbenchConnectionResponse) GetJSON200() *WorkbenchSnapshot {
 // GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
 func (r SaveWorkbenchConnectionResponse) GetApplicationproblemJSON400() *ErrorModel {
 	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r SaveWorkbenchConnectionResponse) GetApplicationproblemJSON401() *ErrorModel {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r SaveWorkbenchConnectionResponse) GetApplicationproblemJSON403() *ErrorModel {
+	return r.ApplicationproblemJSON403
 }
 
 // GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
@@ -3065,9 +3382,19 @@ func (r SaveWorkbenchConnectionResponse) GetApplicationproblemJSON422() *ErrorMo
 	return r.ApplicationproblemJSON422
 }
 
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r SaveWorkbenchConnectionResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
+}
+
 // GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
 func (r SaveWorkbenchConnectionResponse) GetApplicationproblemJSON500() *ErrorModel {
 	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r SaveWorkbenchConnectionResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
 }
 
 // GetBody returns the raw response body bytes
@@ -3533,6 +3860,8 @@ type RunWorkbenchSyncResponse struct {
 	ApplicationproblemJSON409 *ErrorModel
 	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
 	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
 	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
 	ApplicationproblemJSON500 *ErrorModel
 }
@@ -3560,6 +3889,11 @@ func (r RunWorkbenchSyncResponse) GetApplicationproblemJSON409() *ErrorModel {
 // GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
 func (r RunWorkbenchSyncResponse) GetApplicationproblemJSON422() *ErrorModel {
 	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r RunWorkbenchSyncResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
 }
 
 // GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
@@ -3707,6 +4041,303 @@ func (r ListWorkbenchConnectorsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListWorkbenchConnectorsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type StartGitHubAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GitHubAuthorizationStatus
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r StartGitHubAuthorizationResponse) GetJSON200() *GitHubAuthorizationStatus {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r StartGitHubAuthorizationResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r StartGitHubAuthorizationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r StartGitHubAuthorizationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r StartGitHubAuthorizationResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r StartGitHubAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r StartGitHubAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartGitHubAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r StartGitHubAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CancelGitHubAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchResultID
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CancelGitHubAuthorizationResponse) GetJSON200() *WorkbenchResultID {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r CancelGitHubAuthorizationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r CancelGitHubAuthorizationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r CancelGitHubAuthorizationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r CancelGitHubAuthorizationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r CancelGitHubAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CancelGitHubAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CancelGitHubAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CancelGitHubAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetGitHubAuthorizationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *GitHubAuthorizationStatus
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetGitHubAuthorizationResponse) GetJSON200() *GitHubAuthorizationStatus {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetGitHubAuthorizationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r GetGitHubAuthorizationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r GetGitHubAuthorizationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r GetGitHubAuthorizationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetGitHubAuthorizationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetGitHubAuthorizationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetGitHubAuthorizationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetGitHubAuthorizationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListGitHubRepositoriesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchItemsString
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *ErrorModel
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListGitHubRepositoriesResponse) GetJSON200() *WorkbenchItemsString {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListGitHubRepositoriesResponse) GetApplicationproblemJSON401() *ErrorModel {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListGitHubRepositoriesResponse) GetApplicationproblemJSON403() *ErrorModel {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r ListGitHubRepositoriesResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r ListGitHubRepositoriesResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r ListGitHubRepositoriesResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r ListGitHubRepositoriesResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListGitHubRepositoriesResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListGitHubRepositoriesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListGitHubRepositoriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListGitHubRepositoriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListGitHubRepositoriesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -4901,6 +5532,58 @@ func (c *ClientWithResponses) ListWorkbenchConnectorsWithResponse(ctx context.Co
 	return ParseListWorkbenchConnectorsResponse(rsp)
 }
 
+// StartGitHubAuthorizationWithResponse Start GitHub browser authorization
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/github-authorizations (the `StartGitHubAuthorization` operationId).
+func (c *ClientWithResponses) StartGitHubAuthorizationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StartGitHubAuthorizationResponse, error) {
+	rsp, err := c.StartGitHubAuthorization(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartGitHubAuthorizationResponse(rsp)
+}
+
+// CancelGitHubAuthorizationWithResponse Cancel GitHub browser authorization
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /v1/workbench/github-authorizations/{id} (the `CancelGitHubAuthorization` operationId).
+func (c *ClientWithResponses) CancelGitHubAuthorizationWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*CancelGitHubAuthorizationResponse, error) {
+	rsp, err := c.CancelGitHubAuthorization(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCancelGitHubAuthorizationResponse(rsp)
+}
+
+// GetGitHubAuthorizationWithResponse Read GitHub browser authorization status
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/github-authorizations/{id} (the `GetGitHubAuthorization` operationId).
+func (c *ClientWithResponses) GetGitHubAuthorizationWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetGitHubAuthorizationResponse, error) {
+	rsp, err := c.GetGitHubAuthorization(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetGitHubAuthorizationResponse(rsp)
+}
+
+// ListGitHubRepositoriesWithResponse List authorized GitHub Issues repositories
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/github-repositories (the `ListGitHubRepositories` operationId).
+func (c *ClientWithResponses) ListGitHubRepositoriesWithResponse(ctx context.Context, params *ListGitHubRepositoriesParams, reqEditors ...RequestEditorFn) (*ListGitHubRepositoriesResponse, error) {
+	rsp, err := c.ListGitHubRepositories(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListGitHubRepositoriesResponse(rsp)
+}
+
 // ListWorkbenchLabelsWithResponse List local task labels
 //
 // Returns a wrapper object for the known response body format(s).
@@ -5321,6 +6004,20 @@ func ParseSaveWorkbenchConnectionResponse(rsp *http.Response) (*SaveWorkbenchCon
 		}
 		response.ApplicationproblemJSON400 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -5342,12 +6039,26 @@ func ParseSaveWorkbenchConnectionResponse(rsp *http.Response) (*SaveWorkbenchCon
 		}
 		response.ApplicationproblemJSON422 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
 
 	}
 
@@ -5734,6 +6445,13 @@ func ParseRunWorkbenchSyncResponse(rsp *http.Response) (*RunWorkbenchSyncRespons
 		}
 		response.ApplicationproblemJSON422 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest ErrorModel
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -5827,6 +6545,243 @@ func ParseListWorkbenchConnectorsResponse(rsp *http.Response) (*ListWorkbenchCon
 			return nil, err
 		}
 		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStartGitHubAuthorizationResponse parses an HTTP response from a StartGitHubAuthorizationWithResponse call
+func ParseStartGitHubAuthorizationResponse(rsp *http.Response) (*StartGitHubAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartGitHubAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GitHubAuthorizationStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCancelGitHubAuthorizationResponse parses an HTTP response from a CancelGitHubAuthorizationWithResponse call
+func ParseCancelGitHubAuthorizationResponse(rsp *http.Response) (*CancelGitHubAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CancelGitHubAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchResultID
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetGitHubAuthorizationResponse parses an HTTP response from a GetGitHubAuthorizationWithResponse call
+func ParseGetGitHubAuthorizationResponse(rsp *http.Response) (*GetGitHubAuthorizationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetGitHubAuthorizationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest GitHubAuthorizationStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListGitHubRepositoriesResponse parses an HTTP response from a ListGitHubRepositoriesWithResponse call
+func ParseListGitHubRepositoriesResponse(rsp *http.Response) (*ListGitHubRepositoriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListGitHubRepositoriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchItemsString
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
 
 	}
 

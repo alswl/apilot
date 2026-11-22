@@ -63,7 +63,7 @@ func TestEmptyFrameworkNavigationAndConnectorScaffolds(t *testing.T) {
 	for _, scaffold := range []struct {
 		kind, name, field string
 	}{
-		{githubIssues, "GitHub Issues", "仓库"},
+		{common.WorkbenchGitHubRepository, "GitHub", "仓库"},
 		{obsidianTasks, "Obsidian Tasks", "Vault 路径"},
 	} {
 		conn := m.connectionByID(scaffold.kind)

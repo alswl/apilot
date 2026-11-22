@@ -38,6 +38,7 @@ func BuiltinWorkbenchPluginRegistry() WorkbenchPluginRegistry {
 			write:        (*Service).writeObsidianWorkbenchTask,
 			capabilities: common.WorkbenchCapabilities{Read: true, Refresh: true, Create: true, SetState: true, ListTargets: true},
 		},
+		common.WorkbenchGitHubRepository: {capabilities: common.WorkbenchCapabilities{Read: true, Refresh: true, Create: true, SetState: true}},
 		common.WorkbenchGitHubIssues: {
 			read: func(_ context.Context, c common.WorkbenchConnection) ([]common.WorkbenchTask, error) {
 				return integrations.ReadWorkbenchGitHubMock(c)
@@ -147,7 +148,10 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 		return common.WorkbenchCapabilities{}
 	}
 	caps := s.workbenchPlugins[c.Kind].capabilities
-	if c.Kind == common.WorkbenchObsidianTasks && !c.WriteEnabled {
+	if (c.Kind == common.WorkbenchObsidianTasks || c.Kind == common.WorkbenchGitHubRepository) && !c.WriteEnabled {
+		caps.Create, caps.SetState = false, false
+	}
+	if c.Kind == common.WorkbenchGitHubRepository && (c.AccessState != "available" || c.WriteDenied) {
 		caps.Create, caps.SetState = false, false
 	}
 	return caps

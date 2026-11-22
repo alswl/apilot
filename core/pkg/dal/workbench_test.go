@@ -66,6 +66,7 @@ func TestWorkbenchSnapshotTransaction(t *testing.T) {
 func restoreLegacyWorkbenchSchema(t *testing.T, s *Store) {
 	t.Helper()
 	_, err := s.db.Exec(`PRAGMA foreign_keys=OFF;
+DROP TABLE workbench_github_connections;
 DROP TABLE workbench_task_labels;
 DROP TABLE workbench_task_annotations;
 DROP TABLE workbench_labels;

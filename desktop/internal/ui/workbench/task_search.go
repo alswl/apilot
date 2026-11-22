@@ -138,6 +138,13 @@ func (m *mockup) searchValues(object sourceObject, field string) []string {
 		}
 	case "assignee":
 		return object.Assignees
+	case "repo":
+		if value := object.NativeFields["repository"]; value != "" {
+			return []string{value}
+		}
+		if value := object.NativeFields["repo"]; value != "" {
+			return []string{value}
+		}
 	case "title":
 		return []string{object.Title}
 	case "status":
@@ -198,7 +205,7 @@ func (m *mockup) searchHelp(c *ui.Context) {
 	m.searchFieldButtons(c.Key("common"), commonSearchFields)
 	labels := make(map[string]bool)
 	for _, object := range m.objects {
-		if m.sourceFilter == "全部来源" || m.sourceFilter == m.connectionName(object.ConnectionID) {
+		if m.matchesTaskSource(object.ConnectionID) {
 			for _, label := range taskLabelValues(object) {
 				labels[label] = true
 			}

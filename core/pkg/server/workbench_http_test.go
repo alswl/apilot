@@ -19,6 +19,7 @@ import (
 	"github.com/alswl/apilot/core/pkg/config"
 	"github.com/alswl/apilot/core/pkg/integrations"
 	"github.com/alswl/apilot/core/pkg/services"
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
 )
 
@@ -50,9 +51,73 @@ func TestWorkbenchHTTPContract(t *testing.T) {
 	if res := api.Get(workbenchPath + "/task-operations/missing"); res.Code != http.StatusNotFound {
 		t.Fatalf("missing operation: %d %s", res.Code, res.Body)
 	}
+	if res := api.Get(workbenchPath + "/github-repositories?authorization_id=unknown"); res.Code != http.StatusUnauthorized {
+		t.Fatalf("repository listing without authorization: %d %s", res.Code, res.Body)
+	}
 	res := api.Get(workbenchPath + "/tasks/missing")
 	if res.Code != http.StatusNotFound || res.Header().Get("Content-Type") != "application/problem+json" {
 		t.Fatalf("not found: %d %s", res.Code, res.Body)
+	}
+}
+
+func TestWorkbenchHTTPDoesNotCacheAuthorizationOrTaskResults(t *testing.T) {
+	service, err := OpenService(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+	handler, _ := workbenchRouter(service)
+	for _, path := range []string{"/github-authorizations/missing", "/github-repositories?authorization_id=missing", "/tasks"} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, workbenchPath+path, nil))
+		if got := response.Header().Get("Cache-Control"); got != "no-store" {
+			t.Errorf("%s: Cache-Control = %q", path, got)
+		}
+	}
+}
+
+func TestWorkbenchHTTPErrorExposesOnlySafeDetails(t *testing.T) {
+	domain := common.Err("CONFLICT", "Repository is already connected")
+	domain.Details["connection_id"] = "existing"
+	domain.Details["github_token"] = "secret-value"
+	problem := workbenchHTTPError(domain)
+	data, err := json.Marshal(problem)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte("existing")) || bytes.Contains(data, []byte("secret-value")) {
+		t.Fatalf("incorrect safe error details: %s", data)
+	}
+	if status := problem.(huma.StatusError).GetStatus(); status != http.StatusConflict {
+		t.Fatalf("status %d", status)
+	}
+	limited := common.Err("RATE_LIMITED", "Try later")
+	limited.Details["retry_after"] = int64(60)
+	if status := workbenchHTTPError(limited).(huma.StatusError).GetStatus(); status != http.StatusTooManyRequests {
+		t.Fatalf("rate-limit status %d", status)
+	}
+}
+
+func TestWorkbenchConnectionValidationDoesNotEchoGitHubToken(t *testing.T) {
+	router, _ := workbenchRouter(nil)
+	request := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPut, workbenchPath+"/connections", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		router.ServeHTTP(res, req)
+		return res
+	}
+	res := request(`{"kind":"github_repository","name":"","repository":"owner/repo","github_token":"test-private-token"}`)
+	if res.Code < 400 || bytes.Contains(res.Body.Bytes(), []byte("test-private-token")) {
+		t.Fatalf("connection validation leaked token: %d %s", res.Code, res.Body)
+	}
+	res = request(`{"kind":"github_repository","name":"Repo","repository":"owner/repo","github_token":{"secret":"test-private-token"}}`)
+	if res.Code < 400 || bytes.Contains(res.Body.Bytes(), []byte("test-private-token")) {
+		t.Fatalf("invalid token field leaked sensitive value: %d %s", res.Code, res.Body)
+	}
+	res = request(`{"kind":"github_repository","name":"Repo","repository":"owner/repo","github_authorization_id":{"secret":"test-private-session"}}`)
+	if res.Code < 400 || bytes.Contains(res.Body.Bytes(), []byte("test-private-session")) {
+		t.Fatalf("invalid authorization field leaked session: %d %s", res.Code, res.Body)
 	}
 }
 

@@ -28,7 +28,7 @@ func (s *Service) recoverWorkbenchOperations(store workbenchTaskOperationStore) 
 		}
 		if operation.Phase == common.WorkbenchOperationAccepted {
 			connection, err := s.WorkbenchSnapshot(operation.Receipt.ConnectionID)
-			if err == nil && connection.Kind == common.WorkbenchObsidianTasks {
+			if err == nil && (connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) {
 				s.scheduleWorkbenchOperation(operation.Receipt.RequestID)
 			}
 		}
@@ -38,6 +38,9 @@ func (s *Service) recoverWorkbenchOperations(store workbenchTaskOperationStore) 
 			return
 		}
 		if operation.Phase != common.WorkbenchOperationNeedsReview {
+			continue
+		}
+		if operation.Binding != nil && operation.Binding.RepositoryID != 0 && operation.Binding.IssueID == 0 {
 			continue
 		}
 		s.mu.Lock()
@@ -73,6 +76,20 @@ func (s *Service) recoverWorkbenchOperations(store workbenchTaskOperationStore) 
 // reconcileWorkbenchTaskOperation checks the original request against the source.
 // An inconclusive observation retains the original needs_review receipt.
 func (s *Service) reconcileWorkbenchTaskOperation(ctx context.Context, requestID string) (common.WorkbenchTaskReceipt, error) {
+	if store, ok := s.store.(workbenchTaskOperationStore); ok {
+		op, err := store.WorkbenchTaskOperation(requestID)
+		if err != nil {
+			return op.Receipt, err
+		}
+		connection, err := s.WorkbenchSnapshot(op.Receipt.ConnectionID)
+		if err != nil {
+			return op.Receipt, err
+		}
+		if connection.Kind == common.WorkbenchGitHubRepository {
+			return s.reconcileGitHubTaskOperation(ctx, requestID)
+		}
+	}
+
 	if receipt, handled, err := s.reconcileWorkbenchObservedCreation(ctx, requestID); handled || err != nil {
 		return receipt, err
 	}

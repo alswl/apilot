@@ -19,6 +19,7 @@ func newDevTaskScenario() *mockup {
 	m.page = tasksPage
 	m.newTaskOpen, m.newTaskPending = true, true
 	m.newTaskDraft, m.newTaskSource = "Write once", "Local"
+	m.newTaskSourceID = "dev-local"
 	m.newTaskRequest = common.WorkbenchTaskWrite{RequestID: "dev-create-once", ConnectionID: "dev-local", ConnectionVersion: 1, Title: m.newTaskDraft}
 	m.devTask.requests = append(m.devTask.requests, m.newTaskRequest)
 	return m

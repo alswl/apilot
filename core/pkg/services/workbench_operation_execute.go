@@ -382,12 +382,27 @@ func (s *Service) scheduleWorkbenchOperation(requestID string) {
 		}
 		for attempt := 0; attempt <= s.obsidianSync.MaxRetries; attempt++ {
 			ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
-			_, err := s.executeObsidianTaskOperation(ctx, requestID)
+			op, lookupErr := store.WorkbenchTaskOperation(requestID)
+			if lookupErr != nil {
+				cancel()
+				return
+			}
+			connection, lookupErr := s.WorkbenchSnapshot(op.Receipt.ConnectionID)
+			if lookupErr != nil {
+				cancel()
+				return
+			}
+			var err error
+			if connection.Kind == common.WorkbenchGitHubRepository {
+				_, err = s.executeGitHubTaskOperation(ctx, requestID)
+			} else {
+				_, err = s.executeObsidianTaskOperation(ctx, requestID)
+			}
 			cancel()
 			if err == nil || s.ctx.Err() != nil {
 				return
 			}
-			op, lookupErr := store.WorkbenchTaskOperation(requestID)
+			op, lookupErr = store.WorkbenchTaskOperation(requestID)
 			if lookupErr != nil || op.Phase != common.WorkbenchOperationAccepted {
 				return
 			}

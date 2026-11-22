@@ -8,23 +8,40 @@ import (
 )
 
 func (s *Service) RemoveWorkbench(id string) error {
+	s.githubCredentialMu.Lock()
+	defer s.githubCredentialMu.Unlock()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.stopping {
+		s.mu.Unlock()
 		return common.Err("CONFLICT", "App is stopping")
 	}
 	st, err := s.workbenchStore()
 	if err != nil {
+		s.mu.Unlock()
 		return err
 	}
 	if id == common.DefaultWorkbenchLocalID {
+		s.mu.Unlock()
 		return common.Err("CONFLICT", "The built-in Local connection can be cleared by importing an empty tasks array")
 	}
+	ref := ""
+	if store, ok := s.store.(workbenchGitHubStore); ok {
+		if progress, err := store.WorkbenchGitHubProgress(id); err == nil {
+			ref = progress.CredentialRef
+		}
+	}
 	if err := st.DeleteWorkbench(id); err != nil {
+		s.mu.Unlock()
 		return err
 	}
 	if cancel := s.workbenchActive[id]; cancel != nil {
 		cancel()
+	}
+	s.mu.Unlock()
+	if ref != "" {
+		if credentials, err := s.workbenchGitHubCredentials(); err == nil {
+			s.deleteUnusedGitHubCredential(credentials, ref)
+		}
 	}
 	return nil
 }

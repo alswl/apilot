@@ -28,6 +28,9 @@ func (s *Service) SubmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) 
 		if err != nil {
 			return common.WorkbenchTaskReceipt{}, err
 		}
+		if err := s.workbenchOperationVisible(connection, existing); err != nil {
+			return common.WorkbenchTaskReceipt{}, err
+		}
 		if existing.Phase == "legacy" && existing.Receipt.SyncState == common.WorkbenchOperationNeedsReview && connection.Kind == common.WorkbenchObsidianTasks {
 			restorer, ok := s.store.(interface {
 				RestoreLegacyWorkbenchTaskOperation(common.WorkbenchTaskWrite, string) (common.WorkbenchTaskOperation, error)
@@ -46,9 +49,12 @@ func (s *Service) SubmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) 
 				return common.WorkbenchTaskReceipt{}, err
 			}
 		}
-		if existing.Phase == common.WorkbenchOperationAccepted && connection.Kind == common.WorkbenchObsidianTasks {
+		if existing.Phase == common.WorkbenchOperationAccepted && (connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) {
 			s.scheduleWorkbenchOperation(input.RequestID)
-		} else if existing.Phase == common.WorkbenchOperationNeedsReview && connection.Kind == common.WorkbenchObsidianTasks {
+		} else if existing.Phase == common.WorkbenchOperationNeedsReview && (connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) {
+			if connection.Kind == common.WorkbenchGitHubRepository && (existing.Binding == nil || existing.Binding.IssueID == 0) {
+				return existing.Receipt, nil
+			}
 			s.scheduleWorkbenchReconciliation(input.RequestID)
 			return s.WorkbenchTaskOperationReceipt(input.RequestID)
 		}
@@ -80,7 +86,7 @@ func (s *Service) SubmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) 
 	if connection.Kind == common.WorkbenchLocal {
 		return s.writeWorkbenchTaskLegacy(input)
 	}
-	if connection.Kind != common.WorkbenchObsidianTasks {
+	if connection.Kind != common.WorkbenchObsidianTasks && connection.Kind != common.WorkbenchGitHubRepository {
 		return common.WorkbenchTaskReceipt{}, common.Err("CONFLICT", "Connector does not support task writes")
 	}
 	op, _, err := s.admitWorkbenchTaskOperation(input)
@@ -142,7 +148,11 @@ func (s *Service) WorkbenchTaskOperationReceipt(requestID string) (common.Workbe
 	if err != nil {
 		return common.WorkbenchTaskReceipt{}, err
 	}
-	if _, err := s.WorkbenchSnapshot(op.Receipt.ConnectionID); err != nil {
+	connection, err := s.WorkbenchSnapshot(op.Receipt.ConnectionID)
+	if err != nil {
+		return common.WorkbenchTaskReceipt{}, err
+	}
+	if err := s.workbenchOperationVisible(connection, op); err != nil {
 		return common.WorkbenchTaskReceipt{}, err
 	}
 	s.mu.Lock()
@@ -152,6 +162,21 @@ func (s *Service) WorkbenchTaskOperationReceipt(requestID string) (common.Workbe
 		op.Receipt.SyncState = common.WorkbenchOperationDispatching
 	}
 	return op.Receipt, nil
+}
+
+func (s *Service) workbenchOperationVisible(connection common.WorkbenchSnapshot, op common.WorkbenchTaskOperation) error {
+	if connection.Kind != common.WorkbenchGitHubRepository {
+		return nil
+	}
+	store, ok := s.store.(workbenchGitHubStore)
+	if !ok {
+		return common.Err("NOT_FOUND", "Unknown task operation")
+	}
+	progress, err := store.WorkbenchGitHubProgress(connection.ID)
+	if err != nil || progress.AccessState != "available" || op.Binding == nil || op.Binding.AccountID != progress.AccountID || op.Binding.RepositoryID != progress.RepositoryID {
+		return common.Err("NOT_FOUND", "Unknown task operation")
+	}
+	return nil
 }
 
 // ReconcileWorkbenchTaskOperation checks the stored request without resending it.
@@ -219,7 +244,7 @@ func (s *Service) admitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) (
 	}
 	connectionID := input.ConnectionID
 	if input.SourceObjectID != "" {
-		if (input.State != "open" && input.State != "done") || input.Title != "" || input.NotePath != "" || len(input.HeadingPath) != 0 {
+		if (input.State != "open" && input.State != "done") || input.Title != "" || input.Body != "" || input.NotePath != "" || len(input.HeadingPath) != 0 {
 			return empty, false, common.Err("INVALID_ARGUMENT", "Provide an explicit open or done state")
 		}
 		task, err := store.WorkbenchObject(input.SourceObjectID)
@@ -245,6 +270,9 @@ func (s *Service) admitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) (
 	}
 	if (input.SourceObjectID == "" && !connection.Capabilities.Create) || (input.SourceObjectID != "" && !connection.Capabilities.SetState) {
 		return empty, false, common.Err("CONFLICT", "Connector does not support this task write")
+	}
+	if connection.Kind != common.WorkbenchGitHubRepository && input.Body != "" {
+		return empty, false, common.Err("INVALID_ARGUMENT", "Body is supported for GitHub issue creation")
 	}
 	if connection.Kind == common.WorkbenchLocal && input.SourceObjectID == "" && (input.NotePath != "" || len(input.HeadingPath) != 0 || input.TargetVersion != "") {
 		return empty, false, common.Err("INVALID_ARGUMENT", "Provide a Local task without a source location")

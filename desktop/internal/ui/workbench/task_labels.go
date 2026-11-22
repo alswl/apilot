@@ -339,6 +339,9 @@ func (m *mockup) labelPairs(c *ui.Context, edit *labelEdit) {
 
 func taskLabelValues(o sourceObject) []string {
 	labels := slices.Clone(o.Labels)
+	for _, label := range o.WorkbenchLabels {
+		labels = append(labels, label.Name)
+	}
 	for _, key := range slices.Sorted(maps.Keys(o.LabelValues)) {
 		labels = append(labels, key+":"+o.LabelValues[key])
 	}
