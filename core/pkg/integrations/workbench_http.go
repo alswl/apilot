@@ -25,6 +25,12 @@ func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, erro
 	}
 	timeout := 3 * time.Second
 	switch method {
+	case "workbench.connection.save":
+		timeout = 40 * time.Second
+	case "workbench.github.authorization.start":
+		timeout = 20 * time.Second
+	case "workbench.github.repository.list":
+		timeout = 35 * time.Second
 	case "workbench.operation.reconcile":
 		timeout = 35 * time.Second
 	case "workbench.task.create", "workbench.task.complete", "workbench.task.reopen":
@@ -81,12 +87,33 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return client.ListWorkbenchConnections(ctx)
 	case "workbench.label.list":
 		return client.ListWorkbenchLabels(ctx)
+	case "workbench.github.authorization.start":
+		return client.StartGitHubAuthorization(ctx)
 	}
 	input, err := json.Marshal(params)
 	if err != nil {
 		return nil, common.Err("INVALID_ARGUMENT", "Invalid workbench request")
 	}
 	switch method {
+	case "workbench.github.repository.list":
+		var in struct {
+			AuthorizationID *string `json:"authorization_id"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, common.Err("INVALID_ARGUMENT", "Invalid GitHub repository request")
+		}
+		return client.ListGitHubRepositories(ctx, &ListGitHubRepositoriesParams{AuthorizationId: in.AuthorizationID})
+	case "workbench.github.authorization.show", "workbench.github.authorization.cancel":
+		var in struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil || in.ID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "GitHub authorization ID is required")
+		}
+		if method == "workbench.github.authorization.cancel" {
+			return client.CancelGitHubAuthorization(ctx, in.ID)
+		}
+		return client.GetGitHubAuthorization(ctx, in.ID)
 	case "workbench.operation.submit":
 		return client.SubmitWorkbenchTaskOperationWithBody(ctx, "application/json", bytes.NewReader(input))
 	case "workbench.plugin.list":
@@ -213,12 +240,16 @@ func decodeWorkbenchProblem(status int, payload []byte) *common.Error {
 		code = "CONFLICT"
 	case http.StatusServiceUnavailable:
 		code = "IPC_UNAVAILABLE"
+	case http.StatusTooManyRequests:
+		code = "RATE_LIMITED"
 	}
+	details := map[string]any{}
 	if problem.Errors != nil {
 		for _, detail := range *problem.Errors {
 			if detail.Location != nil && *detail.Location == "code" && detail.Message != nil {
 				code = *detail.Message
-				break
+			} else if detail.Location != nil && (*detail.Location == "connection_id" || *detail.Location == "retry_after" || *detail.Location == "rate_limit_reset" || *detail.Location == "github_installation_required") && detail.Value != nil {
+				details[*detail.Location] = detail.Value
 			}
 		}
 	}
@@ -226,5 +257,7 @@ func decodeWorkbenchProblem(status int, payload []byte) *common.Error {
 	if problem.Detail != nil {
 		message = *problem.Detail
 	}
-	return common.Err(code, message)
+	result := common.Err(code, message)
+	result.Details = details
+	return result
 }

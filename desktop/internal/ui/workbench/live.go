@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
@@ -99,6 +100,16 @@ func (m *mockup) refreshLive() {
 				q.Offset, q.Revision = len(tasks), page.Revision
 			}
 		}
+		if err == nil {
+			// The task pages and connection list are separate requests. Reject a
+			// page captured across an account or authorization transition.
+			var latest []common.WorkbenchSnapshot
+			latest, err = remote.WorkbenchConnections()
+			if err == nil && !sameGitHubVisibility(connections, latest) {
+				connections = latest
+				tasks = slices.DeleteFunc(tasks, func(task sourceObject) bool { return task.Kind == common.WorkbenchGitHubRepository })
+			}
+		}
 		if syncID != "" && detail.ID == "" {
 			detail, detailErr = remote.WorkbenchSyncDetails(syncID)
 		}
@@ -154,12 +165,51 @@ func (m *mockup) refreshLive() {
 	}()
 }
 
+func sameGitHubVisibility(before, after []common.WorkbenchSnapshot) bool {
+	type visibility struct {
+		version       int64
+		access, login string
+	}
+	states := func(snapshots []common.WorkbenchSnapshot) map[string]visibility {
+		result := make(map[string]visibility)
+		for _, snapshot := range snapshots {
+			if snapshot.Kind == common.WorkbenchGitHubRepository {
+				result[snapshot.ID] = visibility{snapshot.Version, snapshot.AccessState, snapshot.AccountLogin}
+			}
+		}
+		return result
+	}
+	return reflect.DeepEqual(states(before), states(after))
+}
+
 func workbenchOperationInProgress(state string) bool {
 	return state == common.WorkbenchOperationAccepted || state == common.WorkbenchOperationDispatching
 }
 
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
 	m.liveLoaded = true
+	sourceName, sourceID := m.taskViewSource()
+	visibleGitHub := make(map[string]bool)
+	for _, snapshot := range snapshots {
+		if snapshot.Kind != common.WorkbenchGitHubRepository {
+			continue
+		}
+		previous := m.connectionByID(snapshot.ID)
+		visibleGitHub[snapshot.ID] = snapshot.AccessState == "available"
+		if snapshot.AccessState != "available" || (previous != nil && previous.Version != snapshot.Version) {
+			m.clearGitHubTaskDrafts(snapshot.ID)
+		}
+	}
+	for _, previous := range m.connectionsData {
+		if previous.SourceKind == common.WorkbenchGitHubRepository {
+			if _, present := visibleGitHub[previous.ID]; !present {
+				m.clearGitHubTaskDrafts(previous.ID)
+			}
+		}
+	}
+	tasks = slices.DeleteFunc(tasks, func(task sourceObject) bool {
+		return task.Kind == common.WorkbenchGitHubRepository && !visibleGitHub[task.ConnectionID]
+	})
 	m.serverTaskOperations = make(map[string]common.WorkbenchTaskReceipt)
 	for _, snapshot := range snapshots {
 		for _, receipt := range snapshot.PendingWrites {
@@ -173,8 +223,12 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 	}
 	if len(m.pendingTaskEdits) > 0 {
 		current := make(map[string]sourceObject, len(m.pendingTaskEdits))
+		visibleTasks := make(map[string]bool, len(tasks))
+		for _, task := range tasks {
+			visibleTasks[task.ID] = true
+		}
 		for _, task := range m.objects {
-			if m.pendingTaskEdits[task.ID] {
+			if m.pendingTaskEdits[task.ID] && (task.Kind != common.WorkbenchGitHubRepository || visibleTasks[task.ID]) {
 				current[task.ID] = task
 			}
 		}
@@ -202,14 +256,21 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			draft.Paused = snapshot.Paused
 			draft.PluginDisabled = snapshot.PluginDisabled
 			draft.WriteEnabled = snapshot.WriteEnabled
-			if existing := m.connectionByID(draft.ID); existing != nil && existing.Name != draft.Name && m.sourceFilter == existing.Name {
+			draft.RateLimitUntil = snapshot.RateLimitUntil
+			if existing := m.connectionByID(draft.ID); existing != nil && existing.Name != draft.Name && m.sourceFilter == existing.Name && (m.sourceFilterID == "" || m.sourceFilterID == draft.ID) {
 				m.sourceFilter = draft.Name
 			}
 			draft.Scope, draft.VaultPath, draft.Repository = snapshot.Scope, snapshot.Vault, snapshot.Repository
 			draft.Status, draft.Capabilities, draft.Identity = "等待首次同步", "只读", "本地"
-			if snapshot.Kind == common.WorkbenchObsidianTasks && snapshot.Capabilities.Create {
+			if (snapshot.Kind == common.WorkbenchObsidianTasks || snapshot.Kind == common.WorkbenchGitHubRepository) && snapshot.Capabilities.Create {
 				draft.Writable = true
 				draft.Capabilities = "读写"
+			}
+			if snapshot.Kind == common.WorkbenchGitHubRepository {
+				draft.Scope, draft.Identity = snapshot.Repository, snapshot.AccountLogin
+				if snapshot.WriteDenied {
+					draft.Capabilities = "只读 · 回写被拒绝"
+				}
 			}
 			if snapshot.Kind == common.WorkbenchLocal {
 				draft.Scope, draft.Capabilities = "由 Apilot 管理", "读写"
@@ -245,6 +306,14 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 				draft.Status = "可用"
 				draft.Writable = snapshot.Capabilities.Create
 			}
+			if snapshot.Kind == common.WorkbenchGitHubRepository {
+				switch snapshot.AccessState {
+				case "pending":
+					draft.Status = "等待授权确认"
+				case "unavailable":
+					draft.Status = "授权不可用"
+				}
+			}
 			if draft.Paused {
 				draft.Status = "已暂停"
 			}
@@ -255,6 +324,15 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			events := make([]syncEvent, 0, len(snapshot.Attempts))
 			for _, a := range slices.Backward(snapshot.Attempts) {
 				message := tr(workbenchAttemptLabel(a.State))
+				if a.SyncType == "full" {
+					message += " · " + tr("全量同步")
+				}
+				if a.SyncType == "incremental" {
+					message += " · " + tr("增量同步")
+				}
+				if a.RequestCount > 0 {
+					message += fmt.Sprintf(tr(" · %d 次请求 / %d 页"), a.RequestCount, a.PageCount)
+				}
 				if a.Trigger == "import" {
 					message = tr("导入完成")
 				}
@@ -271,7 +349,38 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 		}
 	}
 	m.connectionsData = connections
+	m.sourceFilter = m.resolveTaskViewSource(sourceName, sourceID)
 	m.replaceLiveTasks(tasks)
+}
+
+func (m *mockup) clearGitHubTaskDrafts(connectionID string) {
+	for _, task := range m.objects {
+		if task.ConnectionID != connectionID {
+			continue
+		}
+		delete(m.pendingTaskEdits, task.ID)
+		delete(m.liveTaskRequests, task.ID)
+		delete(m.liveTaskProblems, task.ID)
+		delete(m.checkingOperations, task.ID)
+		delete(m.taskDetails, task.ID)
+		delete(m.assistantThreads, task.ID)
+		if m.sourceEditor != nil && m.sourceEditor.id == task.ID {
+			m.sourceEditor = nil
+		}
+		if m.labelEditor != nil && m.labelEditor.taskID == task.ID {
+			m.labelEditor = nil
+		}
+		if m.mutation.SourceObject == task.ID {
+			m.mutation = mutation{}
+		}
+	}
+	if m.newTaskSourceID == connectionID || m.newTaskRequest.ConnectionID == connectionID {
+		m.newTaskRequest = common.WorkbenchTaskWrite{}
+		m.newTaskTargets = taskDestinations{}
+		m.newTaskSource, m.newTaskSourceID = "", ""
+		m.newTaskDraft, m.newTaskBody = "", ""
+		m.newTaskPending, m.newTaskOpen = false, false
+	}
 }
 
 func (m *mockup) replaceLiveTasks(tasks []sourceObject) {
@@ -308,6 +417,192 @@ func (m *mockup) replaceLiveTasks(tasks []sourceObject) {
 	if m.taskSelection != "" && !slices.ContainsFunc(tasks, func(t sourceObject) bool { return t.ID == m.taskSelection }) {
 		m.taskSelection = ""
 		m.closeInspector()
+	}
+}
+
+func (m *mockup) loadGitHubRepositories(edit *connectorEdit, authorize bool) {
+	if edit.githubListing {
+		return
+	}
+	edit.githubListing, edit.problem = true, ""
+	remote := m.live
+	id := ""
+	if edit.githubAuthorization.State == "authorized" {
+		id = edit.githubAuthorization.ID
+	}
+	go func() {
+		repositories, err := remote.ListGitHubRepositories(id)
+		mygo.RunOnMain(func() {
+			if m.connectorEditor != edit {
+				return
+			}
+			edit.githubListing = false
+			if err == nil {
+				edit.githubRepositories = repositories
+				if !slices.Contains(repositories, edit.Repository) {
+					edit.Repository = ""
+				}
+				edit.githubNeedsInstall = len(repositories) == 0
+			} else if problem := common.ProtocolError(err); problem.Code == "UNAUTHORIZED" {
+				edit.githubRepositories, edit.Repository = nil, ""
+				edit.githubNeedsInstall = false
+				if id != "" {
+					m.cancelGitHubAuthorization(edit)
+					edit.problem = "GitHub 授权未完成"
+				} else if authorize {
+					m.startGitHubAuthorization(edit)
+				}
+			} else {
+				edit.problem = common.ProtocolError(err).Message
+			}
+			m.invalidateLiveWindow()
+		})
+	}()
+}
+
+func (m *mockup) continueGitHubSetup(edit *connectorEdit) {
+	if edit.ID == "" {
+		m.loadGitHubRepositories(edit, true)
+	} else {
+		m.saveLiveGitHubConnection(edit)
+	}
+}
+
+func (m *mockup) saveLiveGitHubConnection(edit *connectorEdit) {
+	if edit.saving {
+		return
+	}
+	config, remote, authorization := edit.connection, m.live, edit.githubAuthorization
+	if config.ID == "" && (config.Name == "" || config.Name == "GitHub") {
+		config.Name = strings.TrimSpace(config.Repository)
+	}
+	c := common.WorkbenchConnection{ID: config.ID, Version: config.Version, Kind: config.SourceKind, Name: config.Name, Repository: config.Repository}
+	edit.saving, edit.problem, edit.duplicateID = true, "", ""
+	go func() {
+		var snapshot common.WorkbenchSnapshot
+		var err error
+		if authorization.State == "authorized" {
+			snapshot, err = remote.ConfigureWorkbenchGitHubAuthorized(c, authorization.ID, config.WriteEnabled)
+		} else {
+			snapshot, err = remote.ConfigureWorkbenchGitHub(c, "", config.WriteEnabled)
+		}
+		mygo.RunOnMain(func() {
+			if m.connectorEditor == edit {
+				edit.saving = false
+				if err != nil {
+					problem := common.ProtocolError(err)
+					edit.problem = problem.Message
+					edit.duplicateID, _ = problem.Details["connection_id"].(string)
+					edit.githubNeedsInstall, _ = problem.Details["github_installation_required"].(bool)
+					if problem.Code == "UNAUTHORIZED" && authorization.State != "authorized" {
+						m.startGitHubAuthorization(edit)
+					} else if authorization.State == "authorized" && (problem.Code == "UNAUTHORIZED" || problem.Code == "NOT_FOUND" || problem.Code == "CONFLICT" && edit.duplicateID == "") {
+						m.cancelGitHubAuthorization(edit)
+					}
+				} else {
+					if edit.githubSetupCancel != nil {
+						edit.githubSetupCancel()
+					}
+					m.syncLogRestoreFocus = snapshot.ID
+					m.connectorEditor = nil
+				}
+			}
+			m.liveGeneration++
+			if m.win != nil && !m.win.IsDestroyed() {
+				m.win.Invalidate()
+				m.refreshLive()
+			}
+		})
+	}()
+}
+
+func (m *mockup) startGitHubAuthorization(edit *connectorEdit) {
+	if edit.githubAuthorizing || m.live == nil {
+		return
+	}
+	edit.githubAuthorizing, edit.problem = true, ""
+	remote := m.live
+	go func() {
+		status, err := remote.StartGitHubAuthorization()
+		mygo.RunOnMain(func() {
+			if m.connectorEditor != edit {
+				if err == nil {
+					go func() { _ = remote.CancelGitHubAuthorization(status.ID) }()
+				}
+				return
+			}
+			edit.githubAuthorizing = false
+			if err != nil {
+				edit.problem = common.ProtocolError(err).Message
+				m.invalidateLiveWindow()
+				return
+			}
+			edit.githubAuthorization = status
+			m.openGitHubVerification(edit)
+			go m.watchGitHubAuthorization(edit, remote, status.ID)
+		})
+	}()
+}
+
+func (m *mockup) openGitHubVerification(edit *connectorEdit) {
+	mygo.Clipboard.WriteText(edit.githubAuthorization.UserCode)
+	edit.problem = ""
+	if err := mygo.Shell.OpenExternal(edit.githubAuthorization.VerificationURI); err != nil {
+		edit.problem = "无法打开 GitHub"
+	}
+	m.invalidateLiveWindow()
+}
+
+func (m *mockup) watchGitHubAuthorization(edit *connectorEdit, remote *services.Remote, id string) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		status, err := remote.GitHubAuthorizationStatus(id)
+		mygo.RunOnMain(func() {
+			if m.connectorEditor != edit || edit.githubAuthorization.ID != id {
+				return
+			}
+			if err != nil {
+				edit.githubAuthorization = services.GitHubAuthorizationStatus{}
+				edit.problem = common.ProtocolError(err).Message
+				go func() { _ = remote.CancelGitHubAuthorization(id) }()
+			} else {
+				edit.githubAuthorization = status
+				if status.State == "authorized" {
+					m.continueGitHubSetup(edit)
+					m.focusGitHubConnection()
+				}
+				if status.State == "denied" || status.State == "expired" || status.State == "failed" {
+					edit.problem = "GitHub 授权未完成"
+					go func() { _ = remote.CancelGitHubAuthorization(id) }()
+				}
+			}
+			m.invalidateLiveWindow()
+		})
+		if err != nil || status.State != "waiting" {
+			return
+		}
+	}
+}
+
+func (m *mockup) focusGitHubConnection() {
+	if m.win != nil && !m.win.IsDestroyed() {
+		mygo.App.Focus()
+		m.win.Focus()
+	}
+}
+
+func (m *mockup) cancelGitHubAuthorization(edit *connectorEdit) {
+	id, remote := edit.githubAuthorization.ID, m.live
+	edit.githubAuthorization = services.GitHubAuthorizationStatus{}
+	if id != "" && remote != nil {
+		go func() { _ = remote.CancelGitHubAuthorization(id) }()
+	}
+}
+
+func (m *mockup) invalidateLiveWindow() {
+	if m.win != nil && !m.win.IsDestroyed() {
+		m.win.Invalidate()
 	}
 }
 

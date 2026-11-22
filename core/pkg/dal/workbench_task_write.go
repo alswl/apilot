@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
@@ -77,7 +78,7 @@ func (s *Store) SetWorkbenchTaskWriteState(receipt common.WorkbenchTaskReceipt, 
 func (s *Store) WorkbenchPendingWrites(connectionID string) ([]common.WorkbenchTaskReceipt, error) {
 	rows, err := s.db.Query(`
 		SELECT receipt FROM workbench_task_writes
-		WHERE connection_id=? AND (
+		WHERE connection_id=? AND NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=workbench_task_writes.connection_id AND (g.access_state<>'available' OR COALESCE(json_extract(workbench_task_writes.input,'$.binding.account_id'),0)<>g.account_id OR COALESCE(json_extract(workbench_task_writes.input,'$.binding.repository_id'),0)<>g.repository_id)) AND (
 			json_extract(receipt,'$.sync_state') IN ('accepted','dispatching','needs_review')
 			OR request_id IN (
 				SELECT request_id FROM workbench_task_writes
@@ -139,8 +140,18 @@ func (s *Store) AdmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite, con
 	if err := json.Unmarshal([]byte(rawConfig), &connection); err != nil {
 		return empty, false, err
 	}
-	if connection.Paused || (connection.Kind == common.WorkbenchObsidianTasks && !connection.WriteEnabled) {
+	if connection.Paused || ((connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) && !connection.WriteEnabled) {
 		return empty, false, common.Err("CONFLICT", "Connection is not writable")
+	}
+	if connection.Kind == common.WorkbenchGitHubRepository {
+		var access string
+		var denied bool
+		if err := tx.QueryRow("SELECT access_state,write_denied FROM workbench_github_connections WHERE connection_id=?", connectionID).Scan(&access, &denied); err != nil {
+			return empty, false, common.Err("CONFLICT", "GitHub authorization is unavailable")
+		}
+		if access != "available" || denied {
+			return empty, false, common.Err("CONFLICT", "GitHub authorization requires synchronization")
+		}
 	}
 	var enabled bool
 	if err := tx.QueryRow("SELECT COALESCE((SELECT enabled FROM workbench_plugin_settings WHERE id=?),1)", connection.Kind).Scan(&enabled); err != nil {
@@ -165,6 +176,19 @@ func (s *Store) AdmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite, con
 	}
 	receipt := common.WorkbenchTaskReceipt{RequestID: input.RequestID, ConnectionID: connectionID, SourceObjectID: input.SourceObjectID, SyncState: "accepted"}
 	binding := &common.WorkbenchOperationBinding{Vault: connection.Vault, Scope: connection.Scope, Baseline: baseline}
+	if connection.Kind == common.WorkbenchGitHubRepository {
+		if err := tx.QueryRow("SELECT repository_id,account_id FROM workbench_github_connections WHERE connection_id=?", connectionID).Scan(&binding.RepositoryID, &binding.AccountID); err != nil {
+			return empty, false, err
+		}
+		if baseline != nil {
+			issueID, idErr := strconv.ParseInt(baseline.NativeFields["issue_id"], 10, 64)
+			number, numberErr := strconv.ParseInt(baseline.NativeID, 10, 64)
+			if idErr != nil || numberErr != nil || issueID <= 0 || number <= 0 {
+				return empty, false, common.Err("CONFLICT", "GitHub issue identity is unavailable")
+			}
+			binding.IssueID, binding.IssueNumber = issueID, number
+		}
+	}
 	stored := workbenchStoredOperationInput{Request: input, Binding: binding}
 	if _, err := tx.Exec(`INSERT INTO workbench_task_writes(request_id,connection_id,fingerprint,receipt,input,phase)
 VALUES(?,?,?,?,?,'accepted')`, input.RequestID, connectionID, fingerprint, encode(receipt), encode(stored)); err != nil {
@@ -308,7 +332,7 @@ WHERE phase='dispatching' AND input IS NOT NULL`)
 func (s *Store) AdvanceWorkbenchTaskOperation(requestID, from, to string, receipt common.WorkbenchTaskReceipt) error {
 	allowed := map[string]map[string]bool{
 		"accepted":     {"dispatching": true, "needs_review": true, "conflict": true, "not_executed": true},
-		"dispatching":  {"confirmed": true, "needs_review": true, "conflict": true},
+		"dispatching":  {"confirmed": true, "needs_review": true, "conflict": true, "not_executed": true},
 		"needs_review": {"confirmed": true, "conflict": true, "not_executed": true},
 	}
 	if !allowed[from][to] || receipt.RequestID != requestID || receipt.SyncState != to {
@@ -371,8 +395,19 @@ func (s *Store) claimWorkbenchTaskOperation(requestID string, expected *int64) (
 	if err := json.Unmarshal([]byte(config), &connection); err != nil {
 		return empty, err
 	}
-	if version != op.Input.ConnectionVersion || connection.Paused || (connection.Kind == common.WorkbenchObsidianTasks && !connection.WriteEnabled) {
+	if version != op.Input.ConnectionVersion || connection.Paused || ((connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) && !connection.WriteEnabled) {
 		return empty, common.Err("CONFLICT", "Connection is no longer writable with this configuration")
+	}
+	if connection.Kind == common.WorkbenchGitHubRepository {
+		var repoID, accountID int64
+		var access string
+		var denied bool
+		if err := tx.QueryRow("SELECT repository_id,account_id,access_state,write_denied FROM workbench_github_connections WHERE connection_id=?", connection.ID).Scan(&repoID, &accountID, &access, &denied); err != nil {
+			return empty, common.Err("CONFLICT", "GitHub authorization is unavailable")
+		}
+		if op.Binding == nil || op.Binding.RepositoryID != repoID || op.Binding.AccountID != accountID || access != "available" || denied {
+			return empty, common.Err("CONFLICT", "GitHub authorization changed before dispatch")
+		}
 	}
 	var enabled bool
 	if err := tx.QueryRow("SELECT COALESCE((SELECT enabled FROM workbench_plugin_settings WHERE id=?),1)", connection.Kind).Scan(&enabled); err != nil {
@@ -618,6 +653,43 @@ AND COALESCE((SELECT enabled FROM workbench_plugin_settings WHERE id=json_extrac
 	now := attempt.Started
 	if err := recordWorkbenchSnapshot(tx, connection, attempts[:min(20, len(attempts))], previous, []common.WorkbenchTask{task}, nil, &now); err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+// RecordWorkbenchGitHubEvidence saves the source identity before attempting read-back.
+// It never moves a request back to a dispatchable state.
+func (s *Store) RecordWorkbenchGitHubEvidence(requestID string, issueID, issueNumber int64) error {
+	if issueID <= 0 || issueNumber <= 0 {
+		return common.Err("INVALID_ARGUMENT", "GitHub issue identity is required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	op, err := lookupWorkbenchTaskOperation(tx, requestID)
+	if err != nil {
+		return err
+	}
+	if op.Fingerprint == "" || op.Phase != common.WorkbenchOperationDispatching || op.Binding == nil || op.Binding.RepositoryID == 0 {
+		return common.Err("STALE_REVISION", "GitHub operation is not awaiting evidence")
+	}
+	if op.Binding.IssueID != 0 && (op.Binding.IssueID != issueID || op.Binding.IssueNumber != issueNumber) {
+		return common.Err("CONFLICT", "GitHub issue identity changed")
+	}
+	op.Binding.IssueID, op.Binding.IssueNumber = issueID, issueNumber
+	input := workbenchStoredOperationInput{Request: op.Input, Binding: op.Binding}
+	result, err := tx.Exec("UPDATE workbench_task_writes SET input=? WHERE request_id=? AND phase='dispatching'", encode(input), requestID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return common.Err("STALE_REVISION", "GitHub operation changed")
 	}
 	return tx.Commit()
 }

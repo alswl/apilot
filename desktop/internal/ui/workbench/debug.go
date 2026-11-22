@@ -41,6 +41,7 @@ func (m *mockup) debugPane(c *ui.Context) {
 				m.dueDraft = m.mutation.BaseFields["due"]
 				m.page = tasksPage
 				m.search, m.statusFilter, m.sourceFilter = "", "全部状态", "全部来源"
+				m.sourceFilterID = ""
 				m.openTask(0)
 				m.debugOpen = false
 			}

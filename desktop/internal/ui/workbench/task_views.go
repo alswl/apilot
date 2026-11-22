@@ -12,6 +12,7 @@ import (
 
 type taskViewState struct {
 	Query, Status, Source, Grouping string
+	SourceID                        string `json:"source_id,omitempty"`
 	Sort                            ui.SortOrder
 	Columns                         map[string]bool
 	TableLayout                     ui.TableLayout
@@ -27,11 +28,13 @@ type savedTaskView struct {
 }
 
 func (m *mockup) viewState() taskViewState {
-	return taskViewState{Query: m.search, Status: m.statusFilter, Source: m.sourceFilter, Grouping: m.taskGrouping, Sort: m.taskSort, Columns: maps.Clone(m.taskColumnsHidden), TableLayout: cloneTaskTableLayout(m.taskTable.Columns), WatchOnly: m.taskWatchOnly, Page: m.taskPageIndex, PageSize: m.taskPageSize, PageSizeOverride: m.taskPageSizeOverride}
+	source, sourceID := m.taskViewSource()
+	return taskViewState{Query: m.search, Status: m.statusFilter, Source: source, SourceID: sourceID, Grouping: m.taskGrouping, Sort: m.taskSort, Columns: maps.Clone(m.taskColumnsHidden), TableLayout: cloneTaskTableLayout(m.taskTable.Columns), WatchOnly: m.taskWatchOnly, Page: m.taskPageIndex, PageSize: m.taskPageSize, PageSizeOverride: m.taskPageSizeOverride}
 }
 
 func (m *mockup) restoreView(state taskViewState) {
-	m.search, m.statusFilter, m.sourceFilter, m.taskGrouping = state.Query, state.Status, state.Source, state.Grouping
+	m.search, m.statusFilter, m.sourceFilter, m.taskGrouping = state.Query, state.Status, m.resolveTaskViewSource(state.Source, state.SourceID), state.Grouping
+	m.sourceFilterID = state.SourceID
 	m.taskWatchOnly = state.WatchOnly
 	m.taskSort, m.taskColumnsHidden = state.Sort, maps.Clone(state.Columns)
 	m.taskTable.Columns = cloneTaskTableLayout(state.TableLayout)
@@ -42,6 +45,76 @@ func (m *mockup) restoreView(state taskViewState) {
 	}
 	m.taskPageCriteria = m.paginationCriteria()
 	m.pageScroll[tasksPage].ScrollTo(0, 0, ui.Animation{})
+}
+
+const unavailableTaskSourceID = "\x00source-id:"
+const unavailableTaskSourceName = "\x00source-name:"
+
+func (m *mockup) taskViewSource() (string, string) {
+	if id, ok := strings.CutPrefix(m.sourceFilter, unavailableTaskSourceID); ok {
+		return "", id
+	}
+	if name, ok := strings.CutPrefix(m.sourceFilter, unavailableTaskSourceName); ok {
+		return name, ""
+	}
+	if m.sourceFilter == "" || m.sourceFilter == "全部来源" {
+		return m.sourceFilter, ""
+	}
+	if m.sourceFilterID != "" {
+		if conn := m.connectionByID(m.sourceFilterID); conn != nil && conn.Name == m.sourceFilter {
+			return m.sourceFilter, m.sourceFilterID
+		}
+	}
+	var id string
+	for _, conn := range m.connectionsData {
+		if conn.Name != m.sourceFilter {
+			continue
+		}
+		if id != "" {
+			return m.sourceFilter, ""
+		}
+		id = conn.ID
+	}
+	return m.sourceFilter, id
+}
+
+func (m *mockup) matchesTaskSource(connectionID string) bool {
+	if m.sourceFilter == "全部来源" {
+		return true
+	}
+	if m.sourceFilterID != "" {
+		if conn := m.connectionByID(m.sourceFilterID); conn != nil && conn.Name == m.sourceFilter {
+			return connectionID == m.sourceFilterID
+		}
+		return false
+	}
+	return m.sourceFilter == m.connectionName(connectionID)
+}
+
+func (m *mockup) resolveTaskViewSource(name, id string) string {
+	if id != "" {
+		if conn := m.connectionByID(id); conn != nil {
+			return conn.Name
+		}
+		return unavailableTaskSourceID + id
+	}
+	if name == "" || name == "全部来源" {
+		return name
+	}
+	count := 0
+	for _, conn := range m.connectionsData {
+		if conn.Name == name {
+			count++
+		}
+	}
+	if count == 1 {
+		return name
+	}
+	return unavailableTaskSourceName + name
+}
+
+func (m *mockup) taskSourceUnavailable() bool {
+	return strings.HasPrefix(m.sourceFilter, unavailableTaskSourceID) || strings.HasPrefix(m.sourceFilter, unavailableTaskSourceName)
 }
 
 func cloneTaskTableLayout(layout ui.TableLayout) ui.TableLayout {
@@ -69,7 +142,8 @@ func (m *mockup) taskViewBaseline() taskViewState {
 func (m *mockup) taskViewChanged() bool {
 	baseline := m.taskViewBaseline()
 	current := m.viewState()
-	return current.Query != baseline.Query || current.Status != baseline.Status || current.Source != baseline.Source ||
+	sourceChanged := current.SourceID != baseline.SourceID || (current.SourceID == "" && current.Source != baseline.Source)
+	return current.Query != baseline.Query || current.Status != baseline.Status || sourceChanged ||
 		current.Grouping != baseline.Grouping || current.Sort != baseline.Sort || current.WatchOnly != baseline.WatchOnly ||
 		current.PageSizeOverride != baseline.PageSizeOverride || !maps.Equal(current.Columns, baseline.Columns) ||
 		!slices.Equal(current.TableLayout.Order, baseline.TableLayout.Order) || !maps.Equal(current.TableLayout.Widths, baseline.TableLayout.Widths)

@@ -6,8 +6,9 @@ const WorkbenchAPIVersion = "1"
 const WorkbenchAPIVersionHeader = "X-Apilot-Workbench-Version"
 
 const (
-	WorkbenchGitHubIssues  = "github_issues"
-	WorkbenchObsidianTasks = "obsidian_tasks"
+	WorkbenchGitHubIssues     = "github_issues"
+	WorkbenchGitHubRepository = "github_repository"
+	WorkbenchObsidianTasks    = "obsidian_tasks"
 )
 
 type WorkbenchTask struct {
@@ -58,6 +59,9 @@ type WorkbenchConnection struct {
 	Vault            string            `json:"vault,omitempty"`
 	Scope            string            `json:"scope,omitempty"`
 	Repository       string            `json:"repository,omitempty"`
+	AccountLogin     string            `json:"account_login,omitempty"`
+	AccessState      string            `json:"access_state,omitempty"`
+	WriteDenied      bool              `json:"write_denied,omitempty"`
 	Mode             string            `json:"mode"`
 	Statuses         map[string]string `json:"statuses,omitempty"`
 	Version          int64             `json:"version"`
@@ -110,6 +114,10 @@ const (
 
 type WorkbenchAttempt struct {
 	Progress          *WorkbenchReadProgress `json:"progress,omitempty"`
+	SyncType          string                 `json:"sync_type,omitempty"`
+	RequestCount      int                    `json:"request_count,omitempty"`
+	PageCount         int                    `json:"page_count,omitempty"`
+	FirstPageMS       int64                  `json:"first_page_ms,omitempty"`
 	Scope             string                 `json:"scope,omitempty" enum:"full,notes"`
 	Paths             []string               `json:"paths,omitempty"`
 	Coverage          string                 `json:"coverage,omitempty" enum:"complete,partial,unverified"`
@@ -140,6 +148,7 @@ type WorkbenchSnapshot struct {
 	Capabilities    WorkbenchCapabilities  `json:"capabilities"`
 	PendingWrites   []WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
 	PluginDisabled  bool                   `json:"plugin_disabled,omitempty"`
+	RateLimitUntil  *time.Time             `json:"rate_limit_until,omitempty"`
 	WorkbenchConnection
 	LastSuccess *time.Time         `json:"last_success,omitempty"`
 	Attempts    []WorkbenchAttempt `json:"attempts"`
@@ -185,6 +194,7 @@ type WorkbenchTaskWrite struct {
 	SourceObjectID    string   `json:"source_object_id,omitempty"`
 	TargetVersion     string   `json:"target_version,omitempty"`
 	Title             string   `json:"title,omitempty"`
+	Body              string   `json:"body,omitempty"`
 	State             string   `json:"state,omitempty"`
 	NotePath          string   `json:"note_path,omitempty"`
 	HeadingPath       []string `json:"heading_path,omitempty"`
@@ -219,9 +229,13 @@ type WorkbenchTaskOperation struct {
 }
 
 type WorkbenchOperationBinding struct {
-	Vault    string         `json:"vault"`
-	Scope    string         `json:"scope"`
-	Baseline *WorkbenchTask `json:"baseline,omitempty"`
+	RepositoryID int64          `json:"repository_id,omitempty"`
+	AccountID    int64          `json:"account_id,omitempty"`
+	IssueID      int64          `json:"issue_id,omitempty"`
+	IssueNumber  int64          `json:"issue_number,omitempty"`
+	Vault        string         `json:"vault"`
+	Scope        string         `json:"scope"`
+	Baseline     *WorkbenchTask `json:"baseline,omitempty"`
 }
 
 type WorkbenchNote struct {
@@ -256,4 +270,18 @@ type WorkbenchAnnotation struct {
 	Body      string `json:"body"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+}
+
+// WorkbenchGitHubProgress is the durable authorization and sync state of a repository.
+type WorkbenchGitHubProgress struct {
+	ConnectionID  string
+	RepositoryID  int64
+	AccountID     int64
+	AccountLogin  string
+	CredentialRef string
+	AccessState   string
+	WriteDenied   bool
+	Cursor        *time.Time
+	LastFullSync  *time.Time
+	NextPollAt    *time.Time
 }

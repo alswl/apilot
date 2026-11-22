@@ -59,6 +59,34 @@ components:
           format: uri
           type: string
       type: object
+    GitHubAuthorizationStatus:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/GitHubAuthorizationStatus.json
+          format: uri
+          readOnly: true
+          type: string
+        expires_at:
+          format: date-time
+          type: string
+        id:
+          type: string
+        installation_url:
+          type: string
+        state:
+          type: string
+        user_code:
+          type: string
+        verification_uri:
+          type: string
+      required:
+        - id
+        - state
+        - expires_at
+      type: object
     WorkbenchAnnotation:
       additionalProperties: false
       properties:
@@ -115,7 +143,13 @@ components:
         finished:
           format: date-time
           type: string
+        first_page_ms:
+          format: int64
+          type: integer
         id:
+          format: int64
+          type: integer
+        page_count:
           format: int64
           type: integer
         paths:
@@ -127,6 +161,9 @@ components:
         progress:
           $ref: "#/components/schemas/WorkbenchReadProgress"
         removed:
+          format: int64
+          type: integer
+        request_count:
           format: int64
           type: integer
         scope:
@@ -141,6 +178,8 @@ components:
           format: date-time
           type: string
         state:
+          type: string
+        sync_type:
           type: string
         trigger:
           type: string
@@ -189,12 +228,19 @@ components:
           format: uri
           readOnly: true
           type: string
+        github_authorization_id:
+          type: string
+          writeOnly: true
+        github_token:
+          type: string
+          writeOnly: true
         id:
           type: string
         kind:
           enum:
             - obsidian_tasks
             - github_issues
+            - github_repository
           type: string
         mode:
           type: string
@@ -324,6 +370,25 @@ components:
         - key
         - title
         - state
+      type: object
+    WorkbenchItemsString:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchItemsString.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+      required:
+        - items
       type: object
     WorkbenchItemsWorkbenchAnnotation:
       additionalProperties: false
@@ -617,6 +682,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        access_state:
+          type: string
+        account_login:
+          type: string
         attempts:
           items:
             $ref: "#/components/schemas/WorkbenchAttempt"
@@ -646,6 +715,9 @@ components:
             - "null"
         plugin_disabled:
           type: boolean
+        rate_limit_until:
+          format: date-time
+          type: string
         repository:
           type: string
         scope:
@@ -659,6 +731,8 @@ components:
         version:
           format: int64
           type: integer
+        write_denied:
+          type: boolean
         write_enabled:
           type: boolean
       required:
@@ -842,6 +916,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        body:
+          type: string
         connection_id:
           type: string
         connection_version:
@@ -958,6 +1034,18 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
         "404":
           content:
             application/problem+json:
@@ -976,12 +1064,24 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
         "500":
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
       summary: Save a connection
       tags:
         - Connections
@@ -1306,6 +1406,12 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
         "500":
           content:
             application/problem+json:
@@ -1385,6 +1491,191 @@ paths:
       summary: List registered connectors
       tags:
         - Connectors
+  /v1/workbench/github-authorizations:
+    post:
+      operationId: startGitHubAuthorization
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubAuthorizationStatus"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Start GitHub browser authorization
+      tags:
+        - Connections
+  /v1/workbench/github-authorizations/{id}:
+    delete:
+      operationId: cancelGitHubAuthorization
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchResultID"
+          description: OK
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Cancel GitHub browser authorization
+      tags:
+        - Connections
+    get:
+      operationId: getGitHubAuthorization
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GitHubAuthorizationStatus"
+          description: OK
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Read GitHub browser authorization status
+      tags:
+        - Connections
+  /v1/workbench/github-repositories:
+    get:
+      operationId: listGitHubRepositories
+      parameters:
+        - explode: false
+          in: query
+          name: authorization_id
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchItemsString"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: List authorized GitHub Issues repositories
+      tags:
+        - Connections
   /v1/workbench/labels:
     get:
       operationId: listWorkbenchLabels

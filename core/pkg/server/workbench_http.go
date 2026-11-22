@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
@@ -88,16 +91,18 @@ type workbenchTaskList struct {
 }
 type workbenchConnectionInput struct {
 	common.WorkbenchBridgeInput
-	ID         string            `json:"id,omitempty"`
-	Kind       string            `json:"kind" enum:"obsidian_tasks,github_issues"`
-	Name       string            `json:"name" minLength:"1" maxLength:"256"`
-	ReadMethod *string           `json:"read_method,omitempty" hidden:"true"`
-	Vault      string            `json:"vault,omitempty"`
-	Scope      string            `json:"scope,omitempty"`
-	Repository string            `json:"repository,omitempty"`
-	Mode       string            `json:"mode,omitempty"`
-	Statuses   map[string]string `json:"statuses,omitempty"`
-	Version    int64             `json:"version,omitempty" minimum:"0"`
+	ID                    string            `json:"id,omitempty"`
+	Kind                  string            `json:"kind" enum:"obsidian_tasks,github_issues,github_repository"`
+	Name                  string            `json:"name" minLength:"1" maxLength:"256"`
+	ReadMethod            *string           `json:"read_method,omitempty" hidden:"true"`
+	Vault                 string            `json:"vault,omitempty"`
+	Scope                 string            `json:"scope,omitempty"`
+	Repository            string            `json:"repository,omitempty"`
+	GitHubToken           string            `json:"github_token,omitempty" writeOnly:"true"`
+	GitHubAuthorizationID string            `json:"github_authorization_id,omitempty" writeOnly:"true"`
+	Mode                  string            `json:"mode,omitempty"`
+	Statuses              map[string]string `json:"statuses,omitempty"`
+	Version               int64             `json:"version,omitempty" minimum:"0"`
 }
 
 type workbenchHealth struct {
@@ -106,7 +111,7 @@ type workbenchHealth struct {
 
 func workbenchRouter(s *services.Service) (http.Handler, huma.API) {
 	router := chi.NewRouter()
-	router.Use(middleware.RequestID, workbenchRequestLog, middleware.Recoverer, workbenchAPIVersion)
+	router.Use(middleware.RequestID, workbenchRequestLog, middleware.Recoverer, workbenchAPIVersion, redactWorkbenchConnectionErrors)
 	config := huma.DefaultConfig("Apilot Local Workbench", "1.0.0")
 	config.Transformers = nil
 	config.Servers = []*huma.Server{{URL: "http://apilot", Description: "HTTP over the Apilot Unix domain socket"}}
@@ -115,12 +120,100 @@ func workbenchRouter(s *services.Service) (http.Handler, huma.API) {
 	return router, api
 }
 
+type workbenchBufferedResponse struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func (w *workbenchBufferedResponse) Header() http.Header { return w.header }
+func (w *workbenchBufferedResponse) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+func (w *workbenchBufferedResponse) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(data)
+}
+
+func redactWorkbenchConnectionErrors(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != workbenchPath+"/connections" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		buffer := &workbenchBufferedResponse{header: make(http.Header)}
+		next.ServeHTTP(buffer, r)
+		if buffer.status == 0 {
+			buffer.status = http.StatusOK
+		}
+		body := buffer.body.Bytes()
+		if buffer.status >= 400 {
+			var value any
+			if json.Unmarshal(body, &value) == nil {
+				redactWorkbenchSecrets(value)
+				if clean, err := json.Marshal(value); err == nil {
+					body = clean
+					buffer.header.Del("Content-Length")
+				}
+			}
+		}
+		for key, values := range buffer.header {
+			w.Header()[key] = values
+		}
+		w.WriteHeader(buffer.status)
+		_, _ = w.Write(body)
+	})
+}
+
+func redactWorkbenchSecrets(value any) {
+	switch item := value.(type) {
+	case map[string]any:
+		delete(item, "github_token")
+		delete(item, "github_authorization_id")
+		if location, ok := item["location"].(string); ok {
+			for _, field := range []string{"body.github_token", "body.github_authorization_id"} {
+				if location == field || strings.HasPrefix(location, field+".") || strings.HasPrefix(location, field+"[") {
+					delete(item, "value")
+				}
+			}
+		}
+		for _, child := range item {
+			redactWorkbenchSecrets(child)
+		}
+	case []any:
+		for _, child := range item {
+			redactWorkbenchSecrets(child)
+		}
+	}
+}
+
 func WorkbenchOpenAPI() ([]byte, error) {
 	_, api := workbenchRouter(nil)
 	return api.OpenAPI().YAML()
 }
 
 func registerWorkbenchHTTP(api huma.API, s *services.Service) {
+	registerWorkbench(api, http.MethodGet, workbenchPath+"/github-repositories", "listGitHubRepositories", "List authorized GitHub Issues repositories", "Connections", []int{401, 403, 409, 429, 503},
+		func(in *struct {
+			AuthorizationID string `query:"authorization_id"`
+		}) (workbenchItems[string], error) {
+			items, err := s.ListGitHubRepositories(in.AuthorizationID)
+			return workbenchItems[string]{items}, err
+		})
+	registerWorkbench(api, http.MethodPost, workbenchPath+"/github-authorizations", "startGitHubAuthorization", "Start GitHub browser authorization", "Connections", []int{400, 409, 503},
+		func(_ *struct{}) (services.GitHubAuthorizationStatus, error) { return s.StartGitHubAuthorization() })
+	registerWorkbench(api, http.MethodGet, workbenchPath+"/github-authorizations/{id}", "getGitHubAuthorization", "Read GitHub browser authorization status", "Connections", []int{404, 409},
+		func(in *workbenchID) (services.GitHubAuthorizationStatus, error) {
+			return s.GitHubAuthorizationStatus(in.ID)
+		})
+	registerWorkbench(api, http.MethodDelete, workbenchPath+"/github-authorizations/{id}", "cancelGitHubAuthorization", "Cancel GitHub browser authorization", "Connections", []int{404, 409},
+		func(in *workbenchID) (workbenchResultID, error) {
+			return workbenchResultID{in.ID}, s.CancelGitHubAuthorization(in.ID)
+		})
 	registerWorkbench(api, http.MethodPost, workbenchPath+"/task-operations", "submitWorkbenchTaskOperation", "Accept a task operation", "Tasks", []int{400, 404, 409},
 		func(in *workbenchBody[common.WorkbenchTaskWrite]) (common.WorkbenchTaskReceipt, error) {
 			return s.SubmitWorkbenchTaskOperation(in.Body)
@@ -165,7 +258,7 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/connections/{id}", "getWorkbenchConnection", "Read a connection", "Connections", []int{404},
 		func(in *workbenchID) (common.WorkbenchSnapshot, error) { return s.WorkbenchSnapshot(in.ID) })
-	registerWorkbench(api, http.MethodPut, workbenchPath+"/connections", "saveWorkbenchConnection", "Save a connection", "Connections", []int{400, 404, 409},
+	registerWorkbench(api, http.MethodPut, workbenchPath+"/connections", "saveWorkbenchConnection", "Save a connection", "Connections", []int{400, 401, 403, 404, 409, 429, 503},
 		func(in *workbenchBody[workbenchConnectionInput]) (common.WorkbenchSnapshot, error) {
 			readMethod := ""
 			if in.Body.ReadMethod != nil {
@@ -176,6 +269,26 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 					return common.WorkbenchSnapshot{}, err
 				}
 				readMethod = prior.ReadMethod
+			}
+			if in.Body.Kind == common.WorkbenchGitHubRepository {
+				connection := common.WorkbenchConnection{ID: in.Body.ID, Kind: in.Body.Kind, Name: in.Body.Name, Repository: in.Body.Repository, Version: in.Body.Version}
+				if in.Body.GitHubToken != "" && in.Body.GitHubAuthorizationID != "" {
+					return common.WorkbenchSnapshot{}, common.Err("INVALID_ARGUMENT", "Choose one GitHub authorization method")
+				}
+				var id string
+				var err error
+				if in.Body.GitHubAuthorizationID != "" {
+					id, err = s.ConfigureWorkbenchGitHubAuthorized(connection, in.Body.GitHubAuthorizationID, in.Body.WriteEnabled)
+				} else {
+					id, err = s.ConfigureWorkbenchGitHub(connection, in.Body.GitHubToken, in.Body.WriteEnabled)
+				}
+				if err != nil {
+					return common.WorkbenchSnapshot{}, err
+				}
+				return s.WorkbenchSnapshot(id)
+			}
+			if in.Body.GitHubToken != "" || in.Body.GitHubAuthorizationID != "" {
+				return common.WorkbenchSnapshot{}, common.Err("INVALID_ARGUMENT", "GitHub token requires a GitHub repository connection")
 			}
 			id, err := s.ConfigureWorkbench(common.WorkbenchConnection{ID: in.Body.ID, Kind: in.Body.Kind, Name: in.Body.Name, Vault: in.Body.Vault, ReadMethod: readMethod, Scope: in.Body.Scope, Repository: in.Body.Repository, Statuses: in.Body.Statuses, Version: in.Body.Version}, in.Body.WorkbenchBridgeInput)
 			if err != nil {
@@ -199,7 +312,7 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/connections/{id}/sync", "getWorkbenchSync", "Read sync status and recent attempts", "Sync", []int{404},
 		func(in *workbenchID) (common.WorkbenchSnapshot, error) { return s.WorkbenchSyncDetails(in.ID) })
-	registerWorkbench(api, http.MethodPost, workbenchPath+"/connections/{id}/sync", "runWorkbenchSync", "Request a refresh", "Sync", []int{400, 404, 409},
+	registerWorkbench(api, http.MethodPost, workbenchPath+"/connections/{id}/sync", "runWorkbenchSync", "Request a refresh", "Sync", []int{400, 404, 409, 429},
 		func(in *workbenchID) (workbenchSyncResult, error) {
 			attemptID, err := s.RunWorkbenchSync(in.ID)
 			return workbenchSyncResult{in.ID, attemptID}, err
@@ -301,22 +414,44 @@ func workbenchHTTPError(err error) error {
 	if problem, ok := err.(huma.StatusError); ok {
 		return problem
 	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		err = common.Err("SOURCE_UNAVAILABLE", "Workbench request could not finish")
+	}
 	domain := common.ProtocolError(err)
-	detail := &huma.ErrorDetail{Location: "code", Message: domain.Code}
+	details := []error{&huma.ErrorDetail{Location: "code", Message: domain.Code}}
+	for _, key := range []string{"connection_id", "retry_after", "rate_limit_reset", "github_installation_required"} {
+		if value, ok := domain.Details[key]; ok {
+			switch value.(type) {
+			case string, int, int64, float64, bool:
+				details = append(details, &huma.ErrorDetail{Location: key, Value: value})
+			}
+		}
+	}
 	switch domain.Code {
-	case "NOT_FOUND":
-		return huma.Error404NotFound(domain.Message, detail)
+	case "NOT_FOUND", "ISSUE_DELETED":
+		return huma.Error404NotFound(domain.Message, details...)
 	case "INVALID_ARGUMENT":
-		return huma.Error400BadRequest(domain.Message, detail)
+		return huma.Error400BadRequest(domain.Message, details...)
 	case "STALE_REVISION", "CONFLICT":
-		return huma.Error409Conflict(domain.Message, detail)
+		return huma.Error409Conflict(domain.Message, details...)
+	case "RATE_LIMITED":
+		return huma.Error429TooManyRequests(domain.Message, details...)
+	case "UNAUTHORIZED":
+		return huma.Error401Unauthorized(domain.Message, details...)
+	case "FORBIDDEN":
+		return huma.Error403Forbidden(domain.Message, details...)
+	case "SOURCE_UNAVAILABLE":
+		return huma.Error503ServiceUnavailable(domain.Message, details...)
 	default:
-		return huma.Error500InternalServerError("Workbench request failed", detail)
+		return huma.Error500InternalServerError("Workbench request failed", details...)
 	}
 }
 
 func workbenchAPIVersion(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, workbenchPath+"/") {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		w.Header().Set(common.WorkbenchAPIVersionHeader, common.WorkbenchAPIVersion)
 		requested := r.Header.Get(common.WorkbenchAPIVersionHeader)
 		if requested != "" && requested != common.WorkbenchAPIVersion {

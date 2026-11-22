@@ -11,7 +11,10 @@ import (
 
 // WorkbenchLabels returns the locally managed labels.
 func (s *Store) WorkbenchLabels() ([]common.WorkbenchLabel, error) {
-	rows, err := s.db.Query("SELECT id, name FROM workbench_labels ORDER BY name, id")
+	rows, err := s.db.Query(`SELECT DISTINCT l.id,l.name FROM workbench_labels l
+		JOIN workbench_task_labels tl ON tl.label_id=l.id JOIN workbench_objects o ON o.id=tl.task_id
+		WHERE NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=o.connection_id AND g.access_state<>'available')
+		ORDER BY l.name,l.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +161,7 @@ func (s *Store) DeleteWorkbenchAnnotation(taskID, annotationID string) error {
 
 func visibleWorkbenchTask(tx *sql.Tx, taskID string) error {
 	var exists int
-	err := tx.QueryRow("SELECT 1 FROM workbench_objects WHERE id=?", taskID).Scan(&exists)
+	err := tx.QueryRow("SELECT 1 FROM workbench_objects WHERE id=? AND NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=workbench_objects.connection_id AND g.access_state<>'available')", taskID).Scan(&exists)
 	if errors.Is(err, sql.ErrNoRows) {
 		return common.Err("NOT_FOUND", "Task not found")
 	}
@@ -182,7 +185,7 @@ func workbenchTaskLabels(db interface {
 	for i, id := range taskIDs {
 		args[i] = id
 	}
-	rows, err := db.Query("SELECT tl.task_id,l.id,l.name FROM workbench_task_labels tl JOIN workbench_labels l ON l.id=tl.label_id JOIN workbench_objects o ON o.id=tl.task_id WHERE tl.task_id IN ("+placeholders+") ORDER BY l.name,l.id", args...)
+	rows, err := db.Query("SELECT tl.task_id,l.id,l.name FROM workbench_task_labels tl JOIN workbench_labels l ON l.id=tl.label_id JOIN workbench_objects o ON o.id=tl.task_id WHERE NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=o.connection_id AND g.access_state<>'available') AND tl.task_id IN ("+placeholders+") ORDER BY l.name,l.id", args...)
 	if err != nil {
 		return nil, err
 	}

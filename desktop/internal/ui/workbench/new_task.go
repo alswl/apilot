@@ -15,10 +15,40 @@ func (m *mockup) writableConnections() []string {
 	var sources []string
 	for _, conn := range m.connectionsData {
 		if conn.Writable && (conn.Status == "同步正常" || conn.Status == "可用") {
-			sources = append(sources, conn.Name)
+			sources = append(sources, m.newTaskConnectionLabel(conn))
 		}
 	}
 	return sources
+}
+
+func (m *mockup) newTaskConnectionLabel(conn connection) string {
+	for _, other := range m.connectionsData {
+		if other.ID != conn.ID && other.Name == conn.Name {
+			if conn.Repository != "" {
+				unique := true
+				for _, candidate := range m.connectionsData {
+					if candidate.ID != conn.ID && candidate.Name == conn.Name && candidate.Repository == conn.Repository {
+						unique = false
+					}
+				}
+				if unique {
+					return conn.Name + " · " + conn.Repository
+				}
+			}
+			return conn.Name + " · " + conn.ID
+		}
+	}
+	return conn.Name
+}
+
+func (m *mockup) bindNewTaskSource() {
+	m.newTaskSourceID = ""
+	for _, conn := range m.connectionsData {
+		if m.newTaskConnectionLabel(conn) == m.newTaskSource {
+			m.newTaskSourceID = conn.ID
+			return
+		}
+	}
 }
 
 func (m *mockup) openNewTask() {
@@ -37,7 +67,22 @@ func (m *mockup) openNewTask() {
 	m.newTaskOpen = true
 	m.newTaskRequest = common.WorkbenchTaskWrite{}
 	m.newTaskTargets = taskDestinations{}
-	m.newTaskDraft, m.newTaskSource = "", sources[0]
+	m.newTaskDraft, m.newTaskBody = "", ""
+	m.newTaskSource = sources[0]
+	if m.sourceFilter != "" && m.sourceFilter != "全部来源" {
+		selected := m.sourceFilter
+		if m.sourceFilterID != "" {
+			if conn := m.connectionByID(m.sourceFilterID); conn != nil && conn.Name == m.sourceFilter {
+				selected = m.newTaskConnectionLabel(*conn)
+			}
+		}
+		if slices.Contains(sources, selected) {
+			m.newTaskSource = selected
+		} else {
+			m.newTaskSource = "选择来源"
+		}
+	}
+	m.bindNewTaskSource()
 }
 
 func (m *mockup) newTaskDialog(c *ui.Context) {
@@ -69,12 +114,25 @@ func (m *mockup) newTaskDialog(c *ui.Context) {
 					AutoFocus().FillWidth().Submitted()
 			})
 			sources := m.writableConnections()
+			if m.newTaskSourceID != "" {
+				conn := m.connectionByID(m.newTaskSourceID)
+				if conn == nil || m.newTaskConnectionLabel(*conn) != m.newTaskSource || !slices.Contains(sources, m.newTaskSource) {
+					m.newTaskSource, m.newTaskSourceID = "选择来源", ""
+				}
+			}
+			if m.newTaskSource == "选择来源" {
+				sources = append([]string{"选择来源"}, sources...)
+			}
 			ui.Field(c.Key("source-field"), tr("来源"), func() {
+				previous := m.newTaskSource
 				localizedSelect(c, &m.newTaskSource, sources, 0)
+				if previous != m.newTaskSource {
+					m.bindNewTaskSource()
+				}
 			})
-			validTarget := true
+			validTarget := m.newTaskSourceID != "" && m.newTaskSource != "选择来源" && slices.Contains(m.writableConnections(), m.newTaskSource)
 			if m.live != nil {
-				validTarget = m.newTaskDestinationFields(c.Key("destination"))
+				validTarget = m.newTaskDestinationFields(c.Key("destination")) && validTarget
 			}
 			if m.newTaskTargets.problem != "" {
 				components.Muted(c, tr(m.newTaskTargets.problem))
@@ -102,11 +160,14 @@ func (m *mockup) createTask(title string) {
 		return
 	}
 	for _, conn := range m.connectionsData {
-		if conn.Name != m.newTaskSource || !conn.Writable || (conn.Status != "同步正常" && conn.Status != "可用") {
+		if conn.ID != m.newTaskSourceID || m.newTaskConnectionLabel(conn) != m.newTaskSource || !conn.Writable || (conn.Status != "同步正常" && conn.Status != "可用") {
 			continue
 		}
 		if m.live != nil || m.devTask != nil {
 			request := common.WorkbenchTaskWrite{Title: title, ConnectionID: conn.ID, ConnectionVersion: conn.Version}
+			if conn.SourceKind == common.WorkbenchGitHubRepository {
+				request.Body = m.newTaskBody
+			}
 			if conn.SourceKind == obsidianTasks {
 				destinations := m.newTaskTargets
 				heading, ok := destinations.byLabel[destinations.heading]
@@ -116,7 +177,7 @@ func (m *mockup) createTask(title string) {
 				request.NotePath, request.HeadingPath, request.TargetVersion = destinations.note, heading.HeadingPath, heading.TargetVersion
 			}
 			prior := m.newTaskRequest
-			if prior.RequestID != "" && prior.Title == request.Title && prior.ConnectionID == request.ConnectionID &&
+			if prior.RequestID != "" && prior.Title == request.Title && prior.Body == request.Body && prior.ConnectionID == request.ConnectionID &&
 				prior.NotePath == request.NotePath && slices.Equal(prior.HeadingPath, request.HeadingPath) {
 				request = prior
 			} else {
@@ -155,6 +216,7 @@ func (m *mockup) createTask(title string) {
 		m.navigate(tasksPage)
 		m.selectTaskView("")
 		m.search, m.statusFilter, m.sourceFilter = "", "全部状态", "全部来源"
+		m.sourceFilterID = ""
 		m.restoreTaskFocus = false
 		m.recordTaskEvent(id, "在模拟来源创建了任务")
 		m.openFullTask(len(m.objects) - 1)
@@ -204,7 +266,7 @@ type taskDestinations struct {
 func (m *mockup) newTaskDestinationFields(c *ui.Context) bool {
 	var connection *connection
 	for i := range m.connectionsData {
-		if m.connectionsData[i].Name == m.newTaskSource {
+		if m.connectionsData[i].ID == m.newTaskSourceID && m.newTaskConnectionLabel(m.connectionsData[i]) == m.newTaskSource {
 			connection = &m.connectionsData[i]
 			break
 		}
@@ -218,6 +280,12 @@ func (m *mockup) newTaskDestinationFields(c *ui.Context) bool {
 		if connection.SourceKind == obsidianTasks {
 			m.loadNewTaskNotes(d)
 		}
+	}
+	if connection.SourceKind == common.WorkbenchGitHubRepository {
+		ui.Field(c.Key("body-field"), tr("描述"), func() {
+			ui.TextInput(c.Key("body"), &m.newTaskBody).Label(tr("描述")).FillWidth()
+		})
+		return connection.Writable
 	}
 	if connection.SourceKind != obsidianTasks {
 		return connection.Writable

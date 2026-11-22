@@ -262,11 +262,11 @@ func TestLegacyOperationReplayRestoresRequestForSafeReconciliation(t *testing.T)
 	if err := os.WriteFile(path, []byte("- [ ] Task 🆔 stable\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	s, err := openService(t.TempDir())
+	dir := t.TempDir()
+	s, err := openService(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
 	store, err := s.workbenchStore()
 	if err != nil {
 		t.Fatal(err)
@@ -290,14 +290,22 @@ func TestLegacyOperationReplayRestoresRequestForSafeReconciliation(t *testing.T)
 	if err := writer.StageWorkbenchTaskWrite(workbenchFingerprint(input), prior); err != nil {
 		t.Fatal(err)
 	}
-	wrong := input
-	wrong.State = "open"
-	if _, err := s.WriteWorkbenchTask(wrong); err == nil {
-		t.Fatal("accepted a different replayed request")
-	}
 	source := []byte("- [x] Task 🆔 stable ✅ 2026-11-20\n")
 	if err := os.WriteFile(path, source, 0600); err != nil {
 		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err = openService(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	wrong := input
+	wrong.State = "open"
+	if _, err := s.WriteWorkbenchTask(wrong); err == nil {
+		t.Fatal("accepted a different replayed request after restart")
 	}
 	receipt, err := s.WriteWorkbenchTask(input)
 	if err != nil || receipt.SyncState != "confirmed" || receipt.SourceObjectID != tasks[0].ID {

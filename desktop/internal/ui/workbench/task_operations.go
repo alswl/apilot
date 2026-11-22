@@ -131,7 +131,7 @@ func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
 }
 
 func (m *mockup) sourceToggleLabel(o sourceObject) string {
-	if conn := m.taskConnection(o); conn != nil && conn.SourceKind == githubIssues {
+	if conn := m.taskConnection(o); conn != nil && (conn.SourceKind == githubIssues || conn.SourceKind == common.WorkbenchGitHubRepository) {
 		if o.NativeFields["state"] == "closed" {
 			return "重新打开 Issue"
 		}
@@ -149,7 +149,7 @@ func (m *mockup) canToggleSourceTask(o sourceObject) bool {
 			return false
 		}
 		conn := m.taskConnection(o)
-		return conn != nil && conn.Writable && (o.Kind == common.WorkbenchLocal || o.Kind == common.WorkbenchObsidianTasks && conn.Status == "同步正常") && o.TargetVersion != ""
+		return conn != nil && conn.Writable && (o.Kind == common.WorkbenchLocal || (o.Kind == common.WorkbenchObsidianTasks || o.Kind == common.WorkbenchGitHubRepository) && conn.Status == "同步正常") && o.TargetVersion != ""
 	}
 	return m.editableSource(o)
 }
@@ -481,6 +481,9 @@ func (m *mockup) submitSourceEdit(edit taskSourceEdit, after func(time.Duration,
 }
 
 func taskClosed(o sourceObject) bool {
+	if o.Kind == common.WorkbenchGitHubRepository && o.NativeFields["state"] == "closed" {
+		return true
+	}
 	if o.State != "" {
 		return o.State == "done" || o.State == "cancelled"
 	}
@@ -488,7 +491,7 @@ func taskClosed(o sourceObject) bool {
 }
 
 func displayTaskID(o sourceObject) string {
-	if o.NativeFields["repo"] != "" {
+	if o.NativeFields["repo"] != "" || o.Kind == common.WorkbenchGitHubRepository {
 		return "#" + o.NativeID
 	}
 	return o.NativeID

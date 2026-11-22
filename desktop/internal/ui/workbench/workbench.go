@@ -29,99 +29,99 @@ const (
 var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 
 type mockup struct {
-	devTask                              *devTaskScenario
-	hosted                               bool
-	hostPanels                           HostPanels
-	liveConnections                      []common.WorkbenchSnapshot
-	livePlugins                          []services.WorkbenchPlugin
-	liveTaskRequests                     map[string]common.WorkbenchTaskWrite
-	liveTaskProblems                     map[string]string
-	serverTaskOperations                 map[string]common.WorkbenchTaskReceipt
-	checkingOperations                   map[string]bool
-	livePluginProblem                    string
-	syncDetail                           common.WorkbenchSnapshot
-	syncDetailProblem                    string
-	removeConnectionID                   string
-	live                                 *services.Remote
-	liveBusy, liveError, liveLoaded      bool
-	liveGeneration                       uint64
-	framework                            bool
-	layout                               workbenchLayout
-	taskPageIndex, taskPageSize          int
-	taskPageSizeOverride                 int
-	taskBackStack                        []taskReturnPoint
-	returnRelatedPending                 bool
-	taskPageCriteria                     taskPageCriteria
-	sourceEditor                         *taskSourceEdit
-	labelEditor                          *labelEdit
-	pendingTaskEdits                     map[string]bool
-	taskWatches                          map[string]bool
-	taskWatchOnly                        bool
-	fullTask, taskResourceOpen           bool
-	taskResource                         taskResource
-	taskView, taskGrouping, taskViewName string
-	taskViewDrafts                       map[string]taskViewState
-	savedTaskViews                       []savedTaskView
-	taskViewStorePath                    string
-	taskViewSaveError                    bool
-	taskColumnsHidden                    map[string]bool
-	taskGroupTables                      map[string]*ui.ListState
-	taskDisplayOpen, saveTaskViewOpen    bool
-	searchExpanded                       bool
-	win, assistant, preferences          *mygo.Window
-	keyboard                             keyboardState
-	newTaskOpen, newTaskPending          bool
-	newTaskDraft, newTaskSource          string
-	newTaskTargets                       taskDestinations
-	newTaskRequest                       common.WorkbenchTaskWrite
-	page, selected                       int
-	variant, state                       int
-	writeGeneration                      uint64
-	pendingSync                          map[string]bool
-	syncPhase                            map[string]int
-	syncAttempts                         map[string]int
-	syncLogs                             map[string][]syncEvent
-	connectorEditor                      *connectorEdit
-	syncLogID                            string
-	syncLogRestoreFocus                  string
-	pageScroll                           [len(pages)]ui.ScrollState
-	refundConfirmedAt                    string
-	nowSessions                          []nowSession
-	nowSessionIndex                      int
-	nowSessionsHidden, nowLibraryOpen    bool
-	nowQuery                             string
-	briefDismissed                       bool
-	debugOpen, showChangeTags            bool
-	dueDraft                             string
-	editingDue                           bool
-	connectionsData                      []connection
-	search                               string
-	taskSelection                        string
-	restoreTaskFocus                     bool
-	connectionReturnToTasks              bool
-	restoreConnectionEntryFocus          bool
-	statusFilter, sourceFilter           string
-	taskTable                            ui.ListState
-	taskSort                             ui.SortOrder
-	inspector                            bool
-	assistantThreads                     map[string]*assistantThread
-	taskDetails                          map[string]*taskDetailUI
-	provider                             string
-	objects                              []sourceObject
-	feedback                             feedback
-	mutation                             mutation
-	assistantContext                     int
-	assistantOpen                        bool
-	assistantNeedsFocus                  bool
-	assistantScroll                      ui.ScrollState
-	settingsTab, usageTab                int
-	languageChoice                       string
-	applyLocale                          func(string)
-	watching                             bool
-	automation                           automationPreview
-	gallery                              componentGallery
-	closedTips                           map[string]bool
-	hoveredTips                          map[string]bool
+	devTask                                                   *devTaskScenario
+	hosted                                                    bool
+	hostPanels                                                HostPanels
+	liveConnections                                           []common.WorkbenchSnapshot
+	livePlugins                                               []services.WorkbenchPlugin
+	liveTaskRequests                                          map[string]common.WorkbenchTaskWrite
+	liveTaskProblems                                          map[string]string
+	serverTaskOperations                                      map[string]common.WorkbenchTaskReceipt
+	checkingOperations                                        map[string]bool
+	livePluginProblem                                         string
+	syncDetail                                                common.WorkbenchSnapshot
+	syncDetailProblem                                         string
+	removeConnectionID                                        string
+	live                                                      *services.Remote
+	liveBusy, liveError, liveLoaded                           bool
+	liveGeneration                                            uint64
+	framework                                                 bool
+	layout                                                    workbenchLayout
+	taskPageIndex, taskPageSize                               int
+	taskPageSizeOverride                                      int
+	taskBackStack                                             []taskReturnPoint
+	returnRelatedPending                                      bool
+	taskPageCriteria                                          taskPageCriteria
+	sourceEditor                                              *taskSourceEdit
+	labelEditor                                               *labelEdit
+	pendingTaskEdits                                          map[string]bool
+	taskWatches                                               map[string]bool
+	taskWatchOnly                                             bool
+	fullTask, taskResourceOpen                                bool
+	taskResource                                              taskResource
+	taskView, taskGrouping, taskViewName                      string
+	taskViewDrafts                                            map[string]taskViewState
+	savedTaskViews                                            []savedTaskView
+	taskViewStorePath                                         string
+	taskViewSaveError                                         bool
+	taskColumnsHidden                                         map[string]bool
+	taskGroupTables                                           map[string]*ui.ListState
+	taskDisplayOpen, saveTaskViewOpen                         bool
+	searchExpanded                                            bool
+	win, assistant, preferences                               *mygo.Window
+	keyboard                                                  keyboardState
+	newTaskOpen, newTaskPending                               bool
+	newTaskDraft, newTaskSource, newTaskSourceID, newTaskBody string
+	newTaskTargets                                            taskDestinations
+	newTaskRequest                                            common.WorkbenchTaskWrite
+	page, selected                                            int
+	variant, state                                            int
+	writeGeneration                                           uint64
+	pendingSync                                               map[string]bool
+	syncPhase                                                 map[string]int
+	syncAttempts                                              map[string]int
+	syncLogs                                                  map[string][]syncEvent
+	connectorEditor                                           *connectorEdit
+	syncLogID                                                 string
+	syncLogRestoreFocus                                       string
+	pageScroll                                                [len(pages)]ui.ScrollState
+	refundConfirmedAt                                         string
+	nowSessions                                               []nowSession
+	nowSessionIndex                                           int
+	nowSessionsHidden, nowLibraryOpen                         bool
+	nowQuery                                                  string
+	briefDismissed                                            bool
+	debugOpen, showChangeTags                                 bool
+	dueDraft                                                  string
+	editingDue                                                bool
+	connectionsData                                           []connection
+	search                                                    string
+	taskSelection                                             string
+	restoreTaskFocus                                          bool
+	connectionReturnToTasks                                   bool
+	restoreConnectionEntryFocus                               bool
+	statusFilter, sourceFilter, sourceFilterID                string
+	taskTable                                                 ui.ListState
+	taskSort                                                  ui.SortOrder
+	inspector                                                 bool
+	assistantThreads                                          map[string]*assistantThread
+	taskDetails                                               map[string]*taskDetailUI
+	provider                                                  string
+	objects                                                   []sourceObject
+	feedback                                                  feedback
+	mutation                                                  mutation
+	assistantContext                                          int
+	assistantOpen                                             bool
+	assistantNeedsFocus                                       bool
+	assistantScroll                                           ui.ScrollState
+	settingsTab, usageTab                                     int
+	languageChoice                                            string
+	applyLocale                                               func(string)
+	watching                                                  bool
+	automation                                                automationPreview
+	gallery                                                   componentGallery
+	closedTips                                                map[string]bool
+	hoveredTips                                               map[string]bool
 }
 
 func newMockup() *mockup {
@@ -274,6 +274,7 @@ func (m *mockup) capture(dir string) error {
 				m.navigate(tasksPage)
 				m.closeInspector()
 				m.search, m.statusFilter, m.sourceFilter = "", "全部状态", "全部来源"
+				m.sourceFilterID = ""
 				index := 0
 				if file == "github-edit" || file == "github-labels" {
 					index = 2
@@ -389,6 +390,7 @@ func (m *mockup) capture(dir string) error {
 				m.keyboard.palette = false
 				m.selectTaskView("")
 				m.search, m.statusFilter, m.sourceFilter = "", "全部状态", "全部来源"
+				m.sourceFilterID = ""
 				m.taskGrouping = "不分组"
 				m.setTaskPage(0)
 				m.browseTaskPage(1)
@@ -728,8 +730,7 @@ func (m *mockup) taskRows() []int {
 		if m.taskWatchOnly && !m.isWatched(o.ID) {
 			continue
 		}
-		if !m.matchesStatusFilter(o) ||
-			m.sourceFilter != "全部来源" && m.sourceFilter != m.connectionName(o.ConnectionID) {
+		if !m.matchesStatusFilter(o) || !m.matchesTaskSource(o.ConnectionID) {
 			continue
 		}
 		if m.matchesTask(o, query) {
@@ -830,10 +831,11 @@ func (m *mockup) sourceLogoFilters(c *ui.Context) {
 			all := m.sourceFilter == "全部来源"
 			if components.IconToggle(c.Key("all"), "square.grid.2x2", tr("全部来源"), all).Clicked() {
 				m.sourceFilter = "全部来源"
+				m.sourceFilterID = ""
 			}
 			for _, connection := range m.connectionsData {
 				name := tr(connection.Name)
-				selected := m.sourceFilter == connection.Name
+				selected := m.sourceFilter == connection.Name && (m.sourceFilterID == "" || m.sourceFilterID == connection.ID)
 				button := ui.ButtonBase(c.Key(connection.ID)).Label(name).Tooltip(name).Size(32, 30).Radius(6).Center().Selected(selected)
 				if selected {
 					button.Background(c.Theme().Selection)
@@ -850,8 +852,10 @@ func (m *mockup) sourceLogoFilters(c *ui.Context) {
 				if button.Clicked() {
 					if selected {
 						m.sourceFilter = "全部来源"
+						m.sourceFilterID = ""
 					} else {
 						m.sourceFilter = connection.Name
+						m.sourceFilterID = connection.ID
 					}
 				}
 			}
@@ -877,6 +881,9 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 	}
 	if m.liveError {
 		components.Muted(c.Key("live-error"), tr("无法读取工作台数据"))
+	}
+	if m.taskSourceUnavailable() {
+		components.StatusLabel(c.Key("source-unavailable"), components.Status{Text: tr("所选来源不可用"), Icon: "exclamationmark.circle", Color: c.Theme().Warning})
 	}
 	rows := m.taskRows()
 	filtered := m.search != "" || m.statusFilter != "全部状态" || m.sourceFilter != "全部来源" || m.taskWatchOnly
@@ -909,6 +916,7 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 			}
 			if components.IconButton(c.Key("clear"), "xmark.circle", tr("清除筛选"), false).Clicked() {
 				m.search, m.statusFilter, m.sourceFilter = "", "全部状态", "全部来源"
+				m.sourceFilterID = ""
 			}
 		})
 	} else if !m.unifiedTasks() {
@@ -940,6 +948,7 @@ func (m *mockup) liveTaskEmptyState(c *ui.Context) {
 			components.Muted(c, tr("没有符合条件的任务"))
 			if ui.Button(c.Key("clear"), tr("清除筛选")).Clicked() {
 				m.search, m.statusFilter, m.sourceFilter, m.taskWatchOnly = "", "全部状态", "全部来源", false
+				m.sourceFilterID = ""
 			}
 		default:
 			m.unfilteredLiveTaskEmptyState(c)
@@ -949,7 +958,7 @@ func (m *mockup) liveTaskEmptyState(c *ui.Context) {
 
 func (m *mockup) hasUnavailableTaskSource() bool {
 	for _, conn := range m.connectionsData {
-		if conn.SourceKind != common.WorkbenchLocal && (conn.Status == "同步失败" || conn.Status == "连接断开" || conn.Paused || conn.PluginDisabled) {
+		if conn.SourceKind != common.WorkbenchLocal && (conn.Status == "同步失败" || conn.Status == "连接断开" || conn.Status == "授权不可用" || conn.Paused || conn.PluginDisabled) {
 			return true
 		}
 	}
@@ -957,7 +966,7 @@ func (m *mockup) hasUnavailableTaskSource() bool {
 }
 
 func (m *mockup) unfilteredLiveTaskEmptyState(c *ui.Context) {
-	external, pending, waiting := false, false, false
+	external, pending, waiting, authorization := false, false, false, false
 	for _, conn := range m.connectionsData {
 		if conn.SourceKind == common.WorkbenchLocal {
 			continue
@@ -965,6 +974,7 @@ func (m *mockup) unfilteredLiveTaskEmptyState(c *ui.Context) {
 		external = true
 		pending = pending || m.pendingSync[conn.ID]
 		waiting = waiting || conn.Status == "等待首次同步"
+		authorization = authorization || conn.Status == "等待授权确认"
 	}
 	components.Heading(c, tr("暂无任务"))
 	switch {
@@ -972,6 +982,8 @@ func (m *mockup) unfilteredLiveTaskEmptyState(c *ui.Context) {
 		m.connectionGuidance(c.Key("guidance"), tr("部分来源无法同步，请检查连接状态。"))
 	case pending:
 		m.connectionGuidance(c.Key("guidance"), tr("来源正在同步，任务确认后会显示在这里。"))
+	case authorization:
+		m.connectionGuidance(c.Key("guidance"), tr("来源正在等待授权确认。"))
 	case waiting:
 		m.connectionGuidance(c.Key("guidance"), tr("来源尚未完成首次同步。"))
 	case !external:
@@ -1012,8 +1024,18 @@ func (m *mockup) taskProperties(c *ui.Context, o *sourceObject) {
 		components.PropertyGrid(c.Key("due"), []components.Property{{ID: "due", Title: tr("截止日"), Value: tr(due)}}, 2)
 	}
 	m.obsidianSourceLink(c.Key("obsidian-link"), o)
+	if conn := m.taskConnection(*o); conn != nil && conn.SourceKind == common.WorkbenchGitHubRepository {
+		properties := []components.Property{{ID: "repository", Title: tr("仓库"), Value: conn.Repository}, {ID: "number", Title: tr("编号"), Value: "#" + o.NativeID}}
+		if reason := o.NativeFields["state_reason"]; reason != "" {
+			properties = append(properties, components.Property{ID: "state-reason", Title: tr("关闭原因"), Value: reason})
+		}
+		components.PropertyGrid(c.Key("github-fields"), properties, 2)
+	}
 	m.taskDateProperties(c.Key("dates"), o)
 	m.taskLabelProperty(c.Key("labels"), o)
+	if m.live != nil {
+		m.workbenchLabelProperty(c.Key("local-labels"), o)
+	}
 	if conn := m.taskConnection(*o); conn != nil {
 		var properties []components.Property
 		for _, field := range conn.SearchFields {
@@ -1248,6 +1270,7 @@ func (m *mockup) assistantView(c *ui.Context) {
 	openContext := func() {
 		if m.page == tasksPage && !slices.Contains(m.taskRows(), index) {
 			m.search, m.statusFilter, m.sourceFilter = "", "全部状态", "全部来源"
+			m.sourceFilterID = ""
 		}
 		if m.adaptiveLayout() {
 			m.openNowTask(index)

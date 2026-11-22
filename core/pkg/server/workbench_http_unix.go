@@ -42,7 +42,7 @@ func listenWorkbenchHTTP(s *services.Service, path string) (*workbenchHTTP, erro
 	}
 	handler, _ := workbenchRouter(s)
 	run := &workbenchHTTP{
-		server: &http.Server{Handler: handler, ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 32 << 10},
+		server: &http.Server{Handler: handler, ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 40 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 32 << 10},
 		done:   make(chan struct{}),
 	}
 	go func() {

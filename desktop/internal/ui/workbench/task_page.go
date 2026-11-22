@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -184,18 +185,42 @@ func obsidianNoteURL(vault, note string) string {
 
 func (m *mockup) obsidianSourceLink(c *ui.Context, o *sourceObject) {
 	conn := m.taskConnection(*o)
-	if conn == nil || conn.SourceKind != common.WorkbenchObsidianTasks {
+	if conn == nil {
 		return
 	}
-	if link := obsidianNoteURL(conn.VaultPath, o.NativeFields["path"]); link != "" {
+	link, label, failure := "", "", ""
+	switch conn.SourceKind {
+	case common.WorkbenchObsidianTasks:
+		link, label, failure = obsidianNoteURL(conn.VaultPath, o.NativeFields["path"]), "在 Obsidian 中打开", "无法打开 Obsidian"
+	case common.WorkbenchGitHubRepository:
+		link, label, failure = githubIssueURL(conn.Repository, o.NativeID), "在 GitHub 中打开", "无法打开 GitHub"
+	}
+	if link != "" {
 		detail := m.taskDetailUI(o.ID)
-		if components.TextAction(c.Key("open"), tr("在 Obsidian 中打开")) {
+		if components.TextAction(c.Key("open"), tr(label)) {
 			detail.sourceOpenFailed = mygo.Shell.OpenExternal(link) != nil
 		}
 		if detail.sourceOpenFailed {
-			components.Muted(c.Key("error"), tr("无法打开 Obsidian"))
+			components.Muted(c.Key("error"), tr(failure))
 		}
 	}
+}
+
+func githubIssueURL(repository, number string) string {
+	parts := strings.Split(repository, "/")
+	if len(parts) != 2 {
+		return ""
+	}
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "?#%\\ \t\r\n") {
+			return ""
+		}
+	}
+	id, err := strconv.ParseUint(number, 10, 64)
+	if err != nil || id == 0 || strconv.FormatUint(id, 10) != number {
+		return ""
+	}
+	return "https://github.com/" + url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1]) + "/issues/" + number
 }
 
 func taskActivityTime(event taskEvent) string {

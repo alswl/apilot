@@ -33,6 +33,18 @@ var workbenchSyncSchema string
 //go:embed migrations/007_workbench_task_metadata.sql
 var workbenchMetadataSchema string
 
+//go:embed migrations/008_workbench_github.sql
+var workbenchGitHubSchema string
+
+//go:embed migrations/009_workbench_github_write_permission.sql
+var workbenchGitHubWritePermissionSchema string
+
+//go:embed migrations/010_workbench_github_poll.sql
+var workbenchGitHubPollSchema string
+
+//go:embed migrations/011_workbench_github_rate.sql
+var workbenchGitHubRateSchema string
+
 type Store struct{ db *sql.DB }
 
 func Open(path string) (*Store, error) {
@@ -56,11 +68,11 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, e
 	}
-	if version > 7 {
+	if version > 11 {
 		db.Close()
-		return nil, fmt.Errorf("database schema %d is newer than supported 7", version)
+		return nil, fmt.Errorf("database schema %d is newer than supported 11", version)
 	}
-	for index, migration := range []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema} {
+	for index, migration := range []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema} {
 		next := index + 1
 		if next <= version {
 			continue

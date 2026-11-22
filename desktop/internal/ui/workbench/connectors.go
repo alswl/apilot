@@ -17,10 +17,18 @@ import (
 
 type connectorEdit struct {
 	connection
-	problem         string
-	bridge          common.WorkbenchBridgeInput
-	permissionVault string
-	permissionScope string
+	problem             string
+	githubAuthorization services.GitHubAuthorizationStatus
+	githubAuthorizing   bool
+	githubSetupCancel   func()
+	githubNeedsInstall  bool
+	githubRepositories  []string
+	githubListing       bool
+	saving              bool
+	duplicateID         string
+	bridge              common.WorkbenchBridgeInput
+	permissionVault     string
+	permissionScope     string
 }
 
 type syncEvent struct {
@@ -146,6 +154,9 @@ func (m *mockup) syncProgressView(c *ui.Context, conn *connection) {
 				icon, color = "exclamationmark.circle", c.Theme().Warning
 			}
 			components.StatusLabel(c.Key("status"), components.Status{Text: tr(conn.Status), Icon: icon, Color: color})
+		}
+		if conn.RateLimitUntil != nil && conn.RateLimitUntil.After(time.Now()) {
+			components.Muted(c.Key("rate-limit"), tr("GitHub 限流，等待至 ")+conn.RateLimitUntil.Local().Format("15:04:05"))
 		}
 		if conn.SourceKind == common.WorkbenchLocal {
 			if conn.LastConfirmedAt != "—" {
@@ -420,6 +431,9 @@ func (m *mockup) editConnector(conn connection) {
 		conn.StatusLabels = make(map[string]string)
 	}
 	m.connectorEditor = &connectorEdit{connection: conn, permissionVault: conn.VaultPath, permissionScope: conn.Scope}
+	if m.live != nil && conn.SourceKind == common.WorkbenchGitHubRepository && conn.ID == "" {
+		m.loadGitHubRepositories(m.connectorEditor, false)
+	}
 }
 
 func (m *mockup) connectorDialog(c *ui.Context) {
@@ -442,14 +456,16 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 			ui.Scroll(c.Key("fields")).FillWidth().MaxHeight(min(460, height-150)).Children(func() {
 				ui.Column(c).FillWidth().Gap(12).Children(func() {
 					components.Heading(c.Key("basic-heading"), tr("基本信息"))
-					if edit.SourceKind == githubIssues {
-						components.TextField(c.Key("name"), tr("连接名称"), &edit.Name).AutoFocus()
+					if edit.SourceKind == githubIssues || edit.SourceKind == common.WorkbenchGitHubRepository {
+						if m.live == nil || edit.SourceKind != common.WorkbenchGitHubRepository || edit.ID != "" {
+							components.TextField(c.Key("name"), tr("连接名称"), &edit.Name).AutoFocus()
+						}
 						m.githubConnectorFields(c.Key("github"), edit)
 					} else {
 						m.obsidianConnectorFields(c.Key("obsidian"), edit)
 					}
 					if m.live != nil {
-						if edit.SourceKind != githubIssues {
+						if edit.SourceKind != githubIssues && edit.SourceKind != common.WorkbenchGitHubRepository {
 							m.connectorMappingFields(c.Key("mapping"), edit)
 							m.obsidianBridgeFields(c.Key("bridge"), edit)
 						}
@@ -482,14 +498,29 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 			if edit.problem != "" {
 				components.Muted(c, tr(edit.problem))
 			}
+			if edit.saving {
+				components.StatusLabel(c.Key("saving"), components.Status{Text: tr("正在验证连接…"), Loading: true, Color: c.Theme().TextMuted})
+			}
+			if edit.duplicateID != "" {
+				if ui.Button(c.Key("existing"), tr("查看已有连接")).Clicked() {
+					m.syncLogID = edit.duplicateID
+					m.syncDetail = common.WorkbenchSnapshot{}
+					m.refreshLive()
+					open = false
+				}
+			}
 			if confirmingRemoval {
 				return
 			}
 			ui.Row(c).FillWidth().Justify(ui.End).Gap(8).Children(func() {
-				if ui.Button(c.Key("cancel"), tr("取消")).Clicked() {
+				if ui.Button(c.Key("cancel"), tr("取消")).Disabled(edit.saving).Clicked() {
 					open = false
 				}
-				if ui.PrimaryButton(c.Key("save"), tr("保存配置")).Clicked() {
+				if m.live != nil && edit.SourceKind == common.WorkbenchGitHubRepository {
+					m.gitHubConnectionAction(c, edit)
+					return
+				}
+				if ui.PrimaryButton(c.Key("save"), tr("保存配置")).Disabled(edit.saving).Clicked() {
 					if m.live != nil && edit.SourceKind == obsidianTasks {
 						edit.bridge.WriteEnabled = &edit.WriteEnabled
 						edit.problem = m.saveLiveConnection(edit.connection, edit.bridge)
@@ -501,7 +532,16 @@ func (m *mockup) connectorDialog(c *ui.Context) {
 			})
 		})
 	})
+	if !open && m.connectorEditor != nil && m.connectorEditor.saving {
+		return
+	}
 	if !open && m.connectorEditor != nil {
+		if m.connectorEditor.githubSetupCancel != nil {
+			m.connectorEditor.githubSetupCancel()
+		}
+		if id, remote := m.connectorEditor.githubAuthorization.ID, m.live; id != "" && remote != nil {
+			go func() { _ = remote.CancelGitHubAuthorization(id) }()
+		}
 		if m.removeConnectionID == m.connectorEditor.ID {
 			m.removeConnectionID = ""
 		}
@@ -514,6 +554,40 @@ func (m *mockup) obsidianBridgeFields(c *ui.Context, edit *connectorEdit) {
 }
 
 func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
+	if m.live != nil && edit.SourceKind == common.WorkbenchGitHubRepository {
+		if edit.ID != "" {
+			components.DataText(c.Key("repository"), edit.Repository)
+		} else if len(edit.githubRepositories) > 0 {
+			label := edit.Repository
+			if label == "" {
+				label = tr("选择仓库")
+			}
+			ui.MenuButton(c.Key("repository"), label, func(menu *ui.Menu) {
+				for _, name := range edit.githubRepositories {
+					if menu.Item(name).Chosen() {
+						edit.Repository = name
+						edit.problem = ""
+					}
+				}
+				if menu.Item(tr("授权其他仓库…")).Chosen() {
+					m.startGitHubSetup(edit)
+				}
+			})
+		}
+		if edit.githubListing {
+			components.Muted(c.Key("loading-repositories"), tr("正在读取 GitHub 仓库…"))
+		}
+		if edit.githubNeedsInstall {
+			components.Muted(c.Key("install-hint"), tr("选择 Only select repositories，只授权需要接入的仓库。"))
+		}
+		if edit.githubAuthorization.State == "authorized" {
+			components.Muted(c.Key("authorized"), tr("GitHub 已授权"))
+		} else if edit.githubAuthorization.State == "waiting" {
+			components.Muted(c.Key("code"), tr("在 GitHub 输入验证码")+": "+edit.githubAuthorization.UserCode)
+		}
+		ui.Checkbox(c.Key("write"), &edit.WriteEnabled, tr("允许回写"))
+		return
+	}
 	if m.live != nil {
 		components.Muted(c, tr("模拟数据")+" · alswl/issues")
 		return
@@ -527,6 +601,31 @@ func (m *mockup) githubConnectorFields(c *ui.Context, edit *connectorEdit) {
 				Placeholder("owner/repository").Disabled(!m.framework && edit.ID != "")
 		})
 	})
+}
+
+func (m *mockup) gitHubConnectionAction(c *ui.Context, edit *connectorEdit) {
+	label := "连接 GitHub"
+	action := func() { m.saveLiveGitHubConnection(edit) }
+	switch {
+	case edit.githubAuthorization.State == "waiting":
+		label = "复制验证码并打开 GitHub"
+		action = func() { m.openGitHubVerification(edit) }
+	case edit.githubNeedsInstall && edit.githubSetupCancel == nil:
+		label = "选择 GitHub 授权仓库"
+		action = func() { m.startGitHubSetup(edit) }
+	case edit.githubNeedsInstall:
+		label = "检查仓库授权"
+		action = func() { m.continueGitHubSetup(edit) }
+	case edit.ID != "":
+		label = "保存配置"
+	case len(edit.githubRepositories) == 0:
+		label = "授权 GitHub"
+		action = func() { m.loadGitHubRepositories(edit, true) }
+	}
+	unselected := len(edit.githubRepositories) > 0 && edit.Repository == "" && !edit.githubNeedsInstall
+	if ui.PrimaryButton(c.Key("save"), tr(label)).Disabled(edit.saving || edit.githubAuthorizing || edit.githubListing || unselected).Clicked() {
+		action()
+	}
 }
 
 func (m *mockup) obsidianConnectorFields(c *ui.Context, edit *connectorEdit) {
@@ -619,7 +718,7 @@ func (m *mockup) saveConnector(config connection) string {
 	}) {
 		return "请填写唯一的连接名称"
 	}
-	if config.SourceKind == githubIssues {
+	if config.SourceKind == githubIssues || config.SourceKind == common.WorkbenchGitHubRepository {
 		owner, repo, ok := strings.Cut(strings.TrimSpace(config.Repository), "/")
 		if !ok || owner == "" || repo == "" || strings.ContainsAny(owner+repo, "/ \t") {
 			return "仓库格式应为 owner/repository"
@@ -653,7 +752,7 @@ func (m *mockup) saveConnector(config connection) string {
 		config.Status, config.Capabilities, config.Writable = "未接入", "未接入", false
 	}
 	if existing := m.connectionByID(config.ID); existing != nil {
-		if m.sourceFilter == existing.Name {
+		if m.sourceFilter == existing.Name && (m.sourceFilterID == "" || m.sourceFilterID == existing.ID) {
 			m.sourceFilter = config.Name
 		}
 		for id, view := range m.taskViewDrafts {

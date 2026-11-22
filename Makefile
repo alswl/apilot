@@ -23,6 +23,7 @@ check-docs: ## Check local documentation links and pinned standards
 	python3 scripts/check-docs.py
 check-workbench: ## Check workbench data, launch docs, UI literals, keybindings and empty-state guidance
 	python3 scripts/check-workbench.py
+	go -C desktop tool mygo i18n check
 	go -C desktop test ./internal/ui/workbench -run 'Test(DocumentedKeybindingProfiles|WorkbenchUILiterals|EmptyFrameworkNavigationAndConnectorScaffolds)$$'
 generate-openapi: ## Export the Huma contract and regenerate the Workbench client
 	go -C core run ./cmd/apilot-openapi > api/openapi.yaml.next

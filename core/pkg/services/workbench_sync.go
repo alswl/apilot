@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"errors"
+	"hash/fnv"
 	"maps"
 	"path/filepath"
 	"reflect"
@@ -53,6 +54,26 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 			if progress, ok := s.readProgress.Load(attempts[0].ID); ok {
 				value := progress.(common.WorkbenchReadProgress)
 				attempts[0].Progress = &value
+			}
+		}
+		if connections[i].Kind == common.WorkbenchGitHubRepository {
+			store, ok := s.store.(workbenchGitHubStore)
+			if !ok {
+				return nil, common.Err("INTERNAL", "GitHub connection storage unavailable")
+			}
+			progress, err := store.WorkbenchGitHubProgress(connections[i].ID)
+			if err != nil {
+				return nil, err
+			}
+			connections[i].AccountLogin = progress.AccountLogin
+			connections[i].AccessState = progress.AccessState
+			connections[i].WriteDenied = progress.WriteDenied
+			if s.githubRate != nil {
+				now := time.Now()
+				if delay := s.githubRate.BackoffDelay(progress.AccountID, now); delay > 0 {
+					until := now.Add(delay).UTC()
+					connections[i].RateLimitUntil = &until
+				}
 			}
 		}
 		connections[i].Capabilities = s.workbenchConnectionCapabilities(connections[i])
@@ -305,6 +326,9 @@ func (s *Service) RunWorkbenchSync(id string) (int64, error) {
 }
 
 func (s *Service) workbenchReadTimeout(c common.WorkbenchConnection) time.Duration {
+	if c.Kind == common.WorkbenchGitHubRepository {
+		return 5 * time.Minute
+	}
 	if c.Kind == common.WorkbenchObsidianTasks && s.obsidianSync.ScanTimeoutConfigured {
 		return s.obsidianSync.ScanTimeout
 	}
@@ -340,6 +364,32 @@ func (s *Service) startWorkbenchPathsLocked(st workbenchStore, id, trigger strin
 	}
 	if !snapshot.Capabilities.Refresh {
 		return common.Err("INVALID_ARGUMENT", "Connector does not support source refresh")
+	}
+	if snapshot.Kind == common.WorkbenchGitHubRepository && s.githubRate != nil {
+		if store, ok := s.store.(workbenchGitHubStore); ok {
+			progress, err := store.WorkbenchGitHubProgress(id)
+			if err != nil {
+				return err
+			}
+			now := time.Now()
+			wait := s.githubRate.PollDelay(progress.AccountID, id, now)
+			if progress.NextPollAt != nil {
+				wait = max(wait, progress.NextPollAt.Sub(now))
+			}
+			reason := "GitHub requested a longer polling interval"
+			if backoff := s.githubRate.BackoffDelay(progress.AccountID, now); backoff > 0 {
+				wait = max(wait, backoff)
+				reason = "GitHub API rate limit reached"
+			}
+			if wait > 0 {
+				if trigger != "manual" {
+					return nil
+				}
+				problem := common.Err("RATE_LIMITED", reason)
+				problem.Details["retry_after"] = int64((wait + time.Second - 1) / time.Second)
+				return problem
+			}
+		}
 	}
 	now := time.Now().UTC()
 	for i := range snapshot.Attempts {
@@ -392,7 +442,25 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 	before, err := st.WorkbenchObjects(c.ID)
 	result := common.WorkbenchReadResult{ConnectionID: c.ID, ConnectionVersion: c.Version, SnapshotVersion: version,
 		Scope: common.WorkbenchReadFull, Coverage: common.WorkbenchReadUnverified, Err: err}
-	if err == nil {
+	var githubCursor time.Time
+	var githubFull bool
+	githubStats := &integrations.WorkbenchGitHubReadStats{Started: time.Now()}
+	if err == nil && c.Kind == common.WorkbenchGitHubRepository {
+		if pollStore, ok := st.(interface {
+			RecordWorkbenchGitHubPoll(common.WorkbenchConnection, int64, time.Time) error
+		}); ok {
+			githubStats.OnPoll = func(accountID int64, until time.Time) error {
+				return pollStore.RecordWorkbenchGitHubPoll(c, accountID, until)
+			}
+		}
+		result.Tasks, githubCursor, githubFull, result.Err = s.readWorkbenchGitHub(integrations.WithWorkbenchGitHubReadStats(ctx, githubStats), c, before)
+		if result.Err == nil {
+			if !githubFull {
+				result.Tasks = mergeGitHubIncremental(before, result.Tasks)
+			}
+			result.Coverage = common.WorkbenchReadComplete
+		}
+	} else if err == nil {
 		_, allowNotes := st.(interface {
 			CommitWorkbenchObservedTasks(common.WorkbenchConnection, int64, []common.WorkbenchTask) error
 		})
@@ -425,6 +493,13 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 	current, currentErr := s.WorkbenchSnapshot(c.ID)
 	now := time.Now().UTC()
 	attempt := &attempts[0]
+	if c.Kind == common.WorkbenchGitHubRepository {
+		attempt.SyncType = "incremental"
+		if githubFull {
+			attempt.SyncType = "full"
+		}
+		attempt.PageCount, attempt.RequestCount, attempt.FirstPageMS = githubStats.Pages, githubStats.Requests, githubStats.FirstPageMS
+	}
 	attempt.Finished = &now
 	attempt.Scope, attempt.Paths, attempt.Coverage = result.Scope, result.Paths, result.Coverage
 	if currentErr != nil {
@@ -465,6 +540,18 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 		attempt.State = "failed"
 		attempt.Coverage = "unverified"
 		attempt.Error = "Source could not be read completely"
+		if c.Kind == common.WorkbenchGitHubRepository {
+			if problem, ok := errors.AsType[*common.Error](err); ok {
+				attempt.Error = problem.Message
+				if problem.Code == "UNAUTHORIZED" || problem.Code == "FORBIDDEN" || problem.Code == "NOT_FOUND" {
+					if store, ok := st.(interface {
+						InvalidateWorkbenchGitHubAccess(common.WorkbenchConnection, int64) error
+					}); ok {
+						_ = store.InvalidateWorkbenchGitHubAccess(c, version)
+					}
+				}
+			}
+		}
 		if c.Kind == common.WorkbenchObsidianTasks {
 			if problem, ok := errors.AsType[*common.Error](err); ok {
 				attempt.Error = problem.Message
@@ -556,7 +643,14 @@ func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, s
 		attempt.Error = "Source contains duplicate task IDs; previous values were retained"
 	}
 	var publishErr error
-	if len(ambiguous) > 0 {
+	if c.Kind == common.WorkbenchGitHubRepository {
+		store, ok := s.store.(workbenchGitHubSyncStore)
+		if !ok {
+			publishErr = common.Err("INTERNAL", "GitHub synchronization storage unavailable")
+		} else {
+			publishErr = store.CommitWorkbenchGitHubSync(c, attempts, before, tasks, now, version, githubCursor, githubFull)
+		}
+	} else if len(ambiguous) > 0 {
 		if partialStore, ok := st.(interface {
 			RecordWorkbenchPartialSnapshot(common.WorkbenchConnection, []common.WorkbenchAttempt, []common.WorkbenchTask, []common.WorkbenchTask, time.Time, int64) error
 		}); ok {
@@ -661,6 +755,32 @@ func (s *Service) startScheduledWorkbenchMatching(st workbenchStore, trigger str
 	}
 	for _, c := range connections {
 		if !matches(c.Kind) || !s.workbenchPlugins[c.Kind].capabilities.Refresh {
+			continue
+		}
+		if c.Kind == common.WorkbenchGitHubRepository && trigger == "periodic" {
+			hash := fnv.New32a()
+			_, _ = hash.Write([]byte(c.ID))
+			delay := time.Duration(hash.Sum32()%20000) * time.Millisecond
+			s.mu.Lock()
+			if !s.stopping {
+				s.wg.Add(1)
+				go func(id string) {
+					defer s.wg.Done()
+					timer := time.NewTimer(delay)
+					defer timer.Stop()
+					select {
+					case <-s.ctx.Done():
+						return
+					case <-timer.C:
+					}
+					s.mu.Lock()
+					defer s.mu.Unlock()
+					if !s.stopping {
+						_ = s.startWorkbenchLocked(st, id, trigger)
+					}
+				}(c.ID)
+			}
+			s.mu.Unlock()
 			continue
 		}
 		s.mu.Lock()

@@ -3,6 +3,7 @@ package workbench
 import (
 	_ "embed"
 	"encoding/json"
+	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
 )
@@ -18,6 +19,7 @@ type taskResource = common.WorkbenchTaskResource
 type taskEvent = common.WorkbenchTaskEvent
 
 type connection struct {
+	RateLimitUntil *time.Time
 	PluginDisabled bool
 	WriteEnabled   bool
 	Paused         bool

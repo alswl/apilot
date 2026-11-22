@@ -19,8 +19,9 @@ func WorkbenchConnectors() []WorkbenchConnector {
 	return []WorkbenchConnector{
 		{Kind: common.WorkbenchLocal, Name: "Local", SearchAliases: []string{"local", "import"}},
 
+		{Kind: common.WorkbenchGitHubRepository, Name: "GitHub", UserConfigurable: true, SearchAliases: []string{"github", "issues", "repo"}, SearchFields: []string{"repo", "assignee", "state", "state_reason"}},
 		{
-			Kind: common.WorkbenchGitHubIssues, Name: "GitHub Issues", UserConfigurable: true,
+			Kind: common.WorkbenchGitHubIssues, Name: "GitHub",
 			DemoCapabilities: "Issues 写入 · Webhook", DemoSyncMode: "定时拉取",
 			SearchAliases: []string{"github", "issues"},
 			SearchFields:  []string{"repo", "assignee", "milestone", "state", "state_reason"},

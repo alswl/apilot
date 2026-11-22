@@ -78,7 +78,7 @@ func TestWorkspaceAssistantModalAndSyncStatus(t *testing.T) {
 		t.Fatal("closing the dialog should leave the task selected")
 	}
 	click(t, p, "2 个来源已同步")
-	if m.page != connectionsPage || !p.HasText("GitHub Issues") || !p.HasText("Obsidian Tasks") || !p.HasText("能力") {
+	if m.page != connectionsPage || !p.HasText("GitHub") || !p.HasText("Obsidian Tasks") || !p.HasText("能力") {
 		t.Fatal("the sync status should lead to both connectors with visible metadata")
 	}
 	var finish func()

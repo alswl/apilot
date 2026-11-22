@@ -42,6 +42,10 @@ func (r *Remote) WorkbenchTasks(q common.WorkbenchQuery) (common.WorkbenchPage, 
 	return remoteResult[common.WorkbenchPage](r, "workbench.task.list", q)
 }
 
+func (r *Remote) WorkbenchTask(id string) (common.WorkbenchTask, error) {
+	return remoteResult[common.WorkbenchTask](r, "workbench.task.show", map[string]string{"id": id})
+}
+
 func (r *Remote) SaveWorkbench(c common.WorkbenchConnection) (common.WorkbenchSnapshot, error) {
 	return remoteResult[common.WorkbenchSnapshot](r, "workbench.connection.save", c)
 }
@@ -92,6 +96,42 @@ func (r *Remote) ConfigureWorkbench(c common.WorkbenchConnection, bridge common.
 		Certificate  string `json:"bridge_certificate,omitempty"`
 		WriteEnabled *bool  `json:"write_enabled,omitempty"`
 	}{c, bridge.Endpoint, bridge.Token, bridge.Certificate, bridge.WriteEnabled})
+}
+
+func (r *Remote) ConfigureWorkbenchGitHub(c common.WorkbenchConnection, token string, writeEnabled bool) (common.WorkbenchSnapshot, error) {
+	return remoteResult[common.WorkbenchSnapshot](r, "workbench.connection.save", struct {
+		common.WorkbenchConnection
+		GitHubToken  string `json:"github_token,omitempty"`
+		WriteEnabled bool   `json:"write_enabled"`
+	}{c, token, writeEnabled})
+}
+
+func (r *Remote) StartGitHubAuthorization() (GitHubAuthorizationStatus, error) {
+	return remoteResult[GitHubAuthorizationStatus](r, "workbench.github.authorization.start", nil)
+}
+
+func (r *Remote) ListGitHubRepositories(authorizationID string) ([]string, error) {
+	result, err := remoteResult[struct {
+		Items []string `json:"items"`
+	}](r, "workbench.github.repository.list", map[string]string{"authorization_id": authorizationID})
+	return result.Items, err
+}
+
+func (r *Remote) GitHubAuthorizationStatus(id string) (GitHubAuthorizationStatus, error) {
+	return remoteResult[GitHubAuthorizationStatus](r, "workbench.github.authorization.show", map[string]string{"id": id})
+}
+
+func (r *Remote) CancelGitHubAuthorization(id string) error {
+	_, err := remoteResult[struct{}](r, "workbench.github.authorization.cancel", map[string]string{"id": id})
+	return err
+}
+
+func (r *Remote) ConfigureWorkbenchGitHubAuthorized(c common.WorkbenchConnection, id string, writeEnabled bool) (common.WorkbenchSnapshot, error) {
+	return remoteResult[common.WorkbenchSnapshot](r, "workbench.connection.save", struct {
+		common.WorkbenchConnection
+		AuthorizationID string `json:"github_authorization_id"`
+		WriteEnabled    bool   `json:"write_enabled"`
+	}{c, id, writeEnabled})
 }
 
 func (r *Remote) WorkbenchNotes(id string) ([]common.WorkbenchNote, error) {

@@ -159,7 +159,7 @@
     {
       "connection_id": "team",
       "name": "支付发布",
-      "connector_id": "GitHub Issues",
+      "connector_id": "GitHub",
       "search_aliases": [
         "github",
         "github-issues",
