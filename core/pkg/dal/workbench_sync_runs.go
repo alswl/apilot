@@ -81,7 +81,7 @@ func (s *Store) WorkbenchSyncUsage(q common.WorkbenchSyncQuery) ([]common.Workbe
 	rows, err := s.db.Query(`SELECT p.connector_id,p.id,r.scope_id,r.mode,COUNT(*),SUM(r.status='success'),
 		SUM(r.status NOT IN ('success','running')),SUM(r.status='running'),SUM(r.status='success' AND r.changed=0),
 		SUM(r.requests),SUM(r.pages),SUM(r.fetched),SUM(r.changed),SUM(COALESCE(r.duration_ms,0)),SUM(r.rate_limits),
-		SUM(r.usage_complete=0)`+connectorRunFrom+connectorRunFilter+`
+		SUM(r.usage_complete=0),r.id,MAX(r.rowid)`+connectorRunFrom+connectorRunFilter+`
 		GROUP BY p.connector_id,p.id,r.scope_id,r.mode ORDER BY p.connector_id,p.id,r.scope_id,r.mode LIMIT ? OFFSET ?`,
 		append(connectorRunArgs(q), q.Limit, q.Offset)...)
 	if err != nil {
@@ -91,8 +91,10 @@ func (s *Store) WorkbenchSyncUsage(q common.WorkbenchSyncQuery) ([]common.Workbe
 	result := []common.WorkbenchSyncUsage{}
 	for rows.Next() {
 		var row common.WorkbenchSyncUsage
+		// SQLite takes bare r.id from the row containing the sole MAX aggregate.
+		var latestRowID int64
 		if err := rows.Scan(&row.ConnectorID, &row.ConnectionID, &row.ScopeID, &row.Mode, &row.Runs, &row.Success, &row.Failed, &row.Running, &row.NoChanges,
-			&row.Requests, &row.Pages, &row.Fetched, &row.Changed, &row.DurationMS, &row.RateLimits, &row.PartialRuns); err != nil {
+			&row.Requests, &row.Pages, &row.Fetched, &row.Changed, &row.DurationMS, &row.RateLimits, &row.PartialRuns, &row.LatestSyncRunID, &latestRowID); err != nil {
 			return nil, err
 		}
 		result = append(result, row)

@@ -207,3 +207,37 @@ when built from a clean Git checkout.
 This probe exercises the GitHub Connector over stdio. macOS release
 packaging builds the regular helper and rejects the controlled build tag
 before installing the helper in the app bundle.
+
+## Connector 011 review verification
+
+A full-only Connector may omit the terminal full checkpoint. A successful
+delta always supplies its next checkpoint. An action version conflict includes
+the source state as `current.state`; it may also include applicable source
+values, such as `state_reason` and current values for action inputs.
+
+In `describe`, the optional `sync_rate_limit_buckets` maps each read mode to
+the bucket IDs that mode consumes. Core combines the bucket match with scope
+isolation. An undeclared mode uses conservative backoff. An unnamed bucket
+applies across operations in its affected scope or connection. Bucket IDs
+are case-sensitive and the host reserves the `scope:` prefix.
+
+Workbench action conflict receipts expose `conflict.action` (the submitted
+action ID), `conflict.proposed` (action inputs) and `conflict.current` (source
+values). `latest_sync_run_id` on a usage group identifies the latest recorded
+run within the current filters. Pass it to `workbench sync inspect` to reuse
+the same run shown in the desktop usage drill-down.
+
+From a clean macOS arm64 checkout of the candidate, use the existing Go
+toolchain:
+
+```sh
+go -C core test ./pkg/dal ./pkg/server -count=1 \
+  -run 'TestWorkbench(ConnectorBackoffMatchesBucketsAndScopes|ConnectorFullOnlyAndTemporaryFailureRetainsTasks|RemainingMVPWritesAndActions|RemainingMVPRunsAndUsage)$'
+go -C connectors/github-issues test ./internal/connector -count=1 \
+  -run 'Test(GitHubRefreshHTTP200ErrorPreservesCredential|GitHubEditMetadataListsRepositoryLabels|GitHubMutationConfirmsCreateCloseAndReopen|GitHubAuthoritativeAssigneeLookupAndConfirmation|UC01GitHubLoginMatchesAccountAndRotatesCredential)$'
+go -C desktop test ./internal/ui/workbench -count=1 \
+  -run 'TestConnector011Desktop(DetailOperationAndUsagePresentation|ReviewActionConflictAndRepositoryLabels)$'
+make check-openapi check-workbench
+make app
+python3 scripts/verify-bundled-connectors.py build/darwin-arm64/Apilot.app --arch arm64
+```

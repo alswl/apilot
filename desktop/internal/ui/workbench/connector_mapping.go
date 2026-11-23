@@ -29,6 +29,9 @@ var projectionFields = []struct {
 }
 
 func fieldCaption(id string) string {
+	if id == "state_reason" {
+		return tr("关闭原因")
+	}
 	for _, field := range projectionFields {
 		if field.id == id {
 			return tr(field.label)

@@ -217,6 +217,16 @@ func TestWorkbenchRemainingMVPWritesAndActions(t *testing.T) {
 	if result.SyncState != "confirmed" || api.task(task.ID).Title != "Confirmed on readback" {
 		t.Fatalf("readback: %+v", result)
 	}
+	actionConflict := input("resolve-conflict")
+	actionConflict.Action = "resolve"
+	actionConflict.ActionFields = map[string]protocol.FieldValue{"resolution": protocol.Value(protocol.FieldText, "completed")}
+	writeUC01JSON(t, config, map[string]any{"write_result": "conflict"})
+	result = api.submit(actionConflict, "conflict")
+	if result.Conflict == nil || result.Conflict.Action != "resolve" ||
+		string(result.Conflict.Current["state"].Value) != `"To do"` ||
+		string(result.Conflict.Proposed["resolution"].Value) != `"completed"` {
+		t.Fatalf("action conflict details: %+v", result.Conflict)
+	}
 	writeUC01JSON(t, config, map[string]any{})
 	action := input("resolve")
 	action.Action = "resolve"
@@ -317,12 +327,37 @@ func TestWorkbenchRemainingMVPRunsAndUsage(t *testing.T) {
 		if item.ScopeID == pay && item.Mode == "delta" && (item.NoChanges != 1 || item.Requests != 1) {
 			t.Fatalf("PAY delta: %+v", item)
 		}
-		if item.ScopeID == ops && item.Mode == "delta" && (item.RateLimits != 1 || item.Failed != 1 || item.Requests != detail.Requests) {
+		if item.ScopeID == ops && item.Mode == "delta" && (item.LatestSyncRunID != detail.ID || item.RateLimits != 1 || item.Failed != 1 || item.Requests != detail.Requests) {
 			t.Fatalf("OPS usage: %+v", item)
 		}
 	}
 	api.call(http.MethodGet, "/sync-runs?from="+time.Now().UTC().Add(time.Hour).Format(time.RFC3339), nil, &history)
 	if len(history.Items) != 0 {
 		t.Fatalf("future range: %+v", history)
+	}
+}
+
+func TestWorkbenchConnectorFullOnlyAndTemporaryFailureRetainsTasks(t *testing.T) {
+	api, config, id, scopes := prepareRemainingMVP(t)
+	pay := scopes["PAY"].ScopeID
+	writeUC01JSON(t, config, map[string]any{"full_only_scope": "PAY"})
+	api.call(http.MethodPost, "/connector-connections/"+id+"/sync?mode=full", nil, nil)
+	full := api.done(id, func(items map[string]common.WorkbenchConnectorScopeOverview) bool {
+		return items["PAY"].LastRun.ID != scopes["PAY"].LastRun.ID && items["PAY"].LastRun.Status == "success"
+	})["PAY"].LastRun
+	api.call(http.MethodPost, "/connector-connections/"+id+"/sync", nil, nil)
+	next := api.done(id, func(items map[string]common.WorkbenchConnectorScopeOverview) bool {
+		return items["PAY"].LastRun.ID != full.ID && items["PAY"].LastRun.Status == "success"
+	})["PAY"].LastRun
+	if next.Mode != "full" || api.scopeTasks(pay).Total != 2 {
+		t.Fatalf("full-only scope lost its baseline: %+v", next)
+	}
+	writeUC01JSON(t, config, map[string]any{"temporary_scope": "PAY"})
+	api.call(http.MethodPost, "/connector-connections/"+id+"/sync", nil, nil)
+	after := api.done(id, func(items map[string]common.WorkbenchConnectorScopeOverview) bool {
+		return items["PAY"].LastRun.ErrorKind == "temporary"
+	})["PAY"]
+	if after.LastRun.Status != "failed" || after.AccessState != "available" || api.scopeTasks(pay).Total != 2 {
+		t.Fatalf("temporary refresh failure hid tasks: %+v", after)
 	}
 }

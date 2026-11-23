@@ -179,8 +179,12 @@ func (c *GitHubDeviceClient) Refresh(ctx context.Context, refreshToken string) (
 	if err := c.post(ctx, "/login/oauth/access_token", url.Values{"client_id": {c.clientID}, "grant_type": {"refresh_token"}, "refresh_token": {refreshToken}}, &payload); err != nil {
 		return GitHubUserCredential{}, err
 	}
-	if payload.Error != "" {
-		return GitHubUserCredential{}, protocol.Problem(protocol.AuthRequired, "account", "GitHub authorization must be renewed")
+	switch payload.Error {
+	case "":
+		return payload.credential()
+	case "bad_refresh_token", "invalid_grant":
+		return GitHubUserCredential{}, renewAuthorization()
+	default:
+		return GitHubUserCredential{}, protocol.Problem(protocol.Temporary, "account", "GitHub authorization is temporarily unavailable")
 	}
-	return payload.credential()
 }

@@ -221,6 +221,7 @@ type WorkbenchTaskWrite struct {
 }
 
 type WorkbenchFieldConflict struct {
+	Action   string                         `json:"action,omitempty"`
 	Current  map[string]protocol.FieldValue `json:"current,omitempty"`
 	Proposed map[string]protocol.FieldValue `json:"proposed,omitempty"`
 }

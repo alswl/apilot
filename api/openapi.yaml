@@ -736,6 +736,8 @@ components:
     WorkbenchFieldConflict:
       additionalProperties: false
       properties:
+        action:
+          type: string
         current:
           additionalProperties:
             $ref: "#/components/schemas/FieldValue"
@@ -1441,6 +1443,8 @@ components:
         fetched:
           format: int64
           type: integer
+        latest_sync_run_id:
+          type: string
         mode:
           type: string
         no_changes:
@@ -1470,6 +1474,7 @@ components:
           format: int64
           type: integer
       required:
+        - latest_sync_run_id
         - connector_id
         - connection_id
         - scope_id

@@ -68,6 +68,9 @@ func (c fixtureConfig) mutation(ctx context.Context, p protocol.MutationParams, 
 		return protocol.MutationResult{Status: "not_executed"}, nil
 	}
 	if c.WriteResult == "conflict" || (p.Action != "" && p.ExpectedVersion != current.SourceVersion) {
+		if p.Action != "" {
+			current.Fields["state"] = protocol.Value(protocol.FieldText, current.StateLabel)
+		}
 		return protocol.MutationResult{Status: "conflict", Current: current.Fields}, nil
 	}
 	definitions := map[string]protocol.FieldDefinition{}

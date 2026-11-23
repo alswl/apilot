@@ -227,12 +227,14 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 			return err
 		}
 		process := integrations.NewWorkbenchConnectorProcess(pkg, namespace)
-		if _, err := process.Describe(s.ctx); err != nil {
+		description, err := process.Describe(s.ctx)
+		if err != nil {
 			process.Close()
 			log.Printf("workbench: bundled Connector describe failed: %v", err)
 			continue
 		}
 		s.workbenchConnectorProcess = process
+		s.workbenchConnectorSyncBuckets = description.SyncRateLimitBuckets
 		release = &common.WorkbenchConnectorRelease{
 			ConnectorID: pkg.Manifest.ConnectorID, ReleaseVersion: pkg.Manifest.ReleaseVersion,
 			ProtocolVersion: protocol.Version, PackageDigest: pkg.Digest,

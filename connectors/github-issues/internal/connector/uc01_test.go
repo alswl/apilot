@@ -147,3 +147,33 @@ func TestUC01GitHubSyncPagesExcludePullRequestsAndBindCheckpoint(t *testing.T) {
 		t.Fatal("checkpoint was accepted for a different repository")
 	}
 }
+
+func TestGitHubRefreshHTTP200ErrorPreservesCredential(t *testing.T) {
+	for code, want := range map[string]protocol.ErrorKind{
+		"temporarily_unavailable": protocol.Temporary,
+		"server_error":            protocol.Temporary,
+		"unknown":                 protocol.Temporary,
+		"bad_refresh_token":       protocol.AuthRequired,
+		"invalid_grant":           protocol.AuthRequired,
+	} {
+		t.Run(code, func(t *testing.T) {
+			c := New(t.TempDir())
+			c.device, _ = NewGitHubDeviceClient("https://github.test", "client", transportFunc(func(req *http.Request) (*http.Response, error) {
+				if req.URL.Host != "github.test" || req.URL.Path != "/login/oauth/access_token" {
+					t.Fatalf("unexpected refresh request %s", req.URL)
+				}
+				return testAPIResponse(req, http.StatusOK, `{"error":"`+code+`"}`, nil), nil
+			}))
+			c.loadCredential = func(string, string) ([]byte, error) {
+				return json.Marshal(storedCredential{Access: "old", Refresh: "refresh", Expires: time.Now().Add(-time.Minute)})
+			}
+			c.storeCredential = func(string, string, []byte) error {
+				t.Fatal("failed refresh replaced the stored credential")
+				return nil
+			}
+			if token, problem := c.token(context.Background(), "42", endpoint); token != "" || problem == nil || problem.Data.Kind != want {
+				t.Fatalf("refresh: token returned=%v, problem=%v, want %q", token != "", problem, want)
+			}
+		})
+	}
+}

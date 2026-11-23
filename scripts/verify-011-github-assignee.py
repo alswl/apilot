@@ -56,7 +56,9 @@ class GitHubFixture:
         if (method, path) == ('GET', '/user/installations/1/repositories'):
             return 200, {'repositories': [{'id': 19, 'full_name': 'fixture/assignees', 'has_issues': True}]}
         if (method, path) == ('GET', '/repositories/19'):
-            return 200, {'id': 19, 'has_issues': True, 'permissions': {'push': True}}
+            return 200, {'id': 19, 'full_name': 'fixture/assignees', 'has_issues': True, 'permissions': {'push': True}}
+        if (method, path) == ('GET', '/repos/fixture/assignees/labels'):
+            return 200, [{'name': 'fixture-only'}]
         if (method, path) == ('GET', '/repositories/19/issues'):
             return 200, [self.issue]
         if (method, path) == ('GET', '/users/octocat'):
@@ -211,6 +213,9 @@ def run(binary):
             metadata = probe.call('tasks.edit_metadata', params)
             require(any(field['id'] == 'assignees' and field['writable'] for field in metadata['fields']),
                     'Assignee editing missing')
+            labels = next(field for field in metadata['fields'] if field['id'] == 'labels')
+            require(labels['options'] == [{'id': 'fixture-only', 'label': 'fixture-only'}],
+                    f'Wrong repository labels: {labels}')
             mutation = probe.call('tasks.mutate', {
                 **params, 'operation_id': 'assign-by-login',
                 'baseline': {'assignees': record['fields']['assignees']},

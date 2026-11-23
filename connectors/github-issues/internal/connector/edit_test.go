@@ -77,9 +77,16 @@ func TestGitHubMutationConfirmsCreateCloseAndReopen(t *testing.T) {
 	if problem != nil || result.(protocol.MutationResult).Record.State != "done" || writes != 2 || reads != 3 || reason != "completed" {
 		t.Fatalf("close/readback: %+v %v", result, problem)
 	}
+	p.ExpectedVersion = "2026-11-22T12:00:00Z"
+	result, problem = connector.mutate(ctx, p, false, nil)
+	if problem != nil || result.(protocol.MutationResult).Status != "conflict" ||
+		string(result.(protocol.MutationResult).Current["state"].Value) != `"closed"` || writes != 2 {
+		t.Fatalf("stale action: %+v %v", result, problem)
+	}
+	p.ExpectedVersion = updated
 	p.Action = "reopen"
 	result, problem = connector.mutate(ctx, p, false, nil)
-	if problem != nil || result.(protocol.MutationResult).Record.State != "open" || writes != 3 || reads != 5 {
+	if problem != nil || result.(protocol.MutationResult).Record.State != "open" || writes != 3 || reads != 6 {
 		t.Fatalf("reopen/readback: %+v %v", result, problem)
 	}
 	p.Action = ""
@@ -136,4 +143,43 @@ func TestGitHubAuthoritativeAssigneeLookupAndConfirmation(t *testing.T) {
 	if !githubFieldMatches(current, typed) || githubFieldMatches(current, protocol.Value(protocol.FieldAccounts, []protocol.Option{{ID: "43", Label: "Octocat"}})) {
 		t.Fatal("confirmation lost the account identity")
 	}
+}
+
+func TestGitHubEditMetadataListsRepositoryLabels(t *testing.T) {
+	c := New(t.TempDir())
+	c.loadCredential = func(string, string) ([]byte, error) { return json.Marshal(storedCredential{Access: "test"}) }
+	c.transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/repositories/7":
+			return testAPIResponse(req, 200, `{"id":7,"full_name":"owner/selected","has_issues":true,"permissions":{"push":true}}`, nil), nil
+		case "/repositories/7/issues/3":
+			return testAPIResponse(req, 200, `{"id":42,"number":3,"state":"open","labels":[{"name":"assigned"}]}`, nil), nil
+		case "/repos/owner/selected/labels":
+			switch req.URL.Query().Get("page") {
+			case "1":
+				return testAPIResponse(req, 200, `[{"name":"assigned"},{"name":"archived","archived_at":"2026-11-22T12:00:00Z"}]`,
+					http.Header{"Link": {`<https://api.github.com/repositories/7/labels?page=2&per_page=100>; rel="next"`}}), nil
+			case "2":
+				return testAPIResponse(req, 200, `[{"name":"available, too"}]`, nil), nil
+			}
+		}
+		t.Fatalf("unexpected label request %s", req.URL)
+		return nil, errors.New("unexpected request")
+	})
+	result, problem := c.editMetadata(context.Background(), protocol.DetailParams{
+		ScopeContext: protocol.ScopeContext{ScopeRef: "7", AccountRef: "42", EndpointRef: endpoint}, SourceID: "42", Number: "3",
+	})
+	if problem != nil {
+		t.Fatal(problem)
+	}
+	for _, field := range result.(protocol.EditMetadataResult).Fields {
+		if field.ID != "labels" {
+			continue
+		}
+		if len(field.Options) != 2 || field.Options[0].ID != "assigned" || field.Options[1].ID != "available, too" {
+			t.Fatalf("repository labels: %+v", field.Options)
+		}
+		return
+	}
+	t.Fatal("no editable labels")
 }

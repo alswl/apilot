@@ -369,12 +369,21 @@ func (s *Service) runConnectorOperation(ctx context.Context, op common.Workbench
 	switch {
 	case err == nil && result.Status == "conflict":
 		receipt.SyncState, receipt.Reason = common.WorkbenchOperationConflict, "Source changed since the operation was prepared"
-		receipt.Conflict = &common.WorkbenchFieldConflict{Proposed: request.Patch, Current: make(map[string]protocol.FieldValue)}
-		for id := range request.Patch {
-			if field, ok := result.Current[id]; ok {
-				receipt.Conflict.Current[id] = field
+		conflict := &common.WorkbenchFieldConflict{Action: request.Action, Proposed: request.Patch, Current: make(map[string]protocol.FieldValue)}
+		if request.Action != "" {
+			conflict.Proposed = request.ActionFields
+			for _, id := range []string{"state", "state_reason"} {
+				if field, ok := result.Current[id]; ok {
+					conflict.Current[id] = field
+				}
 			}
 		}
+		for id := range conflict.Proposed {
+			if field, ok := result.Current[id]; ok {
+				conflict.Current[id] = field
+			}
+		}
+		receipt.Conflict = conflict
 	case err == nil && result.Status == "not_executed":
 		receipt.SyncState, receipt.Reason = common.WorkbenchOperationNotExecuted, "Source rejected the operation before writing"
 	default:

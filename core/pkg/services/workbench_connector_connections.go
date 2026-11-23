@@ -31,7 +31,7 @@ type workbenchManagedConnectorStore interface {
 	RecoverWorkbenchConnectorRuns() error
 	StartWorkbenchConnectorRun(common.WorkbenchSyncRun) (int64, error)
 	WorkbenchConnectorLastRun(string) (*common.WorkbenchSyncRun, error)
-	WorkbenchConnectorBackoff(string, string) (*time.Time, error)
+	WorkbenchConnectorBackoff(string, string, []string) (*time.Time, error)
 	PauseWorkbenchConnectorScope(string, int64, bool) error
 	FinishWorkbenchConnectorFailure(common.WorkbenchConnectorSyncCommit) error
 	CommitWorkbenchConnectorSync(common.WorkbenchConnectorSyncCommit) error

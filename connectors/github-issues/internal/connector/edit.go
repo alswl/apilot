@@ -15,10 +15,11 @@ import (
 	"github.com/alswl/apilot/connectors/protocol"
 )
 
-func (c *apiClient) writableRepository(ctx context.Context, scope string) (bool, *protocol.RPCError) {
+func (c *apiClient) writableRepository(ctx context.Context, scope string) (bool, string, *protocol.RPCError) {
 	var repo struct {
-		ID          int64 `json:"id"`
-		HasIssues   bool  `json:"has_issues"`
+		ID          int64  `json:"id"`
+		FullName    string `json:"full_name"`
+		HasIssues   bool   `json:"has_issues"`
 		Permissions struct {
 			Push     bool `json:"push"`
 			Maintain bool `json:"maintain"`
@@ -26,10 +27,10 @@ func (c *apiClient) writableRepository(ctx context.Context, scope string) (bool,
 		} `json:"permissions"`
 	}
 	if _, error := c.get(ctx, "/repositories/"+scope, nil, &repo); error != nil {
-		return false, error
+		return false, "", error
 	}
 	return repo.HasIssues && strconv.FormatInt(repo.ID, 10) == scope &&
-		(repo.Permissions.Push || repo.Permissions.Maintain || repo.Permissions.Admin), nil
+		(repo.Permissions.Push || repo.Permissions.Maintain || repo.Permissions.Admin), repo.FullName, nil
 }
 
 func (c *apiClient) readMutationIssue(ctx context.Context, scope, id, number string) (githubIssue, *protocol.RPCError) {
@@ -68,24 +69,61 @@ func (c *Connector) editMetadata(ctx context.Context, p protocol.DetailParams) (
 		return nil, problem
 	}
 	client := newAPI(token, c.transport)
-	writable, problem := client.writableRepository(ctx, p.ScopeRef)
+	writable, repo, problem := client.writableRepository(ctx, p.ScopeRef)
 	if problem != nil {
 		return nil, problem
 	}
 	if !writable {
 		return out, nil
 	}
-	out.Fields = githubEditFields()
 	if p.SourceID == "" {
 		out.Create = true
-		return out, nil
+	} else {
+		issue, problem := client.readMutationIssue(ctx, p.ScopeRef, p.SourceID, p.Number)
+		if problem != nil {
+			return nil, problem
+		}
+		out.Actions = githubActions(issue)
 	}
-	issue, problem := client.readMutationIssue(ctx, p.ScopeRef, p.SourceID, p.Number)
+	labels, problem := client.repositoryLabelOptions(ctx, repo, p.ScopeRef)
 	if problem != nil {
 		return nil, problem
 	}
-	out.Actions = githubActions(issue)
+	out.Fields = githubEditFields()
+	for i := range out.Fields {
+		if out.Fields[i].ID == "labels" {
+			out.Fields[i].Options = labels
+		}
+	}
 	return out, nil
+}
+
+func (c *apiClient) repositoryLabelOptions(ctx context.Context, repo, scope string) ([]protocol.Option, *protocol.RPCError) {
+	owner, name, ok := strings.Cut(repo, "/")
+	if !ok || owner == "" || name == "" || strings.Contains(name, "/") || owner == "." || owner == ".." || name == "." || name == ".." {
+		return nil, protocol.Problem(protocol.Temporary, "scope", "Invalid GitHub repository name")
+	}
+	path := "/repos/" + repo + "/labels"
+	var options []protocol.Option
+	seen := map[string]bool{}
+	problem := c.pages(ctx, path, func(query url.Values) (http.Header, *protocol.RPCError) {
+		var page []struct {
+			Name       string     `json:"name"`
+			ArchivedAt *time.Time `json:"archived_at"`
+		}
+		header, problem := c.get(ctx, path, query, &page)
+		if problem != nil {
+			return nil, problem
+		}
+		for _, label := range page {
+			if label.Name != "" && label.ArchivedAt == nil && !seen[label.Name] {
+				options = append(options, protocol.Option{ID: label.Name, Label: label.Name})
+				seen[label.Name] = true
+			}
+		}
+		return header, nil
+	}, "/repositories/"+scope+"/labels")
+	return options, problem
 }
 
 func githubMutationFields(issue githubIssue) map[string]protocol.FieldValue {
@@ -93,6 +131,7 @@ func githubMutationFields(issue githubIssue) map[string]protocol.FieldValue {
 	if record.Fields == nil {
 		record.Fields = map[string]protocol.FieldValue{}
 	}
+	record.Fields["state"] = protocol.Value(protocol.FieldText, issue.State)
 	record.Fields["title"] = protocol.Value(protocol.FieldText, issue.Title)
 	record.Fields["body"] = protocol.Value(protocol.FieldRichText, issue.Body)
 	return record.Fields
@@ -215,7 +254,7 @@ func (c *Connector) mutate(ctx context.Context, p protocol.MutationParams, recon
 	}
 	client := newAPI(token, c.transport)
 	if !reconcile {
-		writable, problem := client.writableRepository(ctx, p.ScopeRef)
+		writable, _, problem := client.writableRepository(ctx, p.ScopeRef)
 		if problem != nil {
 			return nil, problem
 		}
@@ -254,11 +293,14 @@ func (c *Connector) mutate(ctx context.Context, p protocol.MutationParams, recon
 			}
 		} else if p.Action != "" {
 			state, reason := githubTransition(p.Action)
-			if state == "" || state == issue.State {
+			if state == "" {
 				return rejected, nil
 			}
 			if issue.UpdatedAt.UTC().Format(time.RFC3339Nano) != p.ExpectedVersion {
 				return protocol.MutationResult{Status: "conflict", Current: githubMutationFields(issue)}, nil
+			}
+			if state == issue.State {
+				return rejected, nil
 			}
 			body = map[string]any{"state": state}
 			if reason != "" {

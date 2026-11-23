@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"time"
 
 	"github.com/alswl/apilot/connectors/protocol"
@@ -129,7 +127,7 @@ func (c *Connector) login(ctx context.Context, p protocol.LoginParams, id string
 	if p.AccountRef != "" && p.AccountRef != account {
 		return nil, protocol.Problem(protocol.AccessDenied, "account", "Sign in to the original GitHub account")
 	}
-	release, err := c.lockAccount(ctx, account)
+	release, err := lockCredentialFile(ctx, filepath.Join(c.dir, account+".lock"))
 	if err != nil {
 		return nil, authProblem(err)
 	}
@@ -163,7 +161,7 @@ func (c *Connector) token(ctx context.Context, account, site string) (string, *p
 	if !positiveID(account) || site != endpoint || c.dir == "" || c.device == nil {
 		return "", protocol.Problem(protocol.InvalidConfig, "account", "Invalid GitHub account context")
 	}
-	release, err := c.lockAccount(ctx, account)
+	release, err := lockCredentialFile(ctx, filepath.Join(c.dir, account+".lock"))
 	if err != nil {
 		return "", authProblem(err)
 	}
@@ -193,31 +191,6 @@ func (c *Connector) token(ctx context.Context, account, site string) (string, *p
 		return "", authProblem(err)
 	}
 	return refreshed.AccessToken, nil
-}
-
-func (c *Connector) lockAccount(ctx context.Context, account string) (func(), error) {
-	f, err := os.OpenFile(filepath.Join(c.dir, account+".lock"), os.O_CREATE|os.O_RDWR, 0600)
-	if err != nil {
-		return nil, err
-	}
-	tick := time.NewTicker(25 * time.Millisecond)
-	defer tick.Stop()
-	for {
-		err = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
-		if err == nil {
-			return func() { _ = f.Close() }, nil
-		}
-		if err != syscall.EWOULDBLOCK {
-			f.Close()
-			return nil, err
-		}
-		select {
-		case <-ctx.Done():
-			f.Close()
-			return nil, ctx.Err()
-		case <-tick.C:
-		}
-	}
 }
 
 func positiveID(raw string) bool {

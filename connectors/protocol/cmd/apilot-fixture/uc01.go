@@ -17,6 +17,8 @@ import (
 )
 
 type fixtureConfig struct {
+	FullOnlyScope    string `json:"full_only_scope"`
+	TemporaryScope   string `json:"temporary_scope"`
 	ReadOnlyTask     string `json:"read_only_task"`
 	RateLimitedScope string `json:"rate_limited_scope"`
 	PartialScope     string `json:"partial_scope"`
@@ -259,6 +261,12 @@ func (c fixtureConfig) sync(p protocol.SyncParams) (any, *protocol.RPCError) {
 		problem.Data.Usage = &protocol.Usage{Requests: 1}
 		return nil, problem
 	}
+	if p.ScopeRef == c.TemporaryScope {
+		return nil, protocol.Problem(protocol.Temporary, "account", "Fixture OAuth temporarily unavailable")
+	}
+	if p.ScopeRef == c.FullOnlyScope && p.Mode == "delta" {
+		return nil, protocol.Problem(protocol.Unsupported, "scope", "Fixture supports only full sync")
+	}
 	if p.ScopeRef == c.RateLimitedScope {
 		retry := time.Now().UTC().Add(30 * time.Second)
 		problem := protocol.Problem(protocol.RateLimited, "scope", "Fixture scope rate limited")
@@ -292,6 +300,9 @@ func (c fixtureConfig) sync(p protocol.SyncParams) (any, *protocol.RPCError) {
 	usage := protocol.Usage{Requests: 1, Pages: 1}
 	result := protocol.SyncPage{Records: []protocol.SourceRecord{}, Coverage: p.Mode, NextCheckpoint: checkpoint + "@" + watermark.Format(time.RFC3339Nano), Usage: usage}
 	if p.ScopeRef == c.EmptyScope {
+		if p.ScopeRef == c.FullOnlyScope {
+			result.NextCheckpoint = ""
+		}
 		return result, nil
 	}
 	switch {
@@ -319,6 +330,9 @@ func (c fixtureConfig) sync(p protocol.SyncParams) (any, *protocol.RPCError) {
 		result.Records = append(result.Records, fixtureSyncRecord(p.ScopeRef, "2", p.Fields))
 	default:
 		return nil, protocol.Problem(protocol.InvalidConfig, "scope", "Unknown fixture sync page")
+	}
+	if p.ScopeRef == c.FullOnlyScope {
+		result.NextCheckpoint = ""
 	}
 	result.Usage.Received = len(result.Records)
 	return result, nil

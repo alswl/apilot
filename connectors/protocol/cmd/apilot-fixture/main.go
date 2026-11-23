@@ -17,10 +17,11 @@ func main() {
 		return
 	}
 	description := protocol.Description{
-		ConnectorID:      "fixture",
-		ReleaseVersion:   "0.1.0",
-		ProtocolVersions: []int{protocol.Version},
-		Capabilities:     []string{"auth.login", "config.options", "tasks.sync.full", "tasks.sync.delta", "fields.describe", "tasks.detail", "tasks.edit_metadata", "tasks.mutate", "tasks.reconcile"},
+		ConnectorID:          "fixture",
+		ReleaseVersion:       "0.1.0",
+		ProtocolVersions:     []int{protocol.Version},
+		Capabilities:         []string{"auth.login", "config.options", "tasks.sync.full", "tasks.sync.delta", "fields.describe", "tasks.detail", "tasks.edit_metadata", "tasks.mutate", "tasks.reconcile"},
+		SyncRateLimitBuckets: map[string][]string{"full": {"fixture-read"}, "delta": {"fixture-read"}},
 		EndpointConfig: protocol.ConfigSchema{
 			Version: 1,
 			Schema:  json.RawMessage(`{"type":"object","additionalProperties":false}`),

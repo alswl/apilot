@@ -180,7 +180,7 @@ func (c *apiClient) repositories(ctx context.Context) ([]repository, *protocol.R
 	return list, nil
 }
 
-func (c *apiClient) pages(ctx context.Context, path string, read func(url.Values) (http.Header, *protocol.RPCError)) *protocol.RPCError {
+func (c *apiClient) pages(ctx context.Context, path string, read func(url.Values) (http.Header, *protocol.RPCError), aliases ...string) *protocol.RPCError {
 	query := url.Values{"per_page": {"100"}}
 	for page := 1; page <= 1000; page++ {
 		query.Set("page", strconv.Itoa(page))
@@ -188,7 +188,7 @@ func (c *apiClient) pages(ctx context.Context, path string, read func(url.Values
 		if problem != nil {
 			return problem
 		}
-		next, err := nextPage(header, path, query)
+		next, err := nextPage(header, path, query, aliases...)
 		if err != nil {
 			return err
 		}
@@ -202,7 +202,7 @@ func (c *apiClient) pages(ctx context.Context, path string, read func(url.Values
 	return protocol.Problem(protocol.Temporary, "scope", "Invalid GitHub pagination sequence")
 }
 
-func nextPage(header http.Header, path string, query url.Values) (int, *protocol.RPCError) {
+func nextPage(header http.Header, path string, query url.Values, aliases ...string) (int, *protocol.RPCError) {
 	for _, link := range strings.Split(header.Get("Link"), ",") {
 		parts := strings.Split(link, ";")
 		if len(parts) < 2 || strings.TrimSpace(parts[1]) != `rel="next"` {
@@ -210,7 +210,7 @@ func nextPage(header http.Header, path string, query url.Values) (int, *protocol
 		}
 		raw := strings.Trim(strings.TrimSpace(parts[0]), "<>")
 		link, err := url.Parse(raw)
-		if err == nil && link.User == nil && (link.Host == "" || (link.Scheme == "https" && strings.EqualFold(link.Host, apiHost))) && link.Path == path {
+		if err == nil && link.User == nil && (link.Host == "" || (link.Scheme == "https" && strings.EqualFold(link.Host, apiHost))) && (link.Path == path || slices.Contains(aliases, link.Path)) {
 			values := link.Query()
 			valid := true
 			for k, v := range query {

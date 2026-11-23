@@ -575,6 +575,7 @@ type WorkbenchConnectorSelection struct {
 
 // WorkbenchFieldConflict defines model for WorkbenchFieldConflict.
 type WorkbenchFieldConflict struct {
+	Action   *string                `json:"action,omitempty"`
 	Current  *map[string]FieldValue `json:"current,omitempty"`
 	Proposed *map[string]FieldValue `json:"proposed,omitempty"`
 }
@@ -895,22 +896,23 @@ type WorkbenchSyncRun struct {
 
 // WorkbenchSyncUsage defines model for WorkbenchSyncUsage.
 type WorkbenchSyncUsage struct {
-	Changed      int64  `json:"changed"`
-	ConnectionId string `json:"connection_id"`
-	ConnectorId  string `json:"connector_id"`
-	DurationMs   int64  `json:"duration_ms"`
-	Failed       int64  `json:"failed"`
-	Fetched      int64  `json:"fetched"`
-	Mode         string `json:"mode"`
-	NoChanges    int64  `json:"no_changes"`
-	Pages        int64  `json:"pages"`
-	PartialRuns  int64  `json:"partial_runs"`
-	RateLimits   int64  `json:"rate_limits"`
-	Requests     int64  `json:"requests"`
-	Running      int64  `json:"running"`
-	Runs         int64  `json:"runs"`
-	ScopeId      string `json:"scope_id"`
-	Success      int64  `json:"success"`
+	Changed         int64  `json:"changed"`
+	ConnectionId    string `json:"connection_id"`
+	ConnectorId     string `json:"connector_id"`
+	DurationMs      int64  `json:"duration_ms"`
+	Failed          int64  `json:"failed"`
+	Fetched         int64  `json:"fetched"`
+	LatestSyncRunId string `json:"latest_sync_run_id"`
+	Mode            string `json:"mode"`
+	NoChanges       int64  `json:"no_changes"`
+	Pages           int64  `json:"pages"`
+	PartialRuns     int64  `json:"partial_runs"`
+	RateLimits      int64  `json:"rate_limits"`
+	Requests        int64  `json:"requests"`
+	Running         int64  `json:"running"`
+	Runs            int64  `json:"runs"`
+	ScopeId         string `json:"scope_id"`
+	Success         int64  `json:"success"`
 }
 
 // WorkbenchTask defines model for WorkbenchTask.

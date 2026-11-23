@@ -168,20 +168,21 @@ type WorkbenchSyncQuery struct {
 }
 
 type WorkbenchSyncUsage struct {
-	ConnectorID  string `json:"connector_id"`
-	ConnectionID string `json:"connection_id"`
-	ScopeID      string `json:"scope_id"`
-	Mode         string `json:"mode"`
-	Runs         int    `json:"runs"`
-	Success      int    `json:"success"`
-	Failed       int    `json:"failed"`
-	Running      int    `json:"running"`
-	NoChanges    int    `json:"no_changes"`
-	Requests     int    `json:"requests"`
-	Pages        int    `json:"pages"`
-	Fetched      int    `json:"fetched"`
-	Changed      int    `json:"changed"`
-	DurationMS   int64  `json:"duration_ms"`
-	RateLimits   int    `json:"rate_limits"`
-	PartialRuns  int    `json:"partial_runs"`
+	LatestSyncRunID string `json:"latest_sync_run_id"`
+	ConnectorID     string `json:"connector_id"`
+	ConnectionID    string `json:"connection_id"`
+	ScopeID         string `json:"scope_id"`
+	Mode            string `json:"mode"`
+	Runs            int    `json:"runs"`
+	Success         int    `json:"success"`
+	Failed          int    `json:"failed"`
+	Running         int    `json:"running"`
+	NoChanges       int    `json:"no_changes"`
+	Requests        int    `json:"requests"`
+	Pages           int    `json:"pages"`
+	Fetched         int    `json:"fetched"`
+	Changed         int    `json:"changed"`
+	DurationMS      int64  `json:"duration_ms"`
+	RateLimits      int    `json:"rate_limits"`
+	PartialRuns     int    `json:"partial_runs"`
 }

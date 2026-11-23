@@ -140,9 +140,9 @@ func TestConnector011DesktopDetailOperationAndUsagePresentation(t *testing.T) {
 		t.Fatal("Escape did not close the task editor")
 	}
 
-	m.connectorUsage = connectorUsageState{loaded: true, items: []common.WorkbenchSyncUsage{{ConnectorID: managedGitHub, ConnectionID: "parent", ScopeID: "ops", Mode: "delta", Runs: 3, Success: 2, Failed: 1, NoChanges: 2, Requests: 5, RateLimits: 1, PartialRuns: 1}}}
+	m.connectorUsage = connectorUsageState{loaded: true, items: []common.WorkbenchSyncUsage{{ConnectorID: managedGitHub, ConnectionID: "parent", ScopeID: "ops", Mode: "delta", LatestSyncRunID: "run-ops", Runs: 3, Success: 2, Failed: 1, NoChanges: 2, Requests: 5, RateLimits: 1, PartialRuns: 1}}}
 	view = ui.NewTester(m.managedSyncUsage, 680, 580)
-	if !view.HasText("部分计量") || !view.HasText("3 次同步 · 2 成功 · 1 失败 · 2 无变化") {
+	if !view.HasText("最近一轮") || !view.HasText("部分计量") || !view.HasText("3 次同步 · 2 成功 · 1 失败 · 2 无变化") {
 		t.Fatalf("usage: %v", view.Texts())
 	}
 	run := *m.connectorParents[0].Scopes[1].LastRun
@@ -151,7 +151,7 @@ func TestConnector011DesktopDetailOperationAndUsagePresentation(t *testing.T) {
 	run.RetryAt = &retry
 	m.connectorRuns = &connectorRunPanel{detail: &run}
 	view = ui.NewTester(m.connectorRunsDialog, 680, 580)
-	if !view.HasText("部分计量") || !view.HasText("立即同步") {
+	if !view.HasText("部分计量") || !view.HasText("立即同步") || !view.HasText("全量同步 · "+run.StartedAt.Local().Format(time.DateTime)+" · "+run.ID) {
 		t.Fatalf("run detail: %v", view.Texts())
 	}
 	view.Key(0, ui.KeyEscape)
@@ -270,5 +270,28 @@ func TestConnector011UnknownOperationPreservesRequestAndConfirmedFields(t *testi
 	m.submitConnectorEditor(editor)
 	if editor.problem == "" || editor.saving || m.liveTaskRequests[task.ID].RequestID != "original" {
 		t.Fatal("editor replaced an uncertain operation with a new request")
+	}
+}
+
+func TestConnector011DesktopReviewActionConflictAndRepositoryLabels(t *testing.T) {
+	old := englishUI.Swap(false)
+	t.Cleanup(func() { englishUI.Store(old) })
+	m := connectorUIFixture()
+	task := m.objects[0]
+	m.connectorConflicts = map[string]common.WorkbenchTaskReceipt{task.ID: {Conflict: &common.WorkbenchFieldConflict{
+		Action: "close_not_planned", Current: map[string]protocol.FieldValue{"state": protocol.Value(protocol.FieldText, "closed")},
+	}}}
+	view := ui.NewTester(func(c *ui.Context) { m.connectorConflictView(c, task) }, 680, 580)
+	if !view.HasText("状态操作 · 关闭为不计划处理") || !view.HasText("状态 · 来源值 closed") {
+		t.Fatalf("action conflict: %v", view.Texts())
+	}
+
+	editor := &connectorTaskEditor{task: task, repositoryLabels: []string{"existing"}}
+	options := []protocol.Option{{ID: "existing", Label: "existing"}, {ID: "available, too", Label: "available, too"}}
+	view = ui.NewTester(func(c *ui.Context) { editor.editRepositoryLabels(c, options) }, 680, 580)
+	click(t, view, "添加仓库标签")
+	click(t, view, "available, too")
+	if len(editor.repositoryLabels) != 2 || editor.repositoryLabels[1] != "available, too" || !view.HasText("available, too") {
+		t.Fatalf("chosen labels: %v, UI: %v", editor.repositoryLabels, view.Texts())
 	}
 }

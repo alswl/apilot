@@ -3,6 +3,7 @@ package workbench
 import (
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -14,13 +15,14 @@ import (
 )
 
 type connectorTaskEditor struct {
-	task                           sourceObject
-	actionMode                     bool
-	loading, saving                bool
-	fields                         []protocol.FieldDefinition
-	actions                        []protocol.StateAction
-	values, original, actionValues map[string]string
-	action, problem                string
+	task                                       sourceObject
+	actionMode                                 bool
+	loading, saving                            bool
+	fields                                     []protocol.FieldDefinition
+	actions                                    []protocol.StateAction
+	values, original, actionValues             map[string]string
+	action, problem                            string
+	repositoryLabels, originalRepositoryLabels []string
 }
 
 func (m *mockup) supportsConnectorEditor(task sourceObject) bool {
@@ -50,6 +52,15 @@ func (m *mockup) openConnectorTaskEditor(task sourceObject, action bool) {
 			return
 		}
 		p.fields, p.actions = meta.Fields, meta.Actions
+		if task.Kind == managedGitHub {
+			p.repositoryLabels = slices.Clone(task.Labels)
+			var native protocol.FieldValue
+			var names []string
+			if json.Unmarshal([]byte(task.NativeFields["native.labels"]), &native) == nil && json.Unmarshal(native.Value, &names) == nil {
+				p.repositoryLabels = names
+			}
+			p.originalRepositoryLabels = slices.Clone(p.repositoryLabels)
+		}
 		if len(p.actions) > 0 {
 			p.action = p.actions[0].ID
 		}
@@ -189,6 +200,12 @@ func (m *mockup) submitConnectorEditor(p *connectorTaskEditor) {
 	} else {
 		request.Fields = map[string]protocol.FieldValue{}
 		for _, field := range p.fields {
+			if p.usesRepositoryLabels(field) {
+				if !slices.Equal(p.repositoryLabels, p.originalRepositoryLabels) {
+					request.Fields[field.ID] = protocol.Value(field.Type, append([]string{}, p.repositoryLabels...))
+				}
+				continue
+			}
 			if p.values[field.ID] == p.original[field.ID] {
 				continue
 			}
@@ -268,6 +285,10 @@ func (m *mockup) connectorTaskEditorDialog(c *ui.Context) {
 						components.Muted(c.Key("empty"), tr("暂无可编辑字段"))
 					}
 					for _, field := range p.fields {
+						if p.usesRepositoryLabels(field) {
+							p.editRepositoryLabels(c.Key(field.ID), field.Options)
+							continue
+						}
 						value := p.values[field.ID]
 						if field.ID == "description" {
 							ui.Field(c.Key(field.ID), fieldCaption(field.ID), func() { ui.TextArea(c.Key("body"), &value).Label(fieldCaption(field.ID)).FillWidth().Height(90) })
@@ -299,6 +320,42 @@ func (m *mockup) connectorTaskEditorDialog(c *ui.Context) {
 	})
 	if !open && !p.saving {
 		m.connectorEditor011 = nil
+	}
+}
+
+func (p *connectorTaskEditor) usesRepositoryLabels(field protocol.FieldDefinition) bool {
+	return p.task.Kind == managedGitHub && field.Type == protocol.FieldLabels
+}
+
+func (p *connectorTaskEditor) editRepositoryLabels(c *ui.Context, options []protocol.Option) {
+	components.Muted(c.Key("label"), fieldCaption("labels"))
+	remove := -1
+	for i, label := range p.repositoryLabels {
+		ui.Row(c.Key(label)).FillWidth().Gap(8).Children(func() {
+			components.Body(c.Key("name"), label)
+			if ui.Button(c.Key("remove"), tr("移除标签")).Clicked() {
+				remove = i
+			}
+		})
+	}
+	if remove >= 0 {
+		p.repositoryLabels = slices.Delete(p.repositoryLabels, remove, remove+1)
+	}
+	placeholder := tr("添加仓库标签")
+	selected := placeholder
+	labels := []string{placeholder}
+	for _, option := range options {
+		if !slices.Contains(p.repositoryLabels, option.ID) {
+			labels = append(labels, option.Label)
+		}
+	}
+	if len(labels) > 1 && ui.Select(c.Key("options"), &selected, labels).FillWidth().Changed() {
+		for _, option := range options {
+			if selected == option.Label {
+				p.repositoryLabels = append(p.repositoryLabels, option.ID)
+				break
+			}
+		}
 	}
 }
 
@@ -335,6 +392,14 @@ func (m *mockup) connectorConflictView(c *ui.Context, task sourceObject) {
 		return
 	}
 	components.Muted(c.Key("status"), tr("来源已变化，请重新核对任务"))
+	if action := receipt.Conflict.Action; action != "" {
+		components.Body(c.Key("proposed-action"), tr("状态操作")+" · "+connectorActionLabel(protocol.StateAction{ID: action, Label: action}))
+		for _, key := range []string{"state", "state_reason"} {
+			if value, ok := receipt.Conflict.Current[key]; ok {
+				components.Body(c.Key("current-"+key), fieldCaption(key)+" · "+tr("来源值")+" "+detailValue(value))
+			}
+		}
+	}
 	for _, key := range sortedConnectorKeys(receipt.Conflict.Proposed) {
 		components.Body(c.Key(key), fieldCaption(key)+" · "+tr("来源值")+" "+detailValue(receipt.Conflict.Current[key])+" · "+tr("拟写值")+" "+detailValue(receipt.Conflict.Proposed[key]))
 	}

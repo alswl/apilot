@@ -119,7 +119,7 @@ func (m *mockup) connectorRunsDialog(c *ui.Context) {
 						if ui.Button(c.Key(run.ID), label).Clicked() {
 							m.inspectConnectorRun(p, run.ID)
 						}
-						components.Muted(c.Key(run.ID+"-time"), run.StartedAt.Local().Format(time.DateTime))
+						components.Muted(c.Key(run.ID+"-time"), fmt.Sprintf(tr("%d 次请求"), run.Requests)+" · "+run.StartedAt.Local().Format(time.DateTime)+" · "+run.ID)
 					}
 				})
 			})
@@ -159,7 +159,7 @@ func (m *mockup) connectorRunsDialog(c *ui.Context) {
 func (m *mockup) connectorRunDetail(c *ui.Context, p *connectorRunPanel) {
 	r := p.detail
 	components.Heading(c.Key("name"), m.connectionName(r.ScopeID)+" · "+connectorStatus(r.Status))
-	components.Muted(c.Key("time"), connectorStatus(r.Mode)+" · "+r.StartedAt.Local().Format(time.DateTime))
+	components.Muted(c.Key("time"), connectorStatus(r.Mode)+" · "+r.StartedAt.Local().Format(time.DateTime)+" · "+r.ID)
 	components.Muted(c.Key("trigger"), tr("触发方式")+" · "+r.Trigger)
 	if r.FinishedAt != nil {
 		components.Muted(c.Key("finished"), r.FinishedAt.Local().Format(time.DateTime))
@@ -337,6 +337,9 @@ func (m *mockup) managedSyncUsage(c *ui.Context) {
 					q := state.query
 					q.ScopeID, q.Mode, q.Offset = item.ScopeID, item.Mode, 0
 					m.openConnectorRuns(q, "")
+				}
+				if item.LatestSyncRunID != "" && ui.Button(c.Key("latest"), tr("最近一轮")).Clicked() {
+					m.openConnectorRuns(state.query, item.LatestSyncRunID)
 				}
 			})
 			components.Body(c.Key("counts"), fmt.Sprintf(tr("%d 次同步 · %d 成功 · %d 失败 · %d 无变化"), item.Runs, item.Success, item.Failed, item.NoChanges))

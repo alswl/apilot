@@ -206,11 +206,18 @@ func (s *Store) WorkbenchConnectorLastRun(id string) (*common.WorkbenchSyncRun, 
 	return readConnectorRun(tx, id)
 }
 
-func (s *Store) WorkbenchConnectorBackoff(parentID, scopeID string) (*time.Time, error) {
+func (s *Store) WorkbenchConnectorBackoff(parentID, scopeID string, buckets []string) (*time.Time, error) {
 	var raw sql.NullString
-	err := s.db.QueryRow(`SELECT MAX(r.retry_at) FROM workbench_sync_runs r JOIN workbench_connections c
-		ON r.scope_id=c.id WHERE c.connector_connection_id=? AND r.error_kind='rate_limited'
- AND (r.rate_limit_bucket IS NULL OR r.rate_limit_bucket = '' OR r.rate_limit_bucket NOT LIKE 'scope:%' OR r.scope_id=?)`, parentID, scopeID).Scan(&raw)
+	err := s.db.QueryRow(`SELECT r.retry_at FROM workbench_sync_runs r JOIN workbench_connections c
+		ON r.scope_id=c.id WHERE c.connector_connection_id=? AND r.error_kind='rate_limited' AND r.retry_at IS NOT NULL
+		AND (COALESCE(r.rate_limit_bucket,'') NOT GLOB 'scope:*' OR r.scope_id=?)
+		AND (? OR COALESCE(r.rate_limit_bucket,'') IN ('','scope:')
+			OR r.rate_limit_bucket IN (SELECT value FROM json_each(?))
+			OR r.rate_limit_bucket IN (SELECT 'scope:' || value FROM json_each(?)))
+		ORDER BY julianday(r.retry_at) DESC LIMIT 1`, parentID, scopeID, buckets == nil, encode(buckets), encode(buckets)).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
 	if err != nil || !raw.Valid {
 		return nil, err
 	}

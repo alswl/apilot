@@ -103,14 +103,14 @@ func (s *Service) startWorkbenchConnectorRunLocked(store workbenchManagedConnect
 		return 0, common.Err("CONFLICT", "Connector scope sync is already running")
 	}
 	now := time.Now().UTC()
-	if until, err := store.WorkbenchConnectorBackoff(scope.ConnectionID, scope.ScopeID); err != nil {
-		return 0, err
-	} else if until != nil && now.Before(*until) {
-		return 0, protocol.Problem(protocol.RateLimited, "account", "Connector backoff is active")
-	}
 	mode := "delta"
 	if full || scope.Checkpoint == "" || scope.AccessState != "available" || scope.LastFullSuccess == nil || now.Sub(*scope.LastFullSuccess) >= connectorFullInterval {
 		mode = "full"
+	}
+	if until, err := store.WorkbenchConnectorBackoff(scope.ConnectionID, scope.ScopeID, s.workbenchConnectorSyncBuckets[mode]); err != nil {
+		return 0, err
+	} else if until != nil && now.Before(*until) {
+		return 0, protocol.Problem(protocol.RateLimited, "account", "Connector backoff is active")
 	}
 	run := common.WorkbenchSyncRun{ID: common.ID(), ScopeID: id, Trigger: trigger, Mode: mode, Status: "running", StartedAt: now, UsageComplete: true}
 	legacyID, err := store.StartWorkbenchConnectorRun(run)
@@ -245,7 +245,7 @@ func readWorkbenchConnectorPages(ctx context.Context, store workbenchManagedConn
 			}
 		}
 		if page.NextPage == "" {
-			if page.Coverage != p.Mode || page.NextCheckpoint == "" {
+			if page.Coverage != p.Mode || (p.Mode == "delta" && page.NextCheckpoint == "") {
 				return "read", integrations.ErrWorkbenchConnectorProtocol
 			}
 			c.Checkpoint = page.NextCheckpoint

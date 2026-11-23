@@ -58,3 +58,57 @@ func TestWorkbenchConnectorSyncRejectsOlderSnapshot(t *testing.T) {
 		t.Fatalf("confirmed write changed: %+v %v", tasks, err)
 	}
 }
+
+func TestWorkbenchConnectorBackoffMatchesBucketsAndScopes(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	parent := common.WorkbenchConnectorConnection{ID: "parent", ConnectorID: "fixture", EndpointRef: "fixture.local", AccountRef: "account"}
+	var scopes []common.WorkbenchConnectorNewScope
+	for _, id := range []string{"pay", "ops"} {
+		scopes = append(scopes, common.WorkbenchConnectorNewScope{ID: id, Label: id, Context: protocol.ScopeContext{
+			ScopeRef: id, EndpointConfig: []byte("{}"), ScopeConfig: []byte("{}"), EndpointSchemaVersion: 1, ScopeSchemaVersion: 1,
+		}})
+	}
+	if _, err := store.SaveWorkbenchConnectorConnection(parent, scopes); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for _, sample := range []struct {
+		bucket, scope string
+		delay         time.Duration
+	}{{"read", "ops", time.Minute}, {"other", "pay", time.Hour}, {"scope:read", "ops", 2 * time.Hour}} {
+		run := common.WorkbenchSyncRun{ID: sample.bucket, ScopeID: sample.scope, Trigger: "manual", Mode: "full", Status: "running", StartedAt: now}
+		if _, err := store.StartWorkbenchConnectorRun(run); err != nil {
+			t.Fatal(err)
+		}
+		retry := now.Add(sample.delay)
+		run.Status, run.ErrorKind, run.RateLimitBucket, run.RetryAt = "failed", "rate_limited", sample.bucket, &retry
+		if err := saveConnectorRunForTest(store, run); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, sample := range []struct {
+		scope, bucket string
+		delay         time.Duration
+	}{{"pay", "read", time.Minute}, {"ops", "read", 2 * time.Hour}, {"pay", "other", time.Hour}, {"pay", "READ", 0}} {
+		at, err := store.WorkbenchConnectorBackoff(parent.ID, sample.scope, []string{sample.bucket})
+		if err != nil || (sample.delay == 0 && at != nil) || (sample.delay != 0 && (at == nil || !at.Equal(now.Add(sample.delay)))) {
+			t.Fatalf("backoff %s/%s: %v, %v", sample.scope, sample.bucket, at, err)
+		}
+	}
+}
+
+func saveConnectorRunForTest(store *Store, run common.WorkbenchSyncRun) error {
+	tx, err := store.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := finishConnectorRun(tx, run); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

@@ -74,9 +74,10 @@ type Service struct {
 	stopping              bool
 	lastError             string
 
-	workbenchConnectorAuth    map[string]*connectorAuthorization
-	workbenchConnectorRelease *common.WorkbenchConnectorRelease
-	workbenchConnectorProcess *integrations.WorkbenchConnectorProcess
+	workbenchConnectorAuth        map[string]*connectorAuthorization
+	workbenchConnectorRelease     *common.WorkbenchConnectorRelease
+	workbenchConnectorProcess     *integrations.WorkbenchConnectorProcess
+	workbenchConnectorSyncBuckets map[string][]string
 }
 
 func New(dir string, openStore func(string) (Store, error)) (*Service, error) {

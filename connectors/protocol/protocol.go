@@ -25,12 +25,13 @@ type Manifest struct {
 }
 
 type Description struct {
-	ConnectorID      string       `json:"connector_id"`
-	ReleaseVersion   string       `json:"release_version"`
-	ProtocolVersions []int        `json:"protocol_versions"`
-	Capabilities     []string     `json:"capabilities"`
-	EndpointConfig   ConfigSchema `json:"endpoint_config"`
-	ScopeConfig      ConfigSchema `json:"scope_config"`
+	ConnectorID          string              `json:"connector_id"`
+	ReleaseVersion       string              `json:"release_version"`
+	ProtocolVersions     []int               `json:"protocol_versions"`
+	Capabilities         []string            `json:"capabilities"`
+	SyncRateLimitBuckets map[string][]string `json:"sync_rate_limit_buckets,omitempty"`
+	EndpointConfig       ConfigSchema        `json:"endpoint_config"`
+	ScopeConfig          ConfigSchema        `json:"scope_config"`
 }
 
 type ConfigSchema struct {
