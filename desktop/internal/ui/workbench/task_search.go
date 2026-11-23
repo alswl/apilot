@@ -101,7 +101,7 @@ func parseTaskQuery(text string, fields map[string]bool) (taskQuery, string) {
 	return groups, ""
 }
 
-var commonSearchFields = []string{"source", "label", "status", "priority", "due", "id", "title", "has"}
+var commonSearchFields = []string{"source", "label", "status", "priority", "due", "id", "title", "assignee", "has"}
 
 func (m *mockup) parseSearch() (taskQuery, string) {
 	fields := make(map[string]bool)
@@ -114,6 +114,20 @@ func (m *mockup) parseSearch() (taskQuery, string) {
 		}
 	}
 	return parseTaskQuery(m.search, fields)
+}
+
+func taskDueValue(task sourceObject) string {
+	if task.DueDate != "" {
+		return task.DueDate
+	}
+	return task.NativeFields["due"]
+}
+
+func taskPriorityValue(task sourceObject) string {
+	if task.Priority != nil {
+		return strconv.Itoa(*task.Priority)
+	}
+	return task.NativeFields["priority"]
 }
 
 func (m *mockup) searchValues(object sourceObject, field string) []string {
@@ -150,7 +164,11 @@ func (m *mockup) searchValues(object sourceObject, field string) []string {
 	case "status":
 		return []string{object.NativeFields[field], m.taskStateLabel(object)}
 	case "priority", "due":
-		if value := object.NativeFields[field]; value != "" {
+		value := taskDueValue(object)
+		if field == "priority" {
+			value = taskPriorityValue(object)
+		}
+		if value != "" {
 			return []string{value}
 		}
 	case "":

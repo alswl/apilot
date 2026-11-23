@@ -36,6 +36,7 @@ func NewHostedWorkspace(service *services.Remote, keybindingsPath, language stri
 	m.connectionsData = nil
 	m.live = service
 	m.hosted = true
+	m.fixtureConnector = localConnectorFixture()
 	if err := m.loadTaskViewStore(filepath.Join(config.DataDir(), "task-views.json")); err != nil {
 		log.Printf("Could not load saved task views: %v", err)
 	}

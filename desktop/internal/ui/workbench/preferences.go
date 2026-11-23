@@ -174,12 +174,21 @@ func (m *mockup) keyboardSettings(c *ui.Context) {
 
 func (m *mockup) livePluginSettings(c *ui.Context) {
 	for _, plugin := range m.livePlugins {
+		if !m.visibleConnectorKind(plugin.ID) {
+			continue
+		}
 		title := plugin.ID
 		for _, connector := range services.WorkbenchConnectors() {
 			if connector.Kind == plugin.Connector {
 				title = connector.Name
 				break
 			}
+		}
+		if m.connectorDesktop() {
+			title = connectorLabel(plugin.ID)
+		}
+		if plugin.Release != nil {
+			title += " · " + plugin.Release.ReleaseVersion
 		}
 		enabled := plugin.Enabled
 		if ui.Checkbox(c.Key(plugin.ID), &enabled, title).Changed() {

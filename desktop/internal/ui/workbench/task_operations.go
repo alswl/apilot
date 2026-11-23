@@ -35,6 +35,9 @@ func (m *mockup) taskConnection(o sourceObject) *connection {
 }
 
 func (m *mockup) editableSource(o sourceObject) bool {
+	if m.live != nil {
+		return m.supportsConnectorEditor(o)
+	}
 	conn := m.taskConnection(o)
 	return m.live == nil && conn != nil && conn.Writable && conn.Status == "同步正常" &&
 		(conn.SourceKind == obsidianTasks || conn.SourceKind == githubIssues)
@@ -77,6 +80,10 @@ func (m *mockup) sourceWritePending(id string) bool {
 }
 
 func (m *mockup) openSourceEdit(o sourceObject) {
+	if m.live != nil {
+		m.openConnectorTaskEditor(o, false)
+		return
+	}
 	if !m.editableSource(o) || m.sourceWritePending(o.ID) {
 		return
 	}
@@ -86,7 +93,18 @@ func (m *mockup) openSourceEdit(o sourceObject) {
 
 func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
 	if m.live != nil {
-		if m.canToggleSourceTask(*o) || m.sourceWritePending(o.ID) {
+		if m.supportsConnectorEditor(*o) {
+			ui.Row(c.Key("edit-toolbar")).FillWidth().Wrap().Gap(8).Children(func() {
+				blocked := m.sourceWritePending(o.ID) || m.serverTaskOperations[o.ID].SyncState == common.WorkbenchOperationNeedsReview
+				if components.IconButton(c.Key("edit"), "pencil", tr("编辑任务"), blocked).Clicked() {
+					m.openConnectorTaskEditor(*o, false)
+				}
+				if isManagedConnector(o.Kind) && ui.Button(c.Key("transition"), tr("状态操作")).Disabled(blocked).Clicked() {
+					m.openConnectorTaskEditor(*o, true)
+				}
+			})
+		}
+		if !isManagedConnector(o.Kind) && (m.canToggleSourceTask(*o) || m.sourceWritePending(o.ID)) {
 			m.taskStatusCheckbox(c.Key("toggle"), *o)
 		}
 		if m.sourceWritePending(o.ID) {
@@ -95,6 +113,7 @@ func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
 		if problem := m.liveTaskProblems[o.ID]; problem != "" {
 			components.Muted(c.Key("write-problem"), tr(problem))
 		}
+		m.connectorConflictView(c.Key("conflict"), *o)
 		if receipt := m.serverTaskOperations[o.ID]; receipt.SyncState == common.WorkbenchOperationNeedsReview && !m.sourceWritePending(o.ID) {
 			components.Muted(c.Key("review-status"), tr("来源尚未确认"))
 			if ui.Button(c.Key("reconcile"), tr("核对操作")).Clicked() {
@@ -131,7 +150,7 @@ func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
 }
 
 func (m *mockup) sourceToggleLabel(o sourceObject) string {
-	if conn := m.taskConnection(o); conn != nil && (conn.SourceKind == githubIssues || conn.SourceKind == common.WorkbenchGitHubRepository) {
+	if conn := m.taskConnection(o); conn != nil && (conn.SourceKind == githubIssues || conn.SourceKind == common.WorkbenchGitHubRepository || conn.SourceKind == managedGitHub) {
 		if o.NativeFields["state"] == "closed" {
 			return "重新打开 Issue"
 		}
@@ -144,6 +163,9 @@ func (m *mockup) sourceToggleLabel(o sourceObject) string {
 }
 
 func (m *mockup) canToggleSourceTask(o sourceObject) bool {
+	if m.live != nil && isManagedConnector(o.Kind) {
+		return m.supportsConnectorEditor(o) && o.TargetVersion != ""
+	}
 	if m.live != nil {
 		if o.Kind == common.WorkbenchObsidianTasks && o.State == "unknown" {
 			return false
@@ -155,6 +177,10 @@ func (m *mockup) canToggleSourceTask(o sourceObject) bool {
 }
 
 func (m *mockup) toggleSourceTask(o sourceObject) {
+	if m.live != nil && isManagedConnector(o.Kind) {
+		m.openConnectorTaskEditor(o, true)
+		return
+	}
 	if m.live != nil {
 		if !m.canToggleSourceTask(o) || m.sourceWritePending(o.ID) || m.serverTaskOperations[o.ID].SyncState == common.WorkbenchOperationNeedsReview {
 			return
@@ -231,16 +257,30 @@ func (m *mockup) finishLiveTaskToggle(id string, receipt common.WorkbenchTaskRec
 			delete(m.liveTaskRequests, id)
 		}
 	case receipt.SyncState == "confirmed":
+		delete(m.connectorConflicts, id)
 		delete(m.liveTaskRequests, id)
 		delete(m.liveTaskProblems, id)
 	case receipt.SyncState == "conflict":
+		if receipt.Conflict != nil {
+			if m.connectorConflicts == nil {
+				m.connectorConflicts = map[string]common.WorkbenchTaskReceipt{}
+			}
+			m.connectorConflicts[id] = receipt
+		}
 		delete(m.liveTaskRequests, id)
 		m.liveTaskProblems[id] = receipt.Reason
 		if receipt.Reason == "" {
 			m.liveTaskProblems[id] = "来源已变化，请重新核对任务"
 		}
-	default:
+	case receipt.SyncState == common.WorkbenchOperationNeedsReview:
+		if m.serverTaskOperations == nil {
+			m.serverTaskOperations = map[string]common.WorkbenchTaskReceipt{}
+		}
+		m.serverTaskOperations[id] = receipt
 		m.liveTaskProblems[id] = "来源尚未确认，重试可核对本次提交"
+	default:
+		delete(m.liveTaskRequests, id)
+		m.liveTaskProblems[id] = receipt.Reason
 	}
 }
 
@@ -483,7 +523,7 @@ func (m *mockup) submitSourceEdit(edit taskSourceEdit, after func(time.Duration,
 }
 
 func taskClosed(o sourceObject) bool {
-	if o.Kind == common.WorkbenchGitHubRepository && o.NativeFields["state"] == "closed" {
+	if (o.Kind == common.WorkbenchGitHubRepository || o.Kind == managedGitHub) && o.NativeFields["state"] == "closed" {
 		return true
 	}
 	if o.State != "" {
@@ -493,7 +533,7 @@ func taskClosed(o sourceObject) bool {
 }
 
 func displayTaskID(o sourceObject) string {
-	if o.NativeFields["repo"] != "" || o.Kind == common.WorkbenchGitHubRepository {
+	if o.NativeFields["repo"] != "" || o.Kind == common.WorkbenchGitHubRepository || o.Kind == managedGitHub {
 		return "#" + o.NativeID
 	}
 	return o.NativeID

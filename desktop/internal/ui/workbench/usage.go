@@ -107,6 +107,10 @@ func summarizeSyncUsage(snapshots []common.WorkbenchSnapshot) []syncUsageSummary
 }
 
 func (m *mockup) liveSyncUsage(c *ui.Context) {
+	if m.connectorDesktop() {
+		m.managedSyncUsage(c)
+		return
+	}
 	if m.liveError {
 		components.Muted(c.Key("error"), tr("无法读取同步数据"))
 		return

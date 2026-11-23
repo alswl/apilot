@@ -69,6 +69,16 @@ func (m *mockup) receiveLiveEvent(event common.WorkbenchEvent) {
 		m.liveGeneration++
 	}
 	m.liveAnnotationsDirty = true
+	if panel := m.connectorRuns; panel != nil && !panel.loading {
+		if panel.detail != nil && panel.detail.Status == "running" {
+			m.inspectConnectorRun(panel, panel.detail.ID)
+		} else {
+			m.loadConnectorRuns(panel)
+		}
+	}
+	if m.page == usagePage && m.usageTab == 2 && m.connectorDesktop() {
+		m.loadConnectorUsage()
+	}
 	m.refreshLive()
 }
 
@@ -113,6 +123,8 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 	m.stopPermissionRetry()
 	m.liveBusy, m.liveQueued = true, false
 	generation := m.liveGeneration
+	managedDesktop := m.connectorDesktop()
+	fixtureEnabled := m.fixtureConnector
 	syncID := m.syncLogID
 	requests := make(map[string]string)
 	for taskID, request := range m.liveTaskRequests {
@@ -174,9 +186,22 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 					break
 				}
 				connections[i].PendingWrites = snapshot.PendingWrites
+				if isManagedConnector(connections[i].Kind) {
+					connections[i].Attempts = snapshot.Attempts
+				}
 				if connections[i].ID == syncID {
 					detail = snapshot
 				}
+			}
+		}
+		var parents []common.WorkbenchConnectorOverview
+		if err == nil && managedDesktop {
+			var result connectorItems[common.WorkbenchConnectorOverview]
+			result, err = connectorCall[connectorItems[common.WorkbenchConnectorOverview]](remote, "workbench.connector.connection.list", nil)
+			if err == nil {
+				parents = slices.DeleteFunc(result.Items, func(parent common.WorkbenchConnectorOverview) bool {
+					return parent.Connection.ConnectorID != managedGitHub && !(fixtureEnabled && parent.Connection.ConnectorID == managedFixture)
+				})
 			}
 		}
 		var plugins []services.WorkbenchPlugin
@@ -279,9 +304,10 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 			hadError, wasStale := m.liveError, m.liveStale
 			m.liveError = err != nil
 			m.liveStale = m.liveDisconnected || err != nil || revalidate
-			if err == nil && (!m.liveLoaded || !reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(tasks, m.objects)) {
+			if err == nil && (!m.liveLoaded || !reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(parents, m.connectorParents) || !reflect.DeepEqual(tasks, m.objects)) {
 				m.liveConnections = connections
 				m.livePlugins = plugins
+				m.connectorParents = parents
 				m.applyLive(connections, tasks)
 				m.win.Invalidate()
 			} else if hadError != m.liveError || wasStale != m.liveStale || detailChanged || settled || annotationsChanged {
@@ -387,7 +413,7 @@ func changedGitHubVisibility(before, after []common.WorkbenchSnapshot) map[strin
 	states := func(snapshots []common.WorkbenchSnapshot) map[string]visibility {
 		result := make(map[string]visibility)
 		for _, snapshot := range snapshots {
-			if snapshot.Kind == common.WorkbenchGitHubRepository {
+			if snapshot.Kind == common.WorkbenchGitHubRepository || isManagedConnector(snapshot.Kind) {
 				result[snapshot.ID] = visibility{snapshot.Version, snapshot.AccessState, snapshot.AccountLogin}
 			}
 		}
@@ -465,10 +491,14 @@ func workbenchOperationInProgress(state string) bool {
 
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
 	m.liveLoaded = true
+	if m.connectorDesktop() {
+		snapshots = slices.DeleteFunc(slices.Clone(snapshots), func(snapshot common.WorkbenchSnapshot) bool { return !m.visibleConnectorKind(snapshot.Kind) })
+		tasks = slices.DeleteFunc(slices.Clone(tasks), func(task sourceObject) bool { return !m.visibleConnectorKind(task.Kind) })
+	}
 	sourceName, sourceID := m.taskViewSource()
 	visibleGitHub := make(map[string]bool)
 	for _, snapshot := range snapshots {
-		if snapshot.Kind != common.WorkbenchGitHubRepository {
+		if snapshot.Kind != common.WorkbenchGitHubRepository && !isManagedConnector(snapshot.Kind) {
 			continue
 		}
 		previous := m.connectionByID(snapshot.ID)
@@ -478,14 +508,14 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 		}
 	}
 	for _, previous := range m.connectionsData {
-		if previous.SourceKind == common.WorkbenchGitHubRepository {
+		if previous.SourceKind == common.WorkbenchGitHubRepository || isManagedConnector(previous.SourceKind) {
 			if _, present := visibleGitHub[previous.ID]; !present {
 				m.clearGitHubTaskDrafts(previous.ID)
 			}
 		}
 	}
 	tasks = slices.DeleteFunc(tasks, func(task sourceObject) bool {
-		return task.Kind == common.WorkbenchGitHubRepository && !visibleGitHub[task.ConnectionID]
+		return (task.Kind == common.WorkbenchGitHubRepository || isManagedConnector(task.Kind)) && !visibleGitHub[task.ConnectionID]
 	})
 	m.serverTaskOperations = make(map[string]common.WorkbenchTaskReceipt)
 	for _, snapshot := range snapshots {
@@ -505,7 +535,7 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			visibleTasks[task.ID] = true
 		}
 		for _, task := range m.objects {
-			if m.pendingTaskEdits[task.ID] && (task.Kind != common.WorkbenchGitHubRepository || visibleTasks[task.ID]) {
+			if m.pendingTaskEdits[task.ID] && ((task.Kind != common.WorkbenchGitHubRepository && !isManagedConnector(task.Kind)) || visibleTasks[task.ID]) {
 				current[task.ID] = task
 			}
 		}
@@ -523,6 +553,10 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 	}
 	var connections []connection
 	kinds := services.WorkbenchConnectors()
+	kinds = append(kinds,
+		services.WorkbenchConnector{Kind: managedGitHub, Name: connectorLabel(managedGitHub), SearchAliases: []string{"github", "issues", "repo"}},
+		services.WorkbenchConnector{Kind: managedFixture, Name: connectorLabel(managedFixture)},
+	)
 	for _, snapshot := range snapshots {
 		for _, kind := range kinds {
 			if kind.Kind != snapshot.Kind {
@@ -547,6 +581,13 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 				draft.Scope, draft.Identity = snapshot.Repository, snapshot.AccountLogin
 				if snapshot.WriteDenied {
 					draft.Capabilities = "只读 · 回写被拒绝"
+				}
+			}
+			if isManagedConnector(snapshot.Kind) {
+				draft.Scope, draft.Repository, draft.Identity = snapshot.ScopeRef, snapshot.Name, snapshot.AccountLogin
+				draft.Writable = snapshot.Capabilities.Create
+				if snapshot.WriteEnabled {
+					draft.Capabilities = "读写"
 				}
 			}
 			if snapshot.Kind == common.WorkbenchLocal {
@@ -592,6 +633,17 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 					draft.Status = "授权不可用"
 				}
 			}
+			if isManagedConnector(snapshot.Kind) {
+				switch snapshot.AccessState {
+				case "available":
+					if len(snapshot.Attempts) == 0 || snapshot.Attempts[0].State == "success" {
+						draft.Status = "同步正常"
+					}
+				case "auth_required", "access_denied":
+					draft.Status = "授权不可用"
+					draft.Writable = false
+				}
+			}
 			if draft.Paused {
 				draft.Status = "已暂停"
 			}
@@ -633,6 +685,17 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 	m.connectionsData = connections
 	m.sourceFilter = m.resolveTaskViewSource(sourceName, sourceID)
 	m.replaceLiveTasks(tasks)
+	if retry := m.retryConnectorEdit; retry != nil && !m.pendingSync[retry.scopeID] {
+		for _, task := range m.objects {
+			if task.ID == retry.taskID && task.TargetVersion != retry.version {
+				m.retryConnectorEdit = nil
+				if m.page == tasksPage && m.taskSelection == task.ID {
+					m.openConnectorTaskEditor(task, false)
+				}
+				break
+			}
+		}
+	}
 }
 
 func (m *mockup) clearGitHubTaskDrafts(connectionID string) {
@@ -643,6 +706,13 @@ func (m *mockup) clearGitHubTaskDrafts(connectionID string) {
 		delete(m.pendingTaskEdits, task.ID)
 		delete(m.liveTaskRequests, task.ID)
 		delete(m.liveTaskProblems, task.ID)
+		delete(m.connectorConflicts, task.ID)
+		if m.connectorEditor011 != nil && m.connectorEditor011.task.ID == task.ID {
+			m.connectorEditor011 = nil
+		}
+		if m.connectorMapping != nil && m.connectorMapping.scope == connectionID {
+			m.connectorMapping = nil
+		}
 		delete(m.checkingOperations, task.ID)
 		delete(m.taskDetails, task.ID)
 		delete(m.assistantThreads, task.ID)

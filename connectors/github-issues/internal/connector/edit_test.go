@@ -119,3 +119,21 @@ func TestGitHubLostCreationResponseCannotRedispatch(t *testing.T) {
 		t.Fatalf("original operation dispatched %d times", writes)
 	}
 }
+
+func TestGitHubAuthoritativeAssigneeLookupAndConfirmation(t *testing.T) {
+	client := newAPI("test", transportFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Path != "/users/octocat" {
+			t.Fatalf("unexpected lookup %s", req.URL.Path)
+		}
+		return testAPIResponse(req, 200, `{"id":42,"login":"octocat"}`, nil), nil
+	}))
+	typed := protocol.Value(protocol.FieldAccounts, []protocol.Option{{ID: "octocat", Label: "octocat"}})
+	values, problem := client.githubMutationBody(context.Background(), map[string]protocol.FieldValue{"assignees": typed})
+	if problem != nil || len(values["assignees"].([]string)) != 1 || values["assignees"].([]string)[0] != "octocat" {
+		t.Fatalf("typed account edit: %+v %v", values, problem)
+	}
+	current := protocol.Value(protocol.FieldAccounts, []protocol.Option{{ID: "42", Label: "Octocat"}})
+	if !githubFieldMatches(current, typed) || githubFieldMatches(current, protocol.Value(protocol.FieldAccounts, []protocol.Option{{ID: "43", Label: "Octocat"}})) {
+		t.Fatal("confirmation lost the account identity")
+	}
+}

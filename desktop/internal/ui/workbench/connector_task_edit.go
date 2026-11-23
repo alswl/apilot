@@ -1,0 +1,399 @@
+package workbench
+
+import (
+	"encoding/json"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/alswl/apilot/connectors/protocol"
+	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/alswl/apilot/desktop/internal/ui/components"
+	"github.com/egoist/mygo/ui"
+)
+
+type connectorTaskEditor struct {
+	task                           sourceObject
+	actionMode                     bool
+	loading, saving                bool
+	fields                         []protocol.FieldDefinition
+	actions                        []protocol.StateAction
+	values, original, actionValues map[string]string
+	action, problem                string
+}
+
+func (m *mockup) supportsConnectorEditor(task sourceObject) bool {
+	if m.live == nil {
+		return false
+	}
+	conn := m.taskConnection(task)
+	if conn == nil || conn.Paused || conn.PluginDisabled {
+		return false
+	}
+	return task.Kind == common.WorkbenchLocal || (isManagedConnector(task.Kind) && conn.WriteEnabled && conn.Status != "授权不可用")
+}
+
+func (m *mockup) openConnectorTaskEditor(task sourceObject, action bool) {
+	if !m.supportsConnectorEditor(task) || m.sourceWritePending(task.ID) || m.serverTaskOperations[task.ID].SyncState == common.WorkbenchOperationNeedsReview {
+		return
+	}
+	p := &connectorTaskEditor{task: task, actionMode: action, loading: true, values: map[string]string{}, original: map[string]string{}, actionValues: map[string]string{}}
+	m.connectorEditor011 = p
+	connectorUIRequest(m, "workbench.task.edit-metadata", map[string]string{"id": task.ID}, func(meta protocol.EditMetadataResult, err error) {
+		if m.connectorEditor011 != p {
+			return
+		}
+		p.loading = false
+		if err != nil {
+			p.problem = common.ProtocolError(err).Message
+			return
+		}
+		p.fields, p.actions = meta.Fields, meta.Actions
+		if len(p.actions) > 0 {
+			p.action = p.actions[0].ID
+		}
+		for _, field := range p.fields {
+			value := taskEditorValue(task, field.ID)
+			p.values[field.ID], p.original[field.ID] = value, value
+		}
+		if !action && isManagedConnector(task.Kind) {
+			for _, field := range p.fields {
+				if field.ID == "description" {
+					p.loading = true
+					connectorUIRequest(m, "workbench.task.detail", map[string]string{"id": task.ID, "segment": "description"}, func(detail common.WorkbenchTaskDetail, err error) {
+						if m.connectorEditor011 != p {
+							return
+						}
+						p.loading = false
+						if err != nil {
+							p.problem = common.ProtocolError(err).Message
+							p.fields = withoutDescription(p.fields)
+							return
+						}
+						if len(detail.Items) > 0 && detail.Items[0].Text != nil {
+							value := detailValue(protocol.FieldValue{Value: detail.Items[0].Text.Content})
+							p.values["description"], p.original["description"] = value, value
+						}
+					})
+					break
+				}
+			}
+		}
+	})
+}
+
+func withoutDescription(fields []protocol.FieldDefinition) []protocol.FieldDefinition {
+	out := make([]protocol.FieldDefinition, 0, len(fields))
+	for _, field := range fields {
+		if field.ID != "description" {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
+func taskEditorValue(task sourceObject, id string) string {
+	switch id {
+	case "title":
+		return task.Title
+	case "description":
+		return task.Summary
+	case "assignees":
+		return strings.Join(task.Assignees, ", ")
+	case "priority":
+		return taskPriorityValue(task)
+	case "due_date":
+		return taskDueValue(task)
+	case "labels":
+		return strings.Join(task.Labels, ", ")
+	}
+	return ""
+}
+
+func connectorEditorValue(field protocol.FieldDefinition, value string, task sourceObject) (protocol.FieldValue, bool) {
+	trimmed := strings.TrimSpace(value)
+	switch field.Type {
+	case protocol.FieldText:
+		if trimmed == "" {
+			return protocol.FieldValue{}, false
+		}
+		return protocol.Value(field.Type, trimmed), true
+	case protocol.FieldRichText:
+		return protocol.Value(field.Type, value), true
+	case protocol.FieldDate:
+		if trimmed == "" {
+			return protocol.Value(field.Type, nil), true
+		}
+		if _, err := time.Parse(time.DateOnly, trimmed); err != nil {
+			return protocol.FieldValue{}, false
+		}
+		return protocol.Value(field.Type, trimmed), true
+	case protocol.FieldNumber:
+		if trimmed == "" {
+			return protocol.Value(field.Type, nil), true
+		}
+		value, err := strconv.Atoi(trimmed)
+		return protocol.Value(field.Type, value), err == nil
+	case protocol.FieldLabels:
+		return protocol.Value(field.Type, splitValues(trimmed)), true
+	case protocol.FieldAccounts:
+		options := append([]protocol.Option{}, field.Options...)
+		var current protocol.FieldValue
+		var accounts []protocol.Option
+		if json.Unmarshal([]byte(task.NativeFields["native.assignees"]), &current) == nil && json.Unmarshal(current.Value, &accounts) == nil {
+			options = append(options, accounts...)
+		}
+		values := []protocol.Option{}
+		for _, name := range splitValues(trimmed) {
+			var chosen protocol.Option
+			for _, option := range options {
+				if strings.EqualFold(option.Label, name) || strings.EqualFold(option.ID, name) {
+					chosen = option
+					break
+				}
+			}
+			if chosen.ID == "" {
+				chosen = protocol.Option{ID: name, Label: name}
+			}
+			values = append(values, chosen)
+		}
+		return protocol.Value(field.Type, values), true
+	default:
+		return protocol.FieldValue{}, false
+	}
+}
+
+func (m *mockup) submitConnectorEditor(p *connectorTaskEditor) {
+	task := p.task
+	request := common.WorkbenchTaskWrite{RequestID: common.ID(), ConnectionID: task.ConnectionID, ConnectionVersion: task.ConnectionVersion, TargetVersion: task.TargetVersion, SourceObjectID: task.ID}
+	if p.actionMode {
+		request.Action = p.action
+		request.ActionFields = map[string]protocol.FieldValue{}
+		for _, action := range p.actions {
+			if action.ID != p.action {
+				continue
+			}
+			for _, field := range action.Required {
+				value, ok := connectorEditorValue(field, p.actionValues[field.ID], task)
+				if !ok || strings.TrimSpace(p.actionValues[field.ID]) == "" {
+					p.problem = tr("填写操作所需字段") + " · " + connectorRequiredFieldLabel(field)
+					return
+				}
+				request.ActionFields[field.ID] = value
+			}
+		}
+		if request.Action == "" {
+			return
+		}
+	} else {
+		request.Fields = map[string]protocol.FieldValue{}
+		for _, field := range p.fields {
+			if p.values[field.ID] == p.original[field.ID] {
+				continue
+			}
+			value, ok := connectorEditorValue(field, p.values[field.ID], task)
+			if !ok {
+				p.problem = tr("字段值无效") + " · " + fieldCaption(field.ID)
+				return
+			}
+			request.Fields[field.ID] = value
+		}
+		if len(request.Fields) == 0 {
+			m.connectorEditor011 = nil
+			return
+		}
+	}
+	if previous := m.liveTaskRequests[task.ID]; previous.RequestID != "" {
+		request.RequestID = previous.RequestID
+		if !reflect.DeepEqual(request, previous) {
+			p.problem = tr("来源尚未确认，重试可核对本次提交")
+			return
+		}
+	}
+	p.saving = true
+	if m.liveTaskRequests == nil {
+		m.liveTaskRequests = map[string]common.WorkbenchTaskWrite{}
+	}
+	if m.liveTaskProblems == nil {
+		m.liveTaskProblems = map[string]string{}
+	}
+	m.liveTaskRequests[task.ID] = request
+	m.pendingTaskEdits[task.ID] = true
+	delete(m.liveTaskProblems, task.ID)
+	m.runLiveTaskWrite(request, func(receipt common.WorkbenchTaskReceipt, err error) {
+		p.saving = false
+		m.finishLiveTaskToggle(task.ID, receipt, err)
+		if m.connectorEditor011 != p {
+			return
+		}
+		if err != nil {
+			p.problem = common.ProtocolError(err).Message
+			return
+		}
+		m.connectorEditor011 = nil
+	})
+}
+
+func (m *mockup) connectorTaskEditorDialog(c *ui.Context) {
+	p := m.connectorEditor011
+	if p == nil {
+		return
+	}
+	open := true
+	_, height := c.Size()
+	ui.Modal(c, &open, func() {
+		ui.Column(c).Width(480).Gap(12).Children(func() {
+			title := "编辑任务"
+			if p.actionMode {
+				title = "状态操作"
+			}
+			components.Title(c.Key("heading"), tr(title))
+			components.Muted(c.Key("subject"), p.task.Title)
+			if p.loading {
+				components.Muted(c.Key("loading"), tr("正在读取来源详情"))
+			}
+			ui.Scroll(c.Key("form")).FillWidth().MaxHeight(max(145, min(height-245, 430))).Children(func() {
+				ui.Column(c).FillWidth().Gap(8).Children(func() {
+					if p.actionMode {
+						if len(p.actions) == 0 && !p.loading {
+							components.Muted(c.Key("empty"), tr("暂无可用状态操作"))
+						}
+						if len(p.actions) > 0 {
+							m.connectorActionFields(c.Key("actions"), p)
+						}
+						return
+					}
+					if len(p.fields) == 0 && !p.loading {
+						components.Muted(c.Key("empty"), tr("暂无可编辑字段"))
+					}
+					for _, field := range p.fields {
+						value := p.values[field.ID]
+						if field.ID == "description" {
+							ui.Field(c.Key(field.ID), fieldCaption(field.ID), func() { ui.TextArea(c.Key("body"), &value).Label(fieldCaption(field.ID)).FillWidth().Height(90) })
+						} else {
+							entry := components.TextField(c.Key(field.ID), fieldCaption(field.ID), &value)
+							if field.ID == "due_date" {
+								entry.Placeholder("YYYY-MM-DD")
+							}
+							if field.ID == "assignees" || field.ID == "labels" {
+								entry.Placeholder(tr("用逗号分隔"))
+							}
+						}
+						p.values[field.ID] = value
+					}
+				})
+			})
+			if p.problem != "" {
+				components.Muted(c.Key("problem"), p.problem)
+			}
+			ui.Row(c.Key("footer")).FillWidth().Justify(ui.End).Gap(8).Children(func() {
+				if ui.Button(c.Key("cancel"), tr("取消")).Disabled(p.saving).Clicked() {
+					open = false
+				}
+				if ui.PrimaryButton(c.Key("save"), tr("提交")).Disabled(p.loading || p.saving || p.actionMode && len(p.actions) == 0 || !p.actionMode && len(p.fields) == 0).Clicked() {
+					m.submitConnectorEditor(p)
+				}
+			})
+		})
+	})
+	if !open && !p.saving {
+		m.connectorEditor011 = nil
+	}
+}
+
+func (m *mockup) connectorActionFields(c *ui.Context, p *connectorTaskEditor) {
+	options := map[string]string{}
+	selected := ""
+	for _, action := range p.actions {
+		label := connectorActionLabel(action)
+		options[label] = action.ID
+		if action.ID == p.action {
+			selected = label
+		}
+	}
+	ui.Select(c.Key("select"), &selected, sortedConnectorKeys(options)).FillWidth()
+	if options[selected] != p.action {
+		p.action = options[selected]
+		p.actionValues = map[string]string{}
+	}
+	for _, action := range p.actions {
+		if action.ID != p.action {
+			continue
+		}
+		for _, field := range action.Required {
+			value := p.actionValues[field.ID]
+			components.TextField(c.Key(field.ID), connectorRequiredFieldLabel(field), &value)
+			p.actionValues[field.ID] = value
+		}
+	}
+}
+
+func (m *mockup) connectorConflictView(c *ui.Context, task sourceObject) {
+	receipt := m.connectorConflicts[task.ID]
+	if receipt.Conflict == nil {
+		return
+	}
+	components.Muted(c.Key("status"), tr("来源已变化，请重新核对任务"))
+	for _, key := range sortedConnectorKeys(receipt.Conflict.Proposed) {
+		components.Body(c.Key(key), fieldCaption(key)+" · "+tr("来源值")+" "+detailValue(receipt.Conflict.Current[key])+" · "+tr("拟写值")+" "+detailValue(receipt.Conflict.Proposed[key]))
+	}
+	ui.Row(c.Key("actions")).FillWidth().Wrap().Gap(8).Children(func() {
+		working := m.pendingSync[task.ConnectionID]
+		if ui.Button(c.Key("keep"), tr("接受来源值")).Disabled(working).Clicked() {
+			m.resolveConnectorConflict(task, false)
+		}
+		if ui.Button(c.Key("edit"), tr("重新编辑")).Disabled(working).Clicked() {
+			m.resolveConnectorConflict(task, true)
+		}
+	})
+}
+
+func connectorActionLabel(action protocol.StateAction) string {
+	switch action.ID {
+	case "close":
+		return tr("关闭 Issue")
+	case "close_not_planned":
+		return tr("关闭为不计划处理")
+	case "reopen":
+		return tr("重新打开任务")
+	case "resolve":
+		return tr("完成任务")
+	case "done":
+		return tr("完成任务")
+	case "open":
+		return tr("重新打开任务")
+	default:
+		return action.Label
+	}
+}
+
+func connectorRequiredFieldLabel(field protocol.FieldDefinition) string {
+	if field.ID == "resolution" {
+		return tr("解决结果")
+	}
+	return field.Label
+}
+
+type connectorConflictRetry struct{ taskID, scopeID, version string }
+
+func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
+	if !isManagedConnector(task.Kind) {
+		m.openConnectorTaskEditor(task, false)
+		return
+	}
+	m.pendingSync[task.ConnectionID] = true
+	connectorUIRequest[map[string]any](m, "workbench.sync.run", map[string]string{"id": task.ConnectionID}, func(_ map[string]any, err error) {
+		if err != nil {
+			delete(m.pendingSync, task.ConnectionID)
+			m.liveTaskProblems[task.ID] = common.ProtocolError(err).Message
+			return
+		}
+		delete(m.connectorConflicts, task.ID)
+		delete(m.liveTaskProblems, task.ID)
+		if edit {
+			m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, version: task.TargetVersion}
+		}
+		m.refreshLive()
+	})
+}

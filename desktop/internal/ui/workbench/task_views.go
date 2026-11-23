@@ -316,7 +316,7 @@ func (m *mockup) savedTaskViewDialog(c *ui.Context) {
 func (m *mockup) taskGroup(object sourceObject) string {
 	switch m.taskGrouping {
 	case "按状态分组":
-		return object.NativeFields["status"]
+		return m.taskStateLabel(object)
 	case "按来源分组":
 		return m.connectionName(object.ConnectionID)
 	default:
@@ -332,7 +332,7 @@ func (m *mockup) taskColumnVisible(id string) bool {
 }
 
 func (m *mockup) defaultTaskColumnVisible(id string) bool {
-	if id == "path" || id == "section" {
+	if id == "path" || id == "section" || (id == "file" && m.connectorDesktop()) {
 		return false
 	}
 	return m.layoutShowsTaskColumn(id)

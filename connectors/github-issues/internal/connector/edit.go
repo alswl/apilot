@@ -108,15 +108,27 @@ func githubFieldMatches(a, b protocol.FieldValue) bool {
 		if json.Unmarshal(a.Value, &av) != nil || json.Unmarshal(b.Value, &bv) != nil {
 			return false
 		}
-		idlist := func(values []protocol.Option) []string {
-			ids := make([]string, 0, len(values))
-			for _, v := range values {
-				ids = append(ids, v.ID)
-			}
-			slices.Sort(ids)
-			return ids
+		if len(av) != len(bv) {
+			return false
 		}
-		return slices.Equal(idlist(av), idlist(bv))
+		matched := make([]bool, len(av))
+		for _, wanted := range bv {
+			index := -1
+			for i, current := range av {
+				if matched[i] {
+					continue
+				}
+				if wanted.ID == current.ID || (!positiveID(wanted.ID) && wanted.ID == wanted.Label && strings.EqualFold(wanted.Label, current.Label)) {
+					index = i
+					break
+				}
+			}
+			if index < 0 {
+				return false
+			}
+			matched[index] = true
+		}
+		return true
 	case protocol.FieldLabels:
 		var av, bv []string
 		if json.Unmarshal(a.Value, &av) != nil || json.Unmarshal(b.Value, &bv) != nil {
@@ -168,13 +180,13 @@ func (c *apiClient) githubMutationBody(ctx context.Context, fields map[string]pr
 					ID    int64  `json:"id"`
 					Login string `json:"login"`
 				}
-				if !positiveID(account.ID) || account.Label == "" || strings.ContainsAny(account.Label, "/\\%?#") {
+				if account.Label == "" || (!positiveID(account.ID) && account.ID != account.Label) || strings.ContainsAny(account.Label, "/\\%?#") {
 					return nil, protocol.Problem(protocol.InvalidConfig, "object", "Invalid GitHub assignee")
 				}
 				if _, problem := c.get(ctx, "/users/"+account.Label, nil, &user); problem != nil {
 					return nil, problem
 				}
-				if strconv.FormatInt(user.ID, 10) != account.ID || user.Login == "" {
+				if user.ID <= 0 || !strings.EqualFold(user.Login, account.Label) || (positiveID(account.ID) && strconv.FormatInt(user.ID, 10) != account.ID) {
 					return nil, protocol.Problem(protocol.InvalidConfig, "object", "GitHub assignee identity changed")
 				}
 				logins = append(logins, user.Login)

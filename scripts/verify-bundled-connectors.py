@@ -27,6 +27,11 @@ for directory, expected in (
     if {entry.name for entry in directory.iterdir()} != expected:
         parser.error(f'Unexpected Connector inventory: {directory}')
 
+excluded = {'apilot-fixture', 'apilot-jira', 'fixture.json', 'jira.json'}
+for entry in (app / 'Contents').rglob('*'):
+    if entry.name.casefold() in excluded:
+        parser.error(f'Development Connector found in the package: {entry}')
+
 for connector, name in allowlist.items():
     manifest = resources / (connector + '.json')
     executable = helpers / name

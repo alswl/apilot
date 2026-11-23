@@ -125,7 +125,9 @@ func (s *Service) WorkbenchSyncDetails(id string) (common.WorkbenchSnapshot, err
 			return snapshot, err
 		}
 		appendConnectorAttempt(&snapshot, run)
-		return snapshot, nil
+		if snapshot.AccessState != "available" {
+			return snapshot, nil
+		}
 	}
 	if store, ok := s.store.(interface {
 		WorkbenchPendingWrites(string) ([]common.WorkbenchTaskReceipt, error)

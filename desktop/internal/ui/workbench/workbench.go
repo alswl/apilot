@@ -29,6 +29,17 @@ const (
 var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 
 type mockup struct {
+	fixtureConnector                                          bool
+	connectorConflicts                                        map[string]common.WorkbenchTaskReceipt
+	retryConnectorEdit                                        *connectorConflictRetry
+	connectorParents                                          []common.WorkbenchConnectorOverview
+	expandedConnectors                                        map[string]bool
+	connectorLogin                                            *connectorLoginPanel
+	connectorMapping                                          *connectorMappingPanel
+	connectorRuns                                             *connectorRunPanel
+	connectorUsage                                            connectorUsageState
+	connectorEditor011                                        *connectorTaskEditor
+	connectorProblem                                          string
 	devTask                                                   *devTaskScenario
 	hosted                                                    bool
 	hostPanels                                                HostPanels
@@ -552,6 +563,10 @@ func (m *mockup) view(c *ui.Context) {
 	m.resourceDialog(c.Key("resource-dialog"))
 	m.sourceEditDialog(c.Key("source-edit"))
 	m.labelsDialog(c.Key("label-editor"))
+	m.connectorLoginDialog(c.Key("connector-login"))
+	m.connectorMappingDialog(c.Key("connector-mapping"))
+	m.connectorRunsDialog(c.Key("connector-runs"))
+	m.connectorTaskEditorDialog(c.Key("connector-task-editor"))
 }
 
 func (m *mockup) sidebar(c *ui.Context) {
@@ -695,7 +710,7 @@ func (m *mockup) taskSourceDescription(o sourceObject) string {
 }
 
 func (m *mockup) taskValues(o sourceObject) []string {
-	due := tr(o.NativeFields["due"])
+	due := tr(taskDueValue(o))
 	if due == "" {
 		due = "—"
 	}
@@ -714,7 +729,7 @@ func (m *mockup) taskValues(o sourceObject) []string {
 	if len(o.Activity) > 0 {
 		updated = taskActivityTime(o.Activity[len(o.Activity)-1])
 	}
-	return []string{m.sourceText(o.Title), status, tr(o.NativeFields["priority"]), m.taskSourceDescription(o), due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", "), strings.Join(m.searchValues(o, "file"), ""), o.NativeFields["path"], o.NativeFields["section"]}
+	return []string{m.sourceText(o.Title), status, tr(taskPriorityValue(o)), m.taskSourceDescription(o), due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", "), strings.Join(m.searchValues(o, "file"), ""), o.NativeFields["path"], o.NativeFields["section"]}
 }
 
 func (m *mockup) matchesStatusFilter(task sourceObject) bool {
@@ -761,15 +776,26 @@ func (m *mockup) taskRows() []int {
 		case "updated":
 			order = taskUpdated(a).Compare(taskUpdated(b))
 		case "due":
-			dateA := parseTaskDate(a.NativeFields["due"])
-			dateB := parseTaskDate(b.NativeFields["due"])
+			dateA := parseTaskDate(taskDueValue(a))
+			dateB := parseTaskDate(taskDueValue(b))
 			if dateA.IsZero() != dateB.IsZero() {
 				return !dateA.IsZero()
 			}
 			order = dateA.Compare(dateB)
 		case "priority":
 			rank := map[string]int{"最低": 1, "低": 2, "普通": 3, "中": 4, "高": 5, "最高": 6, "lowest": 1, "low": 2, "normal": 3, "medium": 4, "high": 5, "highest": 6}
-			order = cmp.Compare(rank[a.NativeFields["priority"]], rank[b.NativeFields["priority"]])
+			priorityA, priorityB := taskPriorityValue(a), taskPriorityValue(b)
+			if (priorityA == "") != (priorityB == "") {
+				return priorityA != ""
+			}
+			valueA, valueB := rank[priorityA], rank[priorityB]
+			if a.Priority != nil {
+				valueA = *a.Priority
+			}
+			if b.Priority != nil {
+				valueB = *b.Priority
+			}
+			order = cmp.Compare(valueA, valueB)
 		default:
 			order = strings.Compare(m.taskValues(a)[column], m.taskValues(b)[column])
 		}
@@ -1027,13 +1053,17 @@ func (m *mockup) taskProperties(c *ui.Context, o *sourceObject) {
 		if !m.pendingTaskEdits[o.ID] {
 			m.writeback(c, o)
 		}
-	} else if due := o.NativeFields["due"]; due != "" {
+	} else if due := taskDueValue(*o); due != "" {
 		components.PropertyGrid(c.Key("due"), []components.Property{{ID: "due", Title: tr("截止日"), Value: tr(due)}}, 2)
 	}
 	m.obsidianSourceLink(c.Key("obsidian-link"), o)
-	if conn := m.taskConnection(*o); conn != nil && conn.SourceKind == common.WorkbenchGitHubRepository {
+	if conn := m.taskConnection(*o); conn != nil && (conn.SourceKind == common.WorkbenchGitHubRepository || conn.SourceKind == managedGitHub) {
 		properties := []components.Property{{ID: "repository", Title: tr("仓库"), Value: conn.Repository}, {ID: "number", Title: tr("编号"), Value: "#" + o.NativeID}}
-		if reason := o.NativeFields["state_reason"]; reason != "" {
+		reason := o.NativeFields["state_reason"]
+		if reason == "" {
+			reason = o.NativeFields["field.state_reason"]
+		}
+		if reason != "" {
 			properties = append(properties, components.Property{ID: "state-reason", Title: tr("关闭原因"), Value: reason})
 		}
 		components.PropertyGrid(c.Key("github-fields"), properties, 2)
@@ -1099,8 +1129,8 @@ func (m *mockup) writeback(c *ui.Context, o *sourceObject) {
 			m.writebackValues(c, o)
 			ui.Row(c).Wrap().Gap(8).Children(func() {
 				if ui.Button(c.Key("keep"), tr("保留来源值")).Clicked() {
-					m.mutation.DesiredFields["due"] = o.NativeFields["due"]
-					m.dueDraft = o.NativeFields["due"]
+					m.mutation.DesiredFields["due"] = taskDueValue(*o)
+					m.dueDraft = taskDueValue(*o)
 					m.mutation.Status, m.state = "confirmed", 2
 				}
 				if ui.PrimaryButton(c.Key("write"), tr("提交本地值")).Clicked() {
@@ -1118,7 +1148,7 @@ func (m *mockup) writeback(c *ui.Context, o *sourceObject) {
 		case "confirmed":
 			if !m.editingDue {
 				ui.Row(c).FillWidth().Wrap().Gap(8).AlignItems(ui.Center).Children(func() {
-					components.DataText(c, tr("截止日  ")+tr(o.NativeFields["due"]))
+					components.DataText(c, tr("截止日  ")+tr(taskDueValue(*o)))
 					if components.IconButton(c.Key("edit"), "calendar.badge.clock", tr("编辑截止日"), false).Clicked() {
 						m.beginDeadlineEdit(o)
 					}
@@ -1130,10 +1160,10 @@ func (m *mockup) writeback(c *ui.Context, o *sourceObject) {
 			})
 			ui.Row(c).Wrap().Gap(8).Children(func() {
 				if ui.Button(c.Key("cancel"), tr("取消")).Clicked() {
-					m.dueDraft = o.NativeFields["due"]
+					m.dueDraft = taskDueValue(*o)
 					m.editingDue = false
 				}
-				if ui.PrimaryButton(c.Key("save"), tr("保存截止日")).Disabled(m.dueDraft == o.NativeFields["due"]).Clicked() {
+				if ui.PrimaryButton(c.Key("save"), tr("保存截止日")).Disabled(m.dueDraft == taskDueValue(*o)).Clicked() {
 					m.mutation.DesiredFields["due"] = m.dueDraft
 					m.editingDue = false
 					m.queueWrite()
@@ -1145,7 +1175,7 @@ func (m *mockup) writeback(c *ui.Context, o *sourceObject) {
 			m.writebackValues(c, o)
 			if ui.Button(c.Key("verify"), tr("核对来源截止日")).Clicked() {
 				m.dueDraft = m.mutation.DesiredFields["due"]
-				if o.NativeFields["due"] == m.dueDraft {
+				if taskDueValue(*o) == m.dueDraft {
 					m.mutation.Status, m.state = "confirmed", 2
 				} else {
 					m.mutation.Status, m.state = "conflict", 0
@@ -1157,13 +1187,13 @@ func (m *mockup) writeback(c *ui.Context, o *sourceObject) {
 
 func (m *mockup) beginDeadlineEdit(o *sourceObject) {
 	if !m.editingDue {
-		m.dueDraft = o.NativeFields["due"]
+		m.dueDraft = taskDueValue(*o)
 		m.editingDue = true
 	}
 }
 
 func (m *mockup) writebackValues(c *ui.Context, o *sourceObject) {
-	components.DataText(c, tr("来源已确认  ")+tr(o.NativeFields["due"]))
+	components.DataText(c, tr("来源已确认  ")+tr(taskDueValue(*o)))
 	components.DataText(c, tr("拟写入  ")+tr(m.mutation.DesiredFields["due"]))
 }
 

@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -201,6 +202,13 @@ func TestWorkbenchRemainingMVPWritesAndActions(t *testing.T) {
 	lost := input("same-write")
 	lost.Fields = map[string]protocol.FieldValue{"title": protocol.Value(protocol.FieldText, "Confirmed on readback")}
 	api.submit(lost, "needs_review")
+	var afterReload common.WorkbenchSnapshot
+	api.call(http.MethodGet, "/connections/"+pay+"/sync", nil, &afterReload)
+	if !slices.ContainsFunc(afterReload.PendingWrites, func(receipt common.WorkbenchTaskReceipt) bool {
+		return receipt.RequestID == lost.RequestID && receipt.SyncState == "needs_review"
+	}) {
+		t.Fatalf("scope status did not restore the original receipt: %+v", afterReload.PendingWrites)
+	}
 	if api.task(task.ID).Title != "Edited title" {
 		t.Fatal("unknown write replaced confirmed value")
 	}

@@ -58,6 +58,14 @@ func (m *mockup) connections(c *ui.Context) {
 	}
 	ui.Row(c.Key("actions")).FillWidth().Justify(ui.End).Children(func() {
 		ui.MenuButton(c.Key("add"), tr("添加连接"), func(menu *ui.Menu) {
+			if m.connectorDesktop() {
+				for _, id := range []string{managedGitHub, managedFixture} {
+					if m.visibleConnectorKind(id) && m.connectorRelease(id) != nil && menu.Item(connectorLabel(id)).Chosen() {
+						m.openConnectorLogin(id, "")
+					}
+				}
+				return
+			}
 			for _, connector := range services.WorkbenchConnectors() {
 				if connector.UserConfigurable && menu.Item(connector.Name).Chosen() {
 					m.addConnector(connector.Kind)
@@ -65,7 +73,16 @@ func (m *mockup) connections(c *ui.Context) {
 			}
 		})
 	})
+	if m.connectorDesktop() {
+		m.managedConnections(c.Key("managed"))
+	}
+	if m.connectorProblem != "" {
+		components.Muted(c.Key("connector-problem"), m.connectorProblem)
+	}
 	for i := range m.connectionsData {
+		if m.connectorDesktop() && isManagedConnector(m.connectionsData[i].SourceKind) {
+			continue
+		}
 		m.connectorSummary(c.Key(m.connectionsData[i].ID), &m.connectionsData[i])
 		ui.Divider(c.Key("after-" + m.connectionsData[i].ID))
 	}
