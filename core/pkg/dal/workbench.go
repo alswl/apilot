@@ -9,7 +9,11 @@ import (
 )
 
 func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
-	rows, err := s.db.Query("SELECT config,last_success,attempts,snapshot_version FROM workbench_connections ORDER BY id")
+	// Read GitHub authorization with the same SQLite snapshot as its configuration and attempts.
+	rows, err := s.db.Query(`SELECT c.config,c.last_success,c.attempts,c.snapshot_version,
+		g.account_id,g.account_login,g.access_state,g.write_denied
+		FROM workbench_connections c LEFT JOIN workbench_github_connections g ON g.connection_id=c.id
+		ORDER BY c.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -17,13 +21,24 @@ func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 	out := []common.WorkbenchSnapshot{}
 	for rows.Next() {
 		var config, attempts string
-		var success sql.NullString
+		var success, accountLogin, accessState sql.NullString
+		var accountID sql.NullInt64
+		var writeDenied sql.NullBool
 		var snapshot common.WorkbenchSnapshot
-		if err := rows.Scan(&config, &success, &attempts, &snapshot.SnapshotVersion); err != nil {
+		if err := rows.Scan(&config, &success, &attempts, &snapshot.SnapshotVersion, &accountID, &accountLogin, &accessState, &writeDenied); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(config), &snapshot.WorkbenchConnection); err != nil {
 			return nil, err
+		}
+		if snapshot.Kind == common.WorkbenchGitHubRepository {
+			if !accountID.Valid {
+				return nil, common.Err("INTERNAL", "GitHub connection storage unavailable")
+			}
+			snapshot.GitHubAccountID = accountID.Int64
+			snapshot.AccountLogin = accountLogin.String
+			snapshot.AccessState = accessState.String
+			snapshot.WriteDenied = writeDenied.Bool
 		}
 		if err := json.Unmarshal([]byte(attempts), &snapshot.Attempts); err != nil {
 			return nil, err

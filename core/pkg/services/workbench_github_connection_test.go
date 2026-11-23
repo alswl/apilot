@@ -492,3 +492,83 @@ func TestGitHubConnectionKeepsIdentityAfterRepositoryRename(t *testing.T) {
 		t.Fatalf("renamed repository lost task identity or metadata: %+v %v", restored, err)
 	}
 }
+
+type gitHubSyncBetweenReadsStore struct {
+	*dal.Store
+	afterRead func([]common.WorkbenchSnapshot) error
+}
+
+func (s *gitHubSyncBetweenReadsStore) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
+	list, err := s.Store.WorkbenchConnections()
+	if err == nil && s.afterRead != nil {
+		afterRead := s.afterRead
+		s.afterRead = nil
+		err = afterRead(list)
+	}
+	return list, err
+}
+
+func TestGitHubCredentialRotationDuringSnapshotCommit(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			fmt.Fprint(w, `{"id":1,"login":"user"}`)
+		case "/repos/owner/repo":
+			fmt.Fprint(w, `{"id":42,"full_name":"owner/repo","has_issues":true}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	credentials := &memoryGitHubCredentials{values: map[string]string{"old-ref": "old-token"}}
+	db, err := dal.Open(filepath.Join(t.TempDir(), "apilot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	store := &gitHubSyncBetweenReadsStore{Store: db}
+	s := &Service{
+		ctx: context.Background(), store: store, workbenchPlugins: BuiltinWorkbenchPluginRegistry().plugins,
+		githubCredentials: credentials, githubBaseURL: server.URL, githubTransport: server.Client().Transport,
+		githubRate: integrations.NewWorkbenchGitHubRate(4),
+	}
+
+	c := common.WorkbenchConnection{ID: "repo", Kind: common.WorkbenchGitHubRepository, Version: 1, Name: "Repo", Repository: "owner/repo", Paused: true, WriteEnabled: true}
+	if err := store.SaveWorkbenchGitHub(c, 0, common.WorkbenchGitHubProgress{
+		ConnectionID: c.ID, RepositoryID: 42, AccountID: 1, AccountLogin: "user", CredentialRef: "old-ref", AccessState: "available",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	committed := false
+	store.afterRead = func(list []common.WorkbenchSnapshot) error {
+		for _, row := range list {
+			if row.ID == c.ID {
+				now := time.Now()
+				err := store.CommitWorkbenchGitHubSync(c, nil, nil, nil, now, row.SnapshotVersion, now, true)
+				if err == nil {
+					committed = true
+				}
+				return err
+			}
+		}
+		return fmt.Errorf("connection %q missing from SQLite read", c.ID)
+	}
+	if _, err := s.ConfigureWorkbenchGitHub(c, "new-token", nil); err != nil {
+		t.Fatalf("rotation after concurrent sync commit (committed=%t): %v", committed, err)
+	}
+	snapshot, err := s.WorkbenchSnapshot(c.ID)
+	if !committed || err != nil || snapshot.Version != 2 || !snapshot.Paused || !snapshot.WriteEnabled {
+		t.Fatalf("rotation did not preserve configuration: committed=%t version=%d paused=%t write-enabled=%t err=%v", committed, snapshot.Version, snapshot.Paused, snapshot.WriteEnabled, err)
+	}
+	progress, err := store.WorkbenchGitHubProgress(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, err := credentials.Get(context.Background(), progress.CredentialRef); err != nil || value != "new-token" {
+		t.Fatal("rotation did not activate the replacement credential")
+	}
+	if _, err := credentials.Get(context.Background(), "old-ref"); err == nil {
+		t.Fatal("rotation retained the superseded credential")
+	}
+}

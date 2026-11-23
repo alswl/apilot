@@ -116,15 +116,15 @@ func TestGitHubAccountSwitchHidesUntilFullSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := make(map[string][]common.WorkbenchAttempt)
+	byID := make(map[string]common.WorkbenchSnapshot)
 	for _, snapshot := range snapshots {
-		history[snapshot.ID] = snapshot.Attempts
+		byID[snapshot.ID] = snapshot
 	}
-	if len(history[c.ID]) != 0 || len(history[other.ID]) != 1 || history[other.ID][0].RequestCount != 7 {
-		t.Fatalf("account switch did not isolate history: %+v", history)
-	}
-	if _, err := store.WorkbenchGitHubProgressAt(c.ID, 1, 1); err == nil || common.ProtocolError(err).Code != "STALE_REVISION" {
-		t.Fatalf("old connection can still read new account authorization: %v", err)
+	switched, unaffected := byID[c.ID], byID[other.ID]
+	if switched.Version != 2 || switched.GitHubAccountID != 2 || switched.AccountLogin != "second" ||
+		len(switched.Attempts) != 0 || unaffected.GitHubAccountID != 1 ||
+		len(unaffected.Attempts) != 1 || unaffected.Attempts[0].RequestCount != 7 {
+		t.Fatalf("account switch did not isolate authorization and history: %+v", byID)
 	}
 	if _, err := store.WorkbenchObject(task.ID); err == nil {
 		t.Fatal("previous account's task remains visible")
