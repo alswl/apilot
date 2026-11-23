@@ -171,3 +171,39 @@ Use `sync list --scope SCOPE_ID`, `sync inspect SYNC_RUN_ID` and `sync usage
 --connection CONNECTION_ID` to match run evidence and usage. The fixture
 flags `rate_limited_scope` and `partial_scope` inject a scope-local backoff
 and a page error with incomplete counting, respectively.
+
+## Controlled GitHub assignee verification
+
+From the checkout of the acceptance commit, use the existing Go toolchain,
+Python 3 and OpenSSL. Build a separate Connector executable and run the
+targeted JSON-RPC probe:
+
+```sh
+candidate_dir="$PWD/tmp/011-github-assignee"
+mkdir -p "$candidate_dir"
+go -C connectors/github-issues build -mod=readonly -trimpath \
+  -tags apilot_controlled_github -o "$candidate_dir/apilot-github-issues-controlled" \
+  ./cmd/apilot-github-issues
+go version -m "$candidate_dir/apilot-github-issues-controlled"
+python3 scripts/verify-011-github-assignee.py \
+  "$candidate_dir/apilot-github-issues-controlled" > "$candidate_dir/result.json"
+```
+
+The probe creates a disposable profile and a TLS upstream on a loopback
+port. It approves a fake device login and stores the fake credential in
+the disposable profile. No GitHub token, API key or Keychain entry is
+required. The controlled build requires `controlled-github.json` in its
+absolute `APILOT_CONNECTOR_DATA_DIR`, with the HTTPS loopback `origin` and
+fixture certificate `root_pem`. The probe supplies both values and removes
+the profile afterward.
+
+In `result.json`, expect `confirmed_assignees` to contain `777 / octocat`,
+`wrong_id_status` to be `not_executed`, and `patch_count` to be `1`.
+The event trace shows login resolution via `GET /users/octocat` and the
+issue readback after the fixture PATCH. The report includes the executable
+SHA-256. Go build metadata records the source commit and the controlled tag
+when built from a clean Git checkout.
+
+This probe exercises the GitHub Connector over stdio. macOS release
+packaging builds the regular helper and rejects the controlled build tag
+before installing the helper in the app bundle.

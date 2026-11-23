@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alswl/apilot/connectors/github-issues/internal/connector"
 	"github.com/alswl/apilot/connectors/protocol"
 )
 
@@ -31,7 +30,11 @@ func main() {
 	}
 	ctx, cancel := protocol.RequestContext(os.Getenv("APILOT_CONNECTOR_DEADLINE"))
 	defer cancel()
-	if err := protocol.Serve(ctx, os.Args[1:], os.Stdin, os.Stdout, description, connector.New(os.Getenv("APILOT_CONNECTOR_DATA_DIR")).Handle); err != nil {
+	handle, err := connectorHandler(os.Getenv("APILOT_CONNECTOR_DATA_DIR"))
+	if err == nil {
+		err = protocol.Serve(ctx, os.Args[1:], os.Stdin, os.Stdout, description, handle)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "GitHub Issues Connector:", err)
 		os.Exit(1)
 	}

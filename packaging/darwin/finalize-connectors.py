@@ -37,7 +37,11 @@ def main():
     source = ROOT / 'packaging/darwin/connectors'
     allowlist = json.loads((source / 'allowlist.json').read_text())
     for connector_id, name in allowlist.items():
-        helper = Path(shutil.copy2(ROOT / 'bin' / name, helpers / name))
+        binary = ROOT / 'bin' / name
+        build_info = run('go', 'version', '-m', binary, capture_output=True, text=True).stdout
+        if 'apilot_controlled_github' in build_info:
+            parser.error(f'Controlled test build cannot ship: {binary}')
+        helper = Path(shutil.copy2(binary, helpers / name))
         run(*sign, helper)
         digest = hashlib.sha256(helper.read_bytes()).hexdigest()
         metadata = (source / f'{connector_id}.json.in').read_text()
