@@ -2,6 +2,11 @@ package services
 
 import (
 	"context"
+	"log"
+	"os"
+	"path/filepath"
+
+	"github.com/alswl/apilot/connectors/protocol"
 
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/integrations"
@@ -21,9 +26,10 @@ type workbenchPluginStore interface {
 }
 
 type WorkbenchPlugin struct {
-	ID        string `json:"id"`
-	Enabled   bool   `json:"enabled"`
-	Connector string `json:"connector"`
+	ID        string                            `json:"id"`
+	Enabled   bool                              `json:"enabled"`
+	Connector string                            `json:"connector"`
+	Release   *common.WorkbenchConnectorRelease `json:"release,omitempty"`
 }
 
 type WorkbenchPluginRegistry struct {
@@ -84,7 +90,7 @@ func (s *Service) WorkbenchPlugins() ([]WorkbenchPlugin, error) {
 		if err != nil {
 			return nil, err
 		}
-		plugins = append(plugins, WorkbenchPlugin{ID: connector.Kind, Enabled: enabled, Connector: connector.Kind})
+		plugins = append(plugins, s.workbenchPluginInfo(connector.Kind, enabled))
 	}
 	return plugins, nil
 }
@@ -103,7 +109,7 @@ func (s *Service) SetWorkbenchPluginEnabled(id string, enabled bool) (WorkbenchP
 	if !ok {
 		return WorkbenchPlugin{}, common.Err("INTERNAL", "Plugin settings unavailable")
 	}
-	result := WorkbenchPlugin{ID: id, Enabled: enabled, Connector: id}
+	result := s.workbenchPluginInfo(id, enabled)
 	if previous == enabled {
 		return result, nil
 	}
@@ -136,6 +142,9 @@ func (s *Service) WorkbenchConnectors() ([]WorkbenchConnector, error) {
 			return nil, err
 		}
 		descriptor.PluginID = descriptor.Kind
+		if enabled {
+			descriptor.Release = s.workbenchPluginInfo(descriptor.Kind, true).Release
+		}
 		descriptor.UserConfigurable = descriptor.UserConfigurable && enabled
 		descriptor.Capabilities = plugin.capabilities
 		result = append(result, descriptor)
@@ -155,4 +164,58 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 		caps.Create, caps.SetState = false, false
 	}
 	return caps
+}
+
+func (s *Service) workbenchPluginInfo(id string, enabled bool) WorkbenchPlugin {
+	info := WorkbenchPlugin{ID: id, Enabled: enabled, Connector: id}
+	if enabled && id == common.WorkbenchGitHubRepository && s.workbenchConnectorRelease != nil {
+		release := *s.workbenchConnectorRelease
+		info.Release = &release
+	}
+	return info
+}
+
+func (s *Service) registerBundledWorkbenchConnector() error {
+	var release *common.WorkbenchConnectorRelease
+	executable, err := os.Executable()
+	if err == nil {
+		executable, err = filepath.EvalSymlinks(executable)
+	}
+	if err != nil {
+		return err
+	}
+	packages, err := integrations.DiscoverBundledWorkbenchConnectors(executable)
+	if err != nil {
+		log.Printf("workbench: bundled Connector registration failed: %v", err)
+	}
+	for _, pkg := range packages {
+		namespace := filepath.Join(s.dir, "connectors", pkg.Manifest.ConnectorID)
+		if err := os.MkdirAll(namespace, 0700); err != nil {
+			return err
+		}
+		process := integrations.NewWorkbenchConnectorProcess(pkg, namespace)
+		if _, err := process.Describe(s.ctx); err != nil {
+			process.Close()
+			log.Printf("workbench: bundled Connector describe failed: %v", err)
+			continue
+		}
+		s.workbenchConnectorProcess = process
+		release = &common.WorkbenchConnectorRelease{
+			ConnectorID: pkg.Manifest.ConnectorID, ReleaseVersion: pkg.Manifest.ReleaseVersion,
+			ProtocolVersion: protocol.Version, PackageDigest: pkg.Digest,
+		}
+	}
+	s.workbenchConnectorRelease = release
+	if store, ok := s.store.(interface {
+		RegisterWorkbenchPluginRelease(string, *common.WorkbenchConnectorRelease) error
+	}); ok {
+		return store.RegisterWorkbenchPluginRelease(common.WorkbenchGitHubRepository, release)
+	}
+	return nil
+}
+
+func (s *Service) closeWorkbenchConnector() {
+	if s.workbenchConnectorProcess != nil {
+		s.workbenchConnectorProcess.Close()
+	}
 }

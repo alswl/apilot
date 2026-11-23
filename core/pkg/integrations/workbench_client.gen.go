@@ -248,13 +248,22 @@ type WorkbenchConnectionInputKind string
 
 // WorkbenchConnector defines model for WorkbenchConnector.
 type WorkbenchConnector struct {
-	Capabilities     WorkbenchCapabilities `json:"capabilities"`
-	Kind             string                `json:"kind"`
-	Name             string                `json:"name"`
-	PluginId         *string               `json:"plugin_id,omitempty"`
-	SearchAliases    *[]string             `json:"search_aliases,omitempty"`
-	SearchFields     *[]string             `json:"search_fields,omitempty"`
-	UserConfigurable bool                  `json:"user_configurable"`
+	Capabilities     WorkbenchCapabilities      `json:"capabilities"`
+	Kind             string                     `json:"kind"`
+	Name             string                     `json:"name"`
+	PluginId         *string                    `json:"plugin_id,omitempty"`
+	Release          *WorkbenchConnectorRelease `json:"release,omitempty"`
+	SearchAliases    *[]string                  `json:"search_aliases,omitempty"`
+	SearchFields     *[]string                  `json:"search_fields,omitempty"`
+	UserConfigurable bool                       `json:"user_configurable"`
+}
+
+// WorkbenchConnectorRelease defines model for WorkbenchConnectorRelease.
+type WorkbenchConnectorRelease struct {
+	ConnectorId     string `json:"connector_id"`
+	PackageDigest   string `json:"package_digest"`
+	ProtocolVersion int64  `json:"protocol_version"`
+	ReleaseVersion  string `json:"release_version"`
 }
 
 // WorkbenchHeading defines model for WorkbenchHeading.
@@ -410,10 +419,11 @@ type WorkbenchPlugin struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchPlugin.json
-	Schema    *string `json:"$schema,omitempty"`
-	Connector string  `json:"connector"`
-	Enabled   bool    `json:"enabled"`
-	Id        string  `json:"id"`
+	Schema    *string                    `json:"$schema,omitempty"`
+	Connector string                     `json:"connector"`
+	Enabled   bool                       `json:"enabled"`
+	Id        string                     `json:"id"`
+	Release   *WorkbenchConnectorRelease `json:"release,omitempty"`
 }
 
 // WorkbenchPluginInputBody defines model for WorkbenchPluginInputBody.

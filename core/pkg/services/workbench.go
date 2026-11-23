@@ -4,15 +4,16 @@ import "github.com/alswl/apilot/core/pkg/common"
 
 // WorkbenchConnector describes a source kind and its fixture configuration.
 type WorkbenchConnector struct {
-	PluginID         string                       `json:"plugin_id,omitempty"`
-	Capabilities     common.WorkbenchCapabilities `json:"capabilities"`
-	Kind             string                       `json:"kind"`
-	Name             string                       `json:"name"`
-	UserConfigurable bool                         `json:"user_configurable"`
-	DemoCapabilities string                       `json:"-"`
-	DemoSyncMode     string                       `json:"-"`
-	SearchAliases    []string                     `json:"search_aliases,omitempty"`
-	SearchFields     []string                     `json:"search_fields,omitempty"`
+	Release          *common.WorkbenchConnectorRelease `json:"release,omitempty"`
+	PluginID         string                            `json:"plugin_id,omitempty"`
+	Capabilities     common.WorkbenchCapabilities      `json:"capabilities"`
+	Kind             string                            `json:"kind"`
+	Name             string                            `json:"name"`
+	UserConfigurable bool                              `json:"user_configurable"`
+	DemoCapabilities string                            `json:"-"`
+	DemoSyncMode     string                            `json:"-"`
+	SearchAliases    []string                          `json:"search_aliases,omitempty"`
+	SearchFields     []string                          `json:"search_fields,omitempty"`
 }
 
 func WorkbenchConnectors() []WorkbenchConnector {

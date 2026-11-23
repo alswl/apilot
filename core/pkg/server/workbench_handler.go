@@ -34,7 +34,8 @@ func dispatchWorkbench(s *services.Service, r Request) (any, error) {
 		defer cancel()
 		return s.ReconcileWorkbenchTaskOperation(ctx, input.ID)
 	case "workbench.connector.list":
-		return map[string]any{"items": services.WorkbenchConnectors()}, nil
+		items, err := s.WorkbenchConnectors()
+		return map[string]any{"items": items}, err
 	case "workbench.task.list":
 		var q common.WorkbenchQuery
 		if err := decode(r.Params, &q); err != nil {

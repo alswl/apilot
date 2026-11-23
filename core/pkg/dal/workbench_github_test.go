@@ -401,7 +401,7 @@ func TestGitHubReauthorizationChangesQueryRevision(t *testing.T) {
 
 func TestGitHubV8MigrationPreservesConnectionAndCursor(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
-	store, err := Open(path)
+	store, err := openAtSchema(path, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,7 +444,7 @@ func TestGitHubV8MigrationPreservesConnectionAndCursor(t *testing.T) {
 
 func TestGitHubMigrationPreservesLegacySourcesAndMetadata(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
-	store, err := Open(path)
+	store, err := openAtSchema(path, 11)
 	if err != nil {
 		t.Fatal(err)
 	}

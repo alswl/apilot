@@ -10,6 +10,7 @@ require (
 
 require (
 	github.com/ProtonMail/go-crypto v1.4.1 // indirect
+	github.com/alswl/apilot/connectors/protocol v0.0.0 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/cloudflare/circl v1.6.2 // indirect
 	github.com/danielgtaylor/huma/v2 v2.41.0 // indirect
@@ -30,6 +31,9 @@ require (
 	golang.org/x/text v0.44.0 // indirect
 )
 
-replace github.com/alswl/apilot/core => ../core
+replace (
+	github.com/alswl/apilot/connectors/protocol => ../connectors/protocol
+	github.com/alswl/apilot/core => ../core
+)
 
 tool github.com/egoist/mygo/cmd/mygo

@@ -279,6 +279,8 @@ components:
           type: string
         plugin_id:
           type: string
+        release:
+          $ref: "#/components/schemas/WorkbenchConnectorRelease"
         search_aliases:
           items:
             type: string
@@ -298,6 +300,24 @@ components:
         - kind
         - name
         - user_configurable
+      type: object
+    WorkbenchConnectorRelease:
+      additionalProperties: false
+      properties:
+        connector_id:
+          type: string
+        package_digest:
+          type: string
+        protocol_version:
+          format: int64
+          type: integer
+        release_version:
+          type: string
+      required:
+        - connector_id
+        - release_version
+        - protocol_version
+        - package_digest
       type: object
     WorkbenchHeading:
       additionalProperties: false
@@ -624,6 +644,8 @@ components:
           type: boolean
         id:
           type: string
+        release:
+          $ref: "#/components/schemas/WorkbenchConnectorRelease"
       required:
         - id
         - enabled
