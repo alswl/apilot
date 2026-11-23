@@ -140,9 +140,9 @@ func TestConnector011DesktopDetailOperationAndUsagePresentation(t *testing.T) {
 		t.Fatal("Escape did not close the task editor")
 	}
 
-	m.connectorUsage = connectorUsageState{loaded: true, items: []common.WorkbenchSyncUsage{{ConnectorID: managedGitHub, ConnectionID: "parent", ScopeID: "ops", Mode: "delta", Runs: 3, Failed: 1, NoChanges: 2, Requests: 5, RateLimits: 1, PartialRuns: 1}}}
+	m.connectorUsage = connectorUsageState{loaded: true, items: []common.WorkbenchSyncUsage{{ConnectorID: managedGitHub, ConnectionID: "parent", ScopeID: "ops", Mode: "delta", Runs: 3, Success: 2, Failed: 1, NoChanges: 2, Requests: 5, RateLimits: 1, PartialRuns: 1}}}
 	view = ui.NewTester(m.managedSyncUsage, 680, 580)
-	if !view.HasText("部分计量") || !view.HasText("3 次同步 · 0 成功 · 1 失败 · 2 无变化") {
+	if !view.HasText("部分计量") || !view.HasText("3 次同步 · 2 成功 · 1 失败 · 2 无变化") {
 		t.Fatalf("usage: %v", view.Texts())
 	}
 	run := *m.connectorParents[0].Scopes[1].LastRun
@@ -228,7 +228,7 @@ func TestConnector011Evidence(t *testing.T) {
 			m.page, m.usageTab = usagePage, 2
 			m.connectorUsage = connectorUsageState{loaded: true, items: []common.WorkbenchSyncUsage{
 				{ConnectorID: managedGitHub, ConnectionID: "parent", ScopeID: "pay", Mode: "full", Runs: 1, Success: 1, Requests: 2, Fetched: 2, DurationMS: 373},
-				{ConnectorID: managedGitHub, ConnectionID: "parent", ScopeID: "ops", Mode: "delta", Runs: 3, Failed: 1, NoChanges: 2, Requests: 5, RateLimits: 1, PartialRuns: 1, DurationMS: 723},
+				{ConnectorID: managedGitHub, ConnectionID: "parent", ScopeID: "ops", Mode: "delta", Runs: 3, Success: 2, Failed: 1, NoChanges: 2, Requests: 5, RateLimits: 1, PartialRuns: 1, DurationMS: 723},
 			}}
 			return ui.NewTester(m.view, 1190, 730)
 		}},
