@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
 )
 
@@ -121,6 +122,19 @@ func (s *Service) writeLocalWorkbenchTask(_ workbenchStore, writer workbenchTask
 	receipt := common.WorkbenchTaskReceipt{RequestID: input.RequestID, ConnectionID: connection.ID, SyncState: "confirmed"}
 	now := time.Now().UTC()
 	attempt := common.WorkbenchAttempt{ID: now.UnixNano(), Trigger: "write", State: "success", Started: now, Finished: &now}
+	if len(input.Fields) > 0 && (input.SourceObjectID == "" || input.Title != "" || input.State != "" || input.Action != "" ||
+		input.Body != "" || input.NotePath != "" || len(input.HeadingPath) > 0 || len(input.ActionFields) > 0) {
+		return empty, common.Err("INVALID_ARGUMENT", "Submit a Local field patch or a single state action")
+	}
+	if input.Action == "" && len(input.ActionFields) > 0 {
+		return empty, common.Err("INVALID_ARGUMENT", "Local state action is required")
+	}
+	if input.Action != "" {
+		if input.State != "" || len(input.ActionFields) != 0 || input.SourceObjectID == "" {
+			return empty, common.Err("INVALID_ARGUMENT", "Invalid Local state action")
+		}
+		input.State = input.Action
+	}
 	if input.SourceObjectID == "" {
 		title := strings.TrimSpace(input.Title)
 		if title == "" || len(title) > 1024 || strings.ContainsAny(input.Title, "\r\n\x00") || input.State != "" || input.NotePath != "" || len(input.HeadingPath) != 0 || input.TargetVersion != "" {
@@ -129,11 +143,38 @@ func (s *Service) writeLocalWorkbenchTask(_ workbenchStore, writer workbenchTask
 		key := common.ID()
 		task = common.WorkbenchTask{
 			ID: common.ID(), ConnectionID: connection.ID, Kind: connection.Kind, Mode: connection.Mode,
-			SourceKey: key + "\x000", NativeID: key, Title: title, State: "open", NativeFields: map[string]string{"status": "open"},
+			SourceKey: key + "\x000", NativeID: key, Title: title, Summary: input.Body, State: "open", NativeFields: map[string]string{"status": "open"},
 		}
 		attempt.Added = 1
+	} else if len(input.Fields) > 0 {
+		if !workbenchTaskMatchesTarget(task, input.TargetVersion) {
+			receipt.SyncState = common.WorkbenchOperationConflict
+			receipt.SourceObjectID = task.ID
+			return receipt, nil
+		}
+		before = []common.WorkbenchTask{task}
+		task.NativeFields = maps.Clone(task.NativeFields)
+		if task.NativeFields == nil {
+			task.NativeFields = map[string]string{}
+		}
+		rules := map[string]protocol.MappingRule{}
+		for id, field := range input.Fields {
+			if !validWorkbenchEditField(id, field) || id == "state" {
+				return empty, common.Err("INVALID_ARGUMENT", "Invalid Local field: "+id)
+			}
+			if id == "description" {
+				task.Summary = ""
+				_ = json.Unmarshal(field.Value, &task.Summary)
+				continue
+			}
+			data, _ := json.Marshal(field)
+			task.NativeFields["native."+id] = string(data)
+			rules[id] = protocol.MappingRule{Field: id}
+		}
+		applyConnectorMapping(&task, rules)
+		attempt.Updated = 1
 	} else {
-		if (input.State != "open" && input.State != "done") || input.Title != "" || input.NotePath != "" || len(input.HeadingPath) != 0 {
+		if (input.State != "open" && input.State != "done") || input.Title != "" || input.Body != "" || input.NotePath != "" || len(input.HeadingPath) != 0 {
 			return empty, common.Err("INVALID_ARGUMENT", "Provide an explicit open or done state")
 		}
 		if input.TargetVersion != workbenchFingerprint(task) {

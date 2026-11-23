@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/alswl/apilot/connectors/protocol"
@@ -30,7 +31,7 @@ type workbenchManagedConnectorStore interface {
 	RecoverWorkbenchConnectorRuns() error
 	StartWorkbenchConnectorRun(common.WorkbenchSyncRun) (int64, error)
 	WorkbenchConnectorLastRun(string) (*common.WorkbenchSyncRun, error)
-	WorkbenchConnectorBackoff(string) (*time.Time, error)
+	WorkbenchConnectorBackoff(string, string) (*time.Time, error)
 	PauseWorkbenchConnectorScope(string, int64, bool) error
 	FinishWorkbenchConnectorFailure(common.WorkbenchConnectorSyncCommit) error
 	CommitWorkbenchConnectorSync(common.WorkbenchConnectorSyncCommit) error
@@ -425,4 +426,41 @@ func publicConnectorError(err error) error {
 	default:
 		return common.Err("SOURCE_UNAVAILABLE", "Connector request could not finish")
 	}
+}
+
+func (s *Service) ConfigureWorkbenchConnectorScope(id, kind, name string, version int64, write bool) (common.WorkbenchSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var empty common.WorkbenchSnapshot
+	if s.stopping {
+		return empty, common.Err("CONFLICT", "App is stopping")
+	}
+	name = strings.TrimSpace(name)
+	if version < 1 || name == "" || len(name) > 256 {
+		return empty, common.Err("INVALID_ARGUMENT", "Scope name and version are required")
+	}
+	scope, err := s.WorkbenchSnapshot(id)
+	if err != nil {
+		return empty, err
+	}
+	if scope.ParentConnectionID == "" || scope.Kind != kind {
+		return empty, common.Err("INVALID_ARGUMENT", "Connector type cannot change")
+	}
+	if scope.Version != version {
+		return empty, common.Err("STALE_REVISION", "Scope configuration changed")
+	}
+	if scope.Name == name && scope.WriteEnabled == write {
+		return scope, nil
+	}
+	store, ok := s.store.(interface {
+		ConfigureWorkbenchConnectorScope(string, string, int64, bool) error
+	})
+	if !ok {
+		return empty, common.Err("INTERNAL", "Scope configuration storage unavailable")
+	}
+	if err := store.ConfigureWorkbenchConnectorScope(id, name, version, write); err != nil {
+		return empty, err
+	}
+	s.volatileRevision.Add(1)
+	return s.WorkbenchSnapshot(id)
 }

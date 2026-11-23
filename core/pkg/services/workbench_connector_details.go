@@ -1,0 +1,116 @@
+package services
+
+import (
+	"context"
+	"errors"
+	"net/url"
+	"time"
+
+	"github.com/alswl/apilot/connectors/protocol"
+	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/alswl/apilot/core/pkg/integrations"
+)
+
+type workbenchDetailStore interface {
+	RevokeWorkbenchTaskDetail(common.WorkbenchConnectorStoredScope, string, string, string) error
+	ReadWorkbenchTaskDetail(common.WorkbenchConnectorStoredScope, string, string, string, string, string) (common.WorkbenchTaskDetail, error)
+	SaveWorkbenchTaskDetail(common.WorkbenchConnectorStoredScope, string, string, string, common.WorkbenchTaskDetail) error
+}
+
+func (s *Service) readableConnectorScope(id string) (common.WorkbenchConnectorStoredScope, *integrations.WorkbenchConnectorProcess, error) {
+	store, err := s.managedConnectorStore()
+	if err != nil {
+		return common.WorkbenchConnectorStoredScope{}, nil, err
+	}
+	scope, err := store.WorkbenchConnectorScope(id)
+	if err != nil {
+		return scope, nil, err
+	}
+	if scope.AuthState != "authorized" || scope.AccessState != "available" {
+		return scope, nil, common.Err("FORBIDDEN", "Connector scope is unavailable")
+	}
+	process, err := s.managedConnector(scope.ConnectorID)
+	return scope, process, err
+}
+
+func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment, page string) (common.WorkbenchTaskDetail, error) {
+	result := common.WorkbenchTaskDetail{TaskID: id, Segment: segment}
+	switch segment {
+	case "fields", "description", "comments", "attachments", "links", "history":
+	default:
+		return result, common.Err("INVALID_ARGUMENT", "Unknown detail segment")
+	}
+	task, err := s.WorkbenchTask(id)
+	if err != nil {
+		return result, err
+	}
+	result.ScopeID = task.ConnectionID
+	if task.Kind == common.WorkbenchLocal || task.Kind == common.WorkbenchObsidianTasks || task.Kind == common.WorkbenchGitHubRepository || task.Kind == common.WorkbenchGitHubIssues {
+		result.CapturedAt = time.Now().UTC()
+		result.Version = task.TargetVersion
+		switch segment {
+		case "fields":
+			result.Fields = map[string]protocol.FieldValue{}
+			for k, v := range task.NativeFields {
+				result.Fields[k] = protocol.Value(protocol.FieldText, v)
+			}
+		case "description":
+			result.Items = []protocol.DetailItem{{ID: "summary", Label: "Description", Text: &protocol.RichText{Format: "markdown", Content: protocol.Value(protocol.FieldText, task.Summary).Value}}}
+		}
+		return result, nil
+	}
+	scope, process, err := s.readableConnectorScope(task.ConnectionID)
+	if err != nil {
+		return result, err
+	}
+	store, ok := s.store.(workbenchDetailStore)
+	if !ok {
+		return result, common.Err("INTERNAL", "Task detail storage unavailable")
+	}
+	version := task.NativeFields["source_version"]
+	digest := s.workbenchConnectorRelease.PackageDigest
+	body, err := callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail,
+		protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID, Segment: segment, Page: page}, nil)
+	if err != nil {
+		var problem *protocol.RPCError
+		if errors.As(err, &problem) && (problem.Data.Kind == protocol.AuthRequired || problem.Data.Kind == protocol.AccessDenied) {
+			level := problem.Data.AffectedLevel
+			if problem.Data.Kind == protocol.AuthRequired {
+				level = "account"
+			}
+			s.mu.Lock()
+			revokeErr := store.RevokeWorkbenchTaskDetail(scope, id, version, level)
+			if revokeErr == nil {
+				s.volatileRevision.Add(1)
+			}
+			s.mu.Unlock()
+			if revokeErr != nil {
+				return result, revokeErr
+			}
+		}
+		switch connectorErrorKind(err) {
+		case string(protocol.Temporary), common.WorkbenchConnectorTimeout, common.WorkbenchConnectorProcessFailure:
+			if cached, cacheErr := store.ReadWorkbenchTaskDetail(scope, id, version, digest, segment, page); cacheErr == nil {
+				return cached, nil
+			}
+		}
+		return result, publicConnectorError(err)
+	}
+	if body.Version == "" || (body.NextPage != "" && body.NextPage == page) {
+		return result, publicConnectorError(integrations.ErrWorkbenchConnectorProtocol)
+	}
+	for i := range body.Items {
+		if body.Items[i].URL != "" {
+			target, err := url.Parse(body.Items[i].URL)
+			if err != nil || target.Scheme != "https" || target.Hostname() == "" || target.User != nil {
+				body.Items[i].URL = ""
+			}
+		}
+	}
+	result.Version, result.Fields, result.Items, result.NextPage = body.Version, body.Fields, body.Items, body.NextPage
+	result.CapturedAt = time.Now().UTC()
+	if err := store.SaveWorkbenchTaskDetail(scope, version, digest, page, result); err != nil {
+		return common.WorkbenchTaskDetail{}, err
+	}
+	return result, nil
+}

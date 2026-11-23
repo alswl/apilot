@@ -1,0 +1,121 @@
+package connector
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"testing"
+
+	"github.com/alswl/apilot/connectors/protocol"
+)
+
+func TestGitHubMutationConfirmsCreateCloseAndReopen(t *testing.T) {
+	connector := New(t.TempDir())
+	connector.loadCredential = func(string, string) ([]byte, error) { return json.Marshal(storedCredential{Access: "test"}) }
+	state, reason, title := "open", "", ""
+	writes, reads := 0, 0
+	const updated = "2026-11-23T12:00:00Z"
+	issue := func() string {
+		return fmt.Sprintf(`{"id":42,"number":3,"title":%q,"body":"body","state":%q,"state_reason":%q,"updated_at":%q}`, title, state, reason, updated)
+	}
+	connector.transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host != apiHost {
+			t.Fatalf("escaped GitHub API origin: %s", req.URL)
+		}
+		switch {
+		case req.Method == "GET" && req.URL.Path == "/repositories/7":
+			return testAPIResponse(req, 200, `{"id":7,"has_issues":true,"permissions":{"push":true}}`, nil), nil
+		case req.Method == "GET" && req.URL.Path == "/repositories/7/issues/3":
+			reads++
+			return testAPIResponse(req, 200, issue(), nil), nil
+		case req.Method == "POST" && req.URL.Path == "/repositories/7/issues":
+			writes++
+			var body map[string]string
+			if json.NewDecoder(req.Body).Decode(&body) != nil || body["title"] != "Created" {
+				t.Fatal("wrong creation payload")
+			}
+			title = body["title"]
+			return testAPIResponse(req, 201, issue(), nil), nil
+		case req.Method == "PATCH" && req.URL.Path == "/repositories/7/issues/3":
+			writes++
+			var body map[string]string
+			if json.NewDecoder(req.Body).Decode(&body) != nil {
+				t.Fatal("wrong mutation payload")
+			}
+			if next := body["state"]; next != "" {
+				state, reason = next, body["state_reason"]
+			}
+			if next := body["title"]; next != "" {
+				title = next
+			}
+			return testAPIResponse(req, 200, issue(), nil), nil
+		default:
+			t.Fatalf("unexpected GitHub request %s %s", req.Method, req.URL)
+		}
+		return nil, errors.New("unexpected request")
+	})
+	ctx := context.Background()
+	scope := protocol.ScopeContext{ScopeRef: "7", AccountRef: "42", EndpointRef: endpoint}
+	create := protocol.MutationParams{ScopeContext: scope, OperationID: "create", Create: map[string]protocol.FieldValue{"title": protocol.Value(protocol.FieldText, "Created")}}
+	var evidence protocol.MutationEvidence
+	result, problem := connector.mutate(ctx, create, false, func(method string, input any) error {
+		if method != "operation.evidence" {
+			t.Fatal("wrong evidence notification")
+		}
+		evidence = input.(protocol.MutationEvidence)
+		return nil
+	})
+	if problem != nil || result.(protocol.MutationResult).Status != "confirmed" || evidence.SourceID != "42" || writes != 1 || reads != 1 {
+		t.Fatalf("create/readback: %+v %v", result, problem)
+	}
+	p := protocol.MutationParams{ScopeContext: scope, OperationID: "existing", SourceID: evidence.SourceID, Number: evidence.Number, ExpectedVersion: updated}
+	p.Action = "close"
+	result, problem = connector.mutate(ctx, p, false, nil)
+	if problem != nil || result.(protocol.MutationResult).Record.State != "done" || writes != 2 || reads != 3 || reason != "completed" {
+		t.Fatalf("close/readback: %+v %v", result, problem)
+	}
+	p.Action = "reopen"
+	result, problem = connector.mutate(ctx, p, false, nil)
+	if problem != nil || result.(protocol.MutationResult).Record.State != "open" || writes != 3 || reads != 5 {
+		t.Fatalf("reopen/readback: %+v %v", result, problem)
+	}
+	p.Action = ""
+	p.Patch = map[string]protocol.FieldValue{"title": protocol.Value(protocol.FieldText, "Changed")}
+	p.Baseline = map[string]protocol.FieldValue{"title": protocol.Value(protocol.FieldText, "Older")}
+	result, problem = connector.mutate(ctx, p, false, nil)
+	if problem != nil || result.(protocol.MutationResult).Status != "conflict" || writes != 3 {
+		t.Fatalf("conflict still wrote: %+v %v", result, problem)
+	}
+	p.Baseline["title"] = protocol.Value(protocol.FieldText, "Created")
+	result, problem = connector.mutate(ctx, p, false, nil)
+	if problem != nil || result.(protocol.MutationResult).Record.Title != "Changed" || writes != 4 {
+		t.Fatalf("patch: %+v %v", result, problem)
+	}
+}
+
+func TestGitHubLostCreationResponseCannotRedispatch(t *testing.T) {
+	connector := New(t.TempDir())
+	connector.loadCredential = func(string, string) ([]byte, error) { return json.Marshal(storedCredential{Access: "test"}) }
+	writes := 0
+	connector.transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Method == "POST" && strings.HasSuffix(req.URL.Path, "/issues") {
+			writes++
+			return nil, errors.New("lost response")
+		}
+		return testAPIResponse(req, 200, `{"id":7,"has_issues":true,"permissions":{"push":true}}`, nil), nil
+	})
+	params := protocol.MutationParams{ScopeContext: protocol.ScopeContext{ScopeRef: "7", AccountRef: "42", EndpointRef: endpoint},
+		OperationID: "create", Create: map[string]protocol.FieldValue{"title": protocol.Value(protocol.FieldText, "Created")}}
+	for _, reconcile := range []bool{false, true, true} {
+		out, problem := connector.mutate(context.Background(), params, reconcile, nil)
+		if problem != nil || out.(protocol.MutationResult).Status != "pending_confirmation" {
+			t.Fatalf("unknown create: %+v %v", out, problem)
+		}
+	}
+	if writes != 1 {
+		t.Fatalf("original operation dispatched %d times", writes)
+	}
+}

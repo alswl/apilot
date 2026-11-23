@@ -17,6 +17,7 @@ type WorkbenchConnectorStoredScope struct {
 	Context        protocol.ScopeContext
 	AuthGeneration int64
 	AuthState      string
+	Mapping        map[string]protocol.MappingRule
 }
 
 type WorkbenchConnectorSyncCommit struct {
@@ -28,4 +29,12 @@ type WorkbenchConnectorSyncCommit struct {
 	Records    map[string]WorkbenchTask
 	Removed    map[string]bool
 	Hidden     map[string]bool
+}
+
+type WorkbenchConnectorOperationBinding struct {
+	Mutation        protocol.MutationParams `json:"mutation"`
+	ConfigRevision  int64                   `json:"config_revision"`
+	MappingRevision int64                   `json:"mapping_revision"`
+	AuthGeneration  int64                   `json:"auth_generation"`
+	PackageDigest   string                  `json:"package_digest"`
 }

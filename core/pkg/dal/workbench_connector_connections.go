@@ -6,10 +6,12 @@ import (
 	"errors"
 	"time"
 
+	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
 )
 
 type connectorScopeConfig struct {
+	Mapping map[string]protocol.MappingRule `json:"mapping,omitempty"`
 	common.WorkbenchConnection
 	EndpointConfig        json.RawMessage `json:"endpoint_config"`
 	ScopeConfig           json.RawMessage `json:"scope_config"`
@@ -119,6 +121,7 @@ func scanConnectorScope(row interface{ Scan(...any) error }) (common.WorkbenchCo
 	}
 	scope.Checkpoint = checkpoint.String
 	scope.Config = config.WorkbenchConnection
+	scope.Mapping = config.Mapping
 	scope.Context.ScopeRef = scope.ScopeRef
 	scope.Context.EndpointConfig = config.EndpointConfig
 	scope.Context.ScopeConfig = config.ScopeConfig
@@ -213,4 +216,18 @@ func (s *Store) DeleteWorkbenchConnectorConnection(id string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) ConfigureWorkbenchConnectorScope(id, name string, version int64, write bool) error {
+	result, err := s.db.Exec(`UPDATE workbench_connections SET config=json_set(config,'$.name',?,'$.write_enabled',json(?),'$.version',version+1),
+		version=version+1,config_revision=config_revision+1
+		WHERE id=? AND connector_connection_id IS NOT NULL AND version=?`, name, encode(write), id, version)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count != 1 {
+		return common.Err("STALE_REVISION", "Scope configuration changed")
+	}
+	return err
 }

@@ -49,7 +49,7 @@ func (s *Service) SubmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) 
 				return common.WorkbenchTaskReceipt{}, err
 			}
 		}
-		if existing.Phase == common.WorkbenchOperationAccepted && (connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) {
+		if existing.Phase == common.WorkbenchOperationAccepted && (connection.ParentConnectionID != "" || connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) {
 			s.scheduleWorkbenchOperation(input.RequestID)
 		} else if existing.Phase == common.WorkbenchOperationNeedsReview && (connection.Kind == common.WorkbenchObsidianTasks || connection.Kind == common.WorkbenchGitHubRepository) {
 			if connection.Kind == common.WorkbenchGitHubRepository && (existing.Binding == nil || existing.Binding.IssueID == 0) {
@@ -83,8 +83,14 @@ func (s *Service) SubmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite) 
 	if err != nil {
 		return common.WorkbenchTaskReceipt{}, err
 	}
+	if connection.ParentConnectionID != "" {
+		return s.submitConnectorOperation(input, connection)
+	}
 	if connection.Kind == common.WorkbenchLocal {
 		return s.writeWorkbenchTaskLegacy(input)
+	}
+	if len(input.Fields) > 0 || input.Action != "" || len(input.ActionFields) > 0 {
+		return common.WorkbenchTaskReceipt{}, common.Err("INVALID_ARGUMENT", "This legacy source does not support typed operations")
 	}
 	if connection.Kind != common.WorkbenchObsidianTasks && connection.Kind != common.WorkbenchGitHubRepository {
 		return common.WorkbenchTaskReceipt{}, common.Err("CONFLICT", "Connector does not support task writes")
@@ -165,6 +171,18 @@ func (s *Service) WorkbenchTaskOperationReceipt(requestID string) (common.Workbe
 }
 
 func (s *Service) workbenchOperationVisible(connection common.WorkbenchSnapshot, op common.WorkbenchTaskOperation) error {
+	if connection.ParentConnectionID != "" {
+		scope, _, err := s.readableConnectorScope(connection.ID)
+		if err != nil || op.Binding == nil || op.Binding.Connector == nil || scope.Context.AccountRef != op.Binding.Connector.Mutation.AccountRef {
+			return common.Err("NOT_FOUND", "Unknown task operation")
+		}
+		if op.Receipt.SourceObjectID != "" {
+			if _, err := s.WorkbenchTask(op.Receipt.SourceObjectID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if connection.Kind != common.WorkbenchGitHubRepository {
 		return nil
 	}

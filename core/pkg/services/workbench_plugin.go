@@ -172,7 +172,8 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 		return common.WorkbenchCapabilities{}
 	}
 	if c.ParentConnectionID != "" {
-		return common.WorkbenchCapabilities{Read: true, Refresh: true}
+		writable := c.WriteEnabled && c.AccessState == "available"
+		return common.WorkbenchCapabilities{Read: true, Refresh: true, Create: writable && c.Kind == "github-issues", SetState: writable}
 	}
 	caps := s.workbenchPlugins[c.Kind].capabilities
 	if (c.Kind == common.WorkbenchObsidianTasks || c.Kind == common.WorkbenchGitHubRepository) && !c.WriteEnabled {

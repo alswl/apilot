@@ -55,6 +55,33 @@ func (c *Connector) Handle(ctx context.Context, req protocol.Request, notify pro
 			return nil, e
 		}
 		return c.validate(ctx, p)
+	case protocol.EditMetadata:
+		var p protocol.DetailParams
+		if e := protocol.DecodeParams(req, &p); e != nil {
+			return nil, e
+		}
+		return c.editMetadata(ctx, p)
+	case protocol.Mutate, protocol.Reconcile:
+		var p protocol.MutationParams
+		if e := protocol.DecodeParams(req, &p); e != nil {
+			return nil, e
+		}
+		return c.mutate(ctx, p, req.Method == protocol.Reconcile, notify)
+	case protocol.FieldsDescribe:
+		var p protocol.ScopeContext
+		if e := protocol.DecodeParams(req, &p); e != nil {
+			return nil, e
+		}
+		if !positiveID(p.ScopeRef) || p.EndpointRef != endpoint {
+			return nil, protocol.Problem(protocol.InvalidConfig, "scope", "Invalid GitHub scope")
+		}
+		return githubCatalog(), nil
+	case protocol.TaskDetail:
+		var p protocol.DetailParams
+		if e := protocol.DecodeParams(req, &p); e != nil {
+			return nil, e
+		}
+		return c.detail(ctx, p)
 	case protocol.Sync:
 		var p protocol.SyncParams
 		if e := protocol.DecodeParams(req, &p); e != nil {

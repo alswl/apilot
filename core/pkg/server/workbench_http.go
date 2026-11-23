@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -82,17 +83,13 @@ type workbenchAnnotationID struct {
 	AnnotationID string `path:"annotation_id" minLength:"1"`
 }
 type workbenchTaskList struct {
-	LabelID    string `query:"label_id"`
-	Connection string `query:"connection"`
-	State      string `query:"state" enum:"open,in_progress,done,cancelled,unknown"`
-	Offset     int    `query:"offset" minimum:"0"`
-	Limit      int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
-	Revision   int64  `query:"revision" minimum:"0"`
+	common.WorkbenchQuery
+	PriorityFilter string `query:"priority"`
 }
 type workbenchConnectionInput struct {
 	common.WorkbenchBridgeInput
 	ID                    string            `json:"id,omitempty"`
-	Kind                  string            `json:"kind" enum:"obsidian_tasks,github_issues,github_repository"`
+	Kind                  string            `json:"kind" enum:"obsidian_tasks,github_issues,github_repository,github-issues,fixture"`
 	Name                  string            `json:"name" minLength:"1" maxLength:"256"`
 	ReadMethod            *string           `json:"read_method,omitempty" hidden:"true"`
 	Vault                 string            `json:"vault,omitempty"`
@@ -203,6 +200,8 @@ func WorkbenchOpenAPI() ([]byte, error) {
 
 func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 	registerWorkbenchConnectorHTTP(api, s)
+	registerWorkbenchConnectorTasksHTTP(api, s)
+	registerWorkbenchSyncRunHTTP(api, s)
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/github-repositories", "listGitHubRepositories", "List authorized GitHub Issues repositories", "Connections", []int{401, 403, 409, 429, 503},
 		func(in *struct {
 			AuthorizationID string `query:"authorization_id"`
@@ -266,6 +265,22 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		func(in *workbenchID) (common.WorkbenchSnapshot, error) { return s.WorkbenchSnapshot(in.ID) })
 	registerWorkbench(api, http.MethodPut, workbenchPath+"/connections", "saveWorkbenchConnection", "Save a connection", "Connections", []int{400, 401, 403, 404, 409, 429, 503},
 		func(in *workbenchBody[workbenchConnectionInput]) (common.WorkbenchSnapshot, error) {
+			if in.Body.ID != "" {
+				prior, err := s.WorkbenchSnapshot(in.Body.ID)
+				if err != nil {
+					return common.WorkbenchSnapshot{}, err
+				}
+				if prior.ParentConnectionID != "" {
+					if in.Body.GitHubToken != "" || in.Body.GitHubAuthorizationID != "" {
+						return common.WorkbenchSnapshot{}, common.Err("INVALID_ARGUMENT", "Managed Connector owns source authorization")
+					}
+					write := prior.WriteEnabled
+					if in.Body.WriteEnabled != nil {
+						write = *in.Body.WriteEnabled
+					}
+					return s.ConfigureWorkbenchConnectorScope(in.Body.ID, in.Body.Kind, in.Body.Name, in.Body.Version, write)
+				}
+			}
 			readMethod := ""
 			if in.Body.ReadMethod != nil {
 				readMethod = *in.Body.ReadMethod
@@ -333,7 +348,15 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/tasks", "listWorkbenchTasks", "Search the committed task snapshot", "Tasks", []int{400, 409},
 		func(in *workbenchTaskList) (common.WorkbenchPage, error) {
-			return s.WorkbenchTasks(common.WorkbenchQuery{LabelID: in.LabelID, Connection: in.Connection, State: in.State, Offset: in.Offset, Limit: in.Limit, Revision: in.Revision})
+			query := in.WorkbenchQuery
+			if in.PriorityFilter != "" {
+				priority, err := strconv.Atoi(in.PriorityFilter)
+				if err != nil {
+					return common.WorkbenchPage{}, common.Err("INVALID_ARGUMENT", "Invalid priority filter")
+				}
+				query.Priority = &priority
+			}
+			return s.WorkbenchTasks(query)
 		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/labels", "listWorkbenchLabels", "List local task labels", "Tasks", nil,
 		func(_ *struct{}) (workbenchItems[common.WorkbenchLabel], error) {

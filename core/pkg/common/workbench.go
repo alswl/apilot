@@ -1,6 +1,9 @@
 package common
 
-import "time"
+import (
+	"github.com/alswl/apilot/connectors/protocol"
+	"time"
+)
 
 const WorkbenchAPIVersion = "1"
 const WorkbenchAPIVersionHeader = "X-Apilot-Workbench-Version"
@@ -12,6 +15,8 @@ const (
 )
 
 type WorkbenchTask struct {
+	Priority          *int                    `json:"priority,omitempty"`
+	DueDate           string                  `json:"due_date,omitempty"`
 	ConnectionVersion int64                   `json:"connection_version,omitempty"`
 	TargetVersion     string                  `json:"target_version,omitempty"`
 	State             string                  `json:"state,omitempty"`
@@ -159,12 +164,20 @@ type WorkbenchSnapshot struct {
 }
 
 type WorkbenchQuery struct {
-	LabelID    string `json:"label_id,omitempty"`
-	Connection string `json:"connection"`
-	State      string `json:"state"`
-	Limit      int    `json:"limit"`
-	Offset     int    `json:"offset"`
-	Revision   int64  `json:"revision"`
+	ScopeID    string `json:"scope_id,omitempty" query:"scope_id"`
+	Source     string `json:"source,omitempty" query:"source"`
+	Assignee   string `json:"assignee,omitempty" query:"assignee"`
+	Priority   *int   `json:"priority,omitempty"`
+	DueBefore  string `json:"due_before,omitempty" query:"due_before"`
+	DueAfter   string `json:"due_after,omitempty" query:"due_after"`
+	Sort       string `json:"sort,omitempty" query:"sort" enum:"title,priority,due_date,state,assignee"`
+	Descending bool   `json:"descending,omitempty" query:"descending"`
+	LabelID    string `json:"label_id,omitempty" query:"label_id"`
+	Connection string `json:"connection" query:"connection"`
+	State      string `json:"state" query:"state" enum:"open,in_progress,done,cancelled,unknown"`
+	Limit      int    `json:"limit" query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Offset     int    `json:"offset" query:"offset" minimum:"0"`
+	Revision   int64  `json:"revision" query:"revision" minimum:"0"`
 }
 
 type WorkbenchPage struct {
@@ -191,24 +204,35 @@ type WorkbenchImportTask struct {
 }
 
 type WorkbenchTaskWrite struct {
-	RequestID         string   `json:"request_id"`
-	ConnectionID      string   `json:"connection_id,omitempty"`
-	ConnectionVersion int64    `json:"connection_version"`
-	SourceObjectID    string   `json:"source_object_id,omitempty"`
-	TargetVersion     string   `json:"target_version,omitempty"`
-	Title             string   `json:"title,omitempty"`
-	Body              string   `json:"body,omitempty"`
-	State             string   `json:"state,omitempty"`
-	NotePath          string   `json:"note_path,omitempty"`
-	HeadingPath       []string `json:"heading_path,omitempty"`
+	Fields            map[string]protocol.FieldValue `json:"fields,omitempty"`
+	Action            string                         `json:"action,omitempty"`
+	ActionFields      map[string]protocol.FieldValue `json:"action_fields,omitempty"`
+	MappingRevision   *int64                         `json:"mapping_revision,omitempty"`
+	RequestID         string                         `json:"request_id"`
+	ConnectionID      string                         `json:"connection_id,omitempty"`
+	ConnectionVersion int64                          `json:"connection_version"`
+	SourceObjectID    string                         `json:"source_object_id,omitempty"`
+	TargetVersion     string                         `json:"target_version,omitempty"`
+	Title             string                         `json:"title,omitempty"`
+	Body              string                         `json:"body,omitempty"`
+	State             string                         `json:"state,omitempty"`
+	NotePath          string                         `json:"note_path,omitempty"`
+	HeadingPath       []string                       `json:"heading_path,omitempty"`
+}
+
+type WorkbenchFieldConflict struct {
+	Current  map[string]protocol.FieldValue `json:"current,omitempty"`
+	Proposed map[string]protocol.FieldValue `json:"proposed,omitempty"`
 }
 
 type WorkbenchTaskReceipt struct {
-	RequestID      string `json:"request_id"`
-	ConnectionID   string `json:"connection_id"`
-	SourceObjectID string `json:"source_object_id,omitempty"`
-	SyncState      string `json:"sync_state"`
-	Reason         string `json:"reason,omitempty"`
+	Conflict       *WorkbenchFieldConflict    `json:"conflict,omitempty"`
+	Evidence       *protocol.MutationEvidence `json:"evidence,omitempty"`
+	RequestID      string                     `json:"request_id"`
+	ConnectionID   string                     `json:"connection_id"`
+	SourceObjectID string                     `json:"source_object_id,omitempty"`
+	SyncState      string                     `json:"sync_state"`
+	Reason         string                     `json:"reason,omitempty"`
 }
 
 // Operation phases describe request processing, independently of task state.
@@ -232,13 +256,14 @@ type WorkbenchTaskOperation struct {
 }
 
 type WorkbenchOperationBinding struct {
-	RepositoryID int64          `json:"repository_id,omitempty"`
-	AccountID    int64          `json:"account_id,omitempty"`
-	IssueID      int64          `json:"issue_id,omitempty"`
-	IssueNumber  int64          `json:"issue_number,omitempty"`
-	Vault        string         `json:"vault"`
-	Scope        string         `json:"scope"`
-	Baseline     *WorkbenchTask `json:"baseline,omitempty"`
+	Connector    *WorkbenchConnectorOperationBinding `json:"connector,omitempty"`
+	RepositoryID int64                               `json:"repository_id,omitempty"`
+	AccountID    int64                               `json:"account_id,omitempty"`
+	IssueID      int64                               `json:"issue_id,omitempty"`
+	IssueNumber  int64                               `json:"issue_number,omitempty"`
+	Vault        string                              `json:"vault"`
+	Scope        string                              `json:"scope"`
+	Baseline     *WorkbenchTask                      `json:"baseline,omitempty"`
 }
 
 type WorkbenchNote struct {

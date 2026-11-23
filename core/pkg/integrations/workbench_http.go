@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -31,7 +32,7 @@ func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, erro
 		timeout = 20 * time.Second
 	case "workbench.github.repository.list":
 		timeout = 35 * time.Second
-	case "workbench.operation.reconcile":
+	case "workbench.operation.reconcile", "workbench.operation.submit", "workbench.task.detail", "workbench.task.edit-metadata", "workbench.scope.edit-metadata", "workbench.scope.fields", "workbench.scope.mapping", "workbench.scope.mapping.preview", "workbench.scope.mapping.save":
 		timeout = 35 * time.Second
 	case "workbench.task.create", "workbench.task.complete", "workbench.task.reopen":
 		timeout = 25 * time.Second
@@ -165,32 +166,65 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return client.ListWorkbenchPlugins(ctx)
 	case "workbench.task.list":
 		var q common.WorkbenchQuery
-		if err := json.Unmarshal(input, &q); err != nil {
+		var mapped ListWorkbenchTasksParams
+		if json.Unmarshal(input, &q) != nil {
 			return nil, common.Err("INVALID_ARGUMENT", "Invalid task query")
 		}
-		mapped := &ListWorkbenchTasksParams{}
-		if q.LabelID != "" {
-			mapped.LabelId = &q.LabelID
+		priority := q.Priority
+		q.Priority = nil
+		raw, _ := json.Marshal(q)
+		if json.Unmarshal(raw, &mapped) != nil {
+			return nil, common.Err("INVALID_ARGUMENT", "Invalid task query")
 		}
-		if q.Connection != "" {
-			mapped.Connection = &q.Connection
+		if priority != nil {
+			value := strconv.Itoa(*priority)
+			mapped.Priority = &value
 		}
-		if q.State != "" {
-			state := ListWorkbenchTasksParamsState(q.State)
-			mapped.State = &state
+		if q.Limit == 0 {
+			mapped.Limit = nil
 		}
-		if q.Revision != 0 {
-			mapped.Revision = &q.Revision
+		return client.ListWorkbenchTasks(ctx, &mapped)
+	case "workbench.task.detail", "workbench.task.edit-metadata", "workbench.scope.edit-metadata", "workbench.scope.fields",
+		"workbench.scope.mapping", "workbench.scope.mapping.preview", "workbench.scope.mapping.save", "workbench.sync.inspect":
+		var in struct {
+			ID   string          `json:"id"`
+			Body json.RawMessage `json:"body"`
+			GetWorkbenchTaskDetailParams
 		}
-		if q.Limit != 0 {
-			limit := int64(q.Limit)
-			mapped.Limit = &limit
+		if json.Unmarshal(input, &in) != nil || in.ID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "ID is required")
 		}
-		if q.Offset != 0 {
-			offset := int64(q.Offset)
-			mapped.Offset = &offset
+		switch method {
+		case "workbench.task.detail":
+			return client.GetWorkbenchTaskDetail(ctx, in.ID, &in.GetWorkbenchTaskDetailParams)
+		case "workbench.task.edit-metadata":
+			return client.GetWorkbenchTaskEditMetadata(ctx, in.ID)
+		case "workbench.scope.edit-metadata":
+			return client.GetWorkbenchScopeEditMetadata(ctx, in.ID)
+		case "workbench.scope.fields":
+			return client.GetWorkbenchScopeFields(ctx, in.ID)
+		case "workbench.scope.mapping":
+			return client.GetWorkbenchScopeMapping(ctx, in.ID)
+		case "workbench.scope.mapping.preview":
+			return client.PreviewWorkbenchScopeMappingWithBody(ctx, in.ID, "application/json", bytes.NewReader(in.Body))
+		case "workbench.scope.mapping.save":
+			return client.SaveWorkbenchScopeMappingWithBody(ctx, in.ID, "application/json", bytes.NewReader(in.Body))
+		default:
+			return client.GetWorkbenchSyncRun(ctx, in.ID)
 		}
-		return client.ListWorkbenchTasks(ctx, mapped)
+	case "workbench.sync.list":
+		var query ListWorkbenchSyncRunsParams
+		if json.Unmarshal(input, &query) != nil {
+			return nil, common.Err("INVALID_ARGUMENT", "Invalid sync run query")
+		}
+		return client.ListWorkbenchSyncRuns(ctx, &query)
+	case "workbench.sync.usage":
+		var query ListWorkbenchSyncUsageParams
+		if json.Unmarshal(input, &query) != nil {
+			return nil, common.Err("INVALID_ARGUMENT", "Invalid sync usage query")
+		}
+		return client.ListWorkbenchSyncUsage(ctx, &query)
+
 	case "workbench.connection.save":
 		return client.SaveWorkbenchConnectionWithBody(ctx, "application/json", bytes.NewReader(input))
 	case "workbench.task.create":

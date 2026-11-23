@@ -14,6 +14,7 @@ import (
 )
 
 type githubIssue struct {
+	Body        string          `json:"body"`
 	ID          int64           `json:"id"`
 	Number      int64           `json:"number"`
 	Title       string          `json:"title"`
@@ -227,6 +228,7 @@ func issueRecord(issue githubIssue) (protocol.SourceRecord, bool) {
 		SourceVersion: issue.UpdatedAt.UTC().Format(time.RFC3339Nano), UpdatedAt: issue.UpdatedAt, URL: issue.HTMLURL,
 		Title: issue.Title, State: state, StateID: issue.State, StateLabel: issue.State,
 		Fields: map[string]protocol.FieldValue{
+			"title":        protocol.Value(protocol.FieldText, issue.Title),
 			"state_reason": {Type: protocol.FieldText, Value: json.RawMessage(strconv.Quote(issue.StateReason))},
 			"labels":       {Type: protocol.FieldLabels, Value: labelJSON},
 			"assignees":    {Type: protocol.FieldAccounts, Value: accountJSON},

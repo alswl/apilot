@@ -109,6 +109,14 @@ func (s *Store) WorkbenchPendingWrites(connectionID string) ([]common.WorkbenchT
 // AdmitWorkbenchTaskOperation persists the complete request before a worker can dispatch it.
 // Reusing a request ID is idempotent only when its original fingerprint matches.
 func (s *Store) AdmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite, connectionID, fingerprint string) (common.WorkbenchTaskOperation, bool, error) {
+	return s.admitWorkbenchTaskOperation(input, connectionID, fingerprint, nil)
+}
+
+func (s *Store) AdmitWorkbenchConnectorOperation(input common.WorkbenchTaskWrite, connectionID, fingerprint string, binding common.WorkbenchConnectorOperationBinding) (common.WorkbenchTaskOperation, bool, error) {
+	return s.admitWorkbenchTaskOperation(input, connectionID, fingerprint, &binding)
+}
+
+func (s *Store) admitWorkbenchTaskOperation(input common.WorkbenchTaskWrite, connectionID, fingerprint string, managed *common.WorkbenchConnectorOperationBinding) (common.WorkbenchTaskOperation, bool, error) {
 	var empty common.WorkbenchTaskOperation
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -175,7 +183,7 @@ func (s *Store) AdmitWorkbenchTaskOperation(input common.WorkbenchTaskWrite, con
 		}
 	}
 	receipt := common.WorkbenchTaskReceipt{RequestID: input.RequestID, ConnectionID: connectionID, SourceObjectID: input.SourceObjectID, SyncState: "accepted"}
-	binding := &common.WorkbenchOperationBinding{Vault: connection.Vault, Scope: connection.Scope, Baseline: baseline}
+	binding := &common.WorkbenchOperationBinding{Vault: connection.Vault, Scope: connection.Scope, Baseline: baseline, Connector: managed}
 	if connection.Kind == common.WorkbenchGitHubRepository {
 		if err := tx.QueryRow("SELECT repository_id,account_id FROM workbench_github_connections WHERE connection_id=?", connectionID).Scan(&binding.RepositoryID, &binding.AccountID); err != nil {
 			return empty, false, err

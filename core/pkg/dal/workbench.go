@@ -261,12 +261,36 @@ func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, er
 	if q.Revision != 0 && page.Revision != q.Revision {
 		return page, common.Err("STALE_REVISION", "Task list changed")
 	}
-	filter := " WHERE " + workbenchObjectVisible + " AND (?='' OR connection_id=?) AND (?='' OR state=?) AND (?='' OR EXISTS (SELECT 1 FROM workbench_task_labels WHERE task_id=workbench_objects.id AND label_id=?))"
-	args := []any{q.Connection, q.Connection, q.State, q.State, q.LabelID, q.LabelID}
+	scope := q.Connection
+	if q.ScopeID != "" {
+		scope = q.ScopeID
+	}
+	filter := ` WHERE ` + workbenchObjectVisible + ` AND (?='' OR connection_id=?) AND (?='' OR state=?)
+		AND (?='' OR source_kind=?) AND (? IS NULL OR priority=?)
+		AND (?='' OR due_date>=?) AND (?='' OR due_date<=?)
+		AND (?='' OR EXISTS(SELECT 1 FROM json_each(payload,'$.assignees') a WHERE a.value=? COLLATE NOCASE))
+		AND (?='' OR EXISTS (SELECT 1 FROM workbench_task_labels WHERE task_id=workbench_objects.id AND label_id=?))`
+	args := []any{scope, scope, q.State, q.State, q.Source, q.Source, q.Priority, q.Priority,
+		q.DueAfter, q.DueAfter, q.DueBefore, q.DueBefore, q.Assignee, q.Assignee, q.LabelID, q.LabelID}
 	if err := tx.QueryRow("SELECT COUNT(*) FROM workbench_objects"+filter, args...).Scan(&page.Total); err != nil {
 		return page, err
 	}
-	rows, err := tx.Query("SELECT source_key,payload FROM workbench_objects"+filter+" ORDER BY title COLLATE NOCASE,id LIMIT ? OFFSET ?", append(args, q.Limit, q.Offset)...)
+	column := "title COLLATE NOCASE"
+	switch q.Sort {
+	case "priority":
+		column = "priority"
+	case "due_date":
+		column = "due_date"
+	case "state":
+		column = "state"
+	case "assignee":
+		column = "json_extract(payload,'$.assignees[0]') COLLATE NOCASE"
+	}
+	direction := " ASC"
+	if q.Descending {
+		direction = " DESC"
+	}
+	rows, err := tx.Query("SELECT source_key,payload FROM workbench_objects"+filter+" ORDER BY ("+column+") IS NULL,"+column+direction+",id LIMIT ? OFFSET ?", append(args, q.Limit, q.Offset)...)
 	if err != nil {
 		return page, err
 	}

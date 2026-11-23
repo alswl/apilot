@@ -141,3 +141,33 @@ the bundle resources.
   ]
 }
 ```
+
+## Remaining 011 Core checks
+
+Build the four binaries from the selected commit as shown above. Then run
+the Core/CLI scenarios against the disposable fixture:
+
+```sh
+python3 scripts/verify-uc01-core.py "$candidate" --remaining
+go -C core test ./pkg/server ./pkg/dal ./cmd/apilot \
+  -run 'TestWorkbenchRemainingMVP|TestWorkbenchConnectorSyncRejectsOlderSnapshot$|TestWorkbenchCLIOperationRoutes$|TestWorkbenchEventStreamCommitRestartAndShutdown$' -count=1
+go -C connectors/github-issues test ./... -run 'TestGitHubMutation|TestGitHubLostCreationResponse'
+```
+
+The CLI exposes scope and projected-field filters on `task list`, paginated
+segments on `task detail`, and available edit fields and transitions on
+`task edit-metadata`. Use `connection fields` and `connection mapping
+show|preview|save` with the displayed mapping revision. A mapping input can
+include a sample `task_id` or request `restore_defaults`.
+
+For an edit, submit a task's current `connection_version` and
+`target_version` with `task operation submit -`. Include one typed `fields`
+map or one `action` plus its `action_fields`. Read the receipt with `task
+operation show`. If it reports `needs_review`, query the original request
+with `task operation reconcile`. Fixture options `write_result: "conflict"`
+and `write_result: "lost"` exercise conflict and lost acknowledgement.
+
+Use `sync list --scope SCOPE_ID`, `sync inspect SYNC_RUN_ID` and `sync usage
+--connection CONNECTION_ID` to match run evidence and usage. The fixture
+flags `rate_limited_scope` and `partial_scope` inject a scope-local backoff
+and a page error with incomplete counting, respectively.

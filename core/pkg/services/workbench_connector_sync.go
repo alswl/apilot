@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/url"
+	"slices"
 	"sort"
 	"time"
 
@@ -102,7 +103,7 @@ func (s *Service) startWorkbenchConnectorRunLocked(store workbenchManagedConnect
 		return 0, common.Err("CONFLICT", "Connector scope sync is already running")
 	}
 	now := time.Now().UTC()
-	if until, err := store.WorkbenchConnectorBackoff(scope.ConnectionID); err != nil {
+	if until, err := store.WorkbenchConnectorBackoff(scope.ConnectionID, scope.ScopeID); err != nil {
 		return 0, err
 	} else if until != nil && now.Before(*until) {
 		return 0, protocol.Problem(protocol.RateLimited, "account", "Connector backoff is active")
@@ -162,6 +163,12 @@ func (s *Service) runWorkbenchConnector(ctx context.Context, cancel context.Canc
 		var rpc *protocol.RPCError
 		if errors.As(err, &rpc) {
 			commit.Run.RetryAt = rpc.Data.RetryAt
+			if rpc.Data.Kind == protocol.RateLimited {
+				commit.Run.RateLimitBucket = rpc.Data.RateLimitBucket
+				if rpc.Data.AffectedLevel == "scope" {
+					commit.Run.RateLimitBucket = "scope:" + commit.Run.RateLimitBucket
+				}
+			}
 		}
 		if finishErr := store.FinishWorkbenchConnectorFailure(commit); finishErr != nil && common.ProtocolError(finishErr).Code != "STALE_REVISION" {
 			log.Print("workbench: could not persist Connector sync failure")
@@ -172,8 +179,13 @@ func (s *Service) runWorkbenchConnector(ctx context.Context, cancel context.Canc
 				_, _ = s.startWorkbenchConnectorRunLocked(store, commit.Scope.ScopeID, "invalid_checkpoint", true)
 			case commit.Run.Status == "superseded":
 				scope, err := store.WorkbenchConnectorScope(commit.Scope.ScopeID)
-				if err == nil && scope.AuthState == "authorized" && scope.AuthGeneration != commit.Scope.AuthGeneration {
-					_, _ = s.startWorkbenchConnectorRunLocked(store, scope.ScopeID, "relogin", true)
+				if err == nil && scope.AuthState == "authorized" {
+					switch {
+					case scope.AuthGeneration != commit.Scope.AuthGeneration:
+						_, _ = s.startWorkbenchConnectorRunLocked(store, scope.ScopeID, "relogin", true)
+					case scope.MappingRevision != commit.Scope.MappingRevision:
+						_, _ = s.startWorkbenchConnectorRunLocked(store, scope.ScopeID, "mapping", true)
+					}
 				}
 			}
 		}
@@ -184,6 +196,12 @@ func (s *Service) runWorkbenchConnector(ctx context.Context, cancel context.Canc
 func readWorkbenchConnectorPages(ctx context.Context, store workbenchManagedConnectorStore, process *integrations.WorkbenchConnectorProcess,
 	c *common.WorkbenchConnectorSyncCommit) (string, error) {
 	p := protocol.SyncParams{ScopeContext: c.Scope.Context, Mode: c.Run.Mode, Fields: []string{"assignees", "labels", "priority", "state_reason"}}
+	p.Fields = append(p.Fields, "due_date", "status")
+	for _, rule := range c.Scope.Mapping {
+		p.Fields = append(p.Fields, rule.Field)
+	}
+	slices.Sort(p.Fields)
+	p.Fields = slices.Compact(p.Fields)
 	if p.Mode == "delta" {
 		p.Checkpoint = c.Scope.Checkpoint
 	}
@@ -336,6 +354,22 @@ func connectorTask(scope common.WorkbenchConnectorStoredScope, record protocol.S
 		SourceKey: record.SourceID, NativeID: record.Number, Title: record.Title, Locator: locator, State: record.State,
 		NativeFields: map[string]string{"state": record.StateID, "state_label": record.StateLabel, "updated_at": record.UpdatedAt.UTC().Format(time.RFC3339Nano), "source_version": record.SourceVersion}}
 	for id, field := range record.Fields {
+		raw, _ := json.Marshal(field)
+		task.NativeFields["native."+id] = string(raw)
+		if id == "priority" && field.Type == protocol.FieldNumber {
+			var value *int
+			if json.Unmarshal(field.Value, &value) == nil {
+				task.Priority = value
+			}
+		}
+		if id == "due_date" && field.Type == protocol.FieldDate {
+			var value string
+			if json.Unmarshal(field.Value, &value) == nil {
+				if _, err := time.Parse(time.DateOnly, value); err == nil {
+					task.DueDate = value
+				}
+			}
+		}
 		switch {
 		case id == "labels" && field.Type == protocol.FieldLabels:
 			if json.Unmarshal(field.Value, &task.Labels) != nil {
@@ -357,6 +391,7 @@ func connectorTask(scope common.WorkbenchConnectorStoredScope, record protocol.S
 			task.NativeFields["field."+id] = value
 		}
 	}
+	applyConnectorMapping(&task, scope.Mapping)
 	return task, nil
 }
 
@@ -374,7 +409,8 @@ func (s *Service) scheduleWorkbenchConnectorScope(scope common.WorkbenchSnapshot
 	if err != nil {
 		return
 	}
-	if trigger == "periodic" && last != nil && time.Since(last.StartedAt) < connectorDeltaInterval {
+	if trigger == "periodic" && last != nil && time.Since(last.StartedAt) < connectorDeltaInterval &&
+		(last.RetryAt == nil || time.Now().Before(*last.RetryAt)) {
 		return
 	}
 	_, _ = s.startWorkbenchConnectorRunLocked(store, scope.ID, trigger, false)

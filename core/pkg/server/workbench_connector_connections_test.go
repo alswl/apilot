@@ -19,6 +19,12 @@ import (
 )
 
 func TestWorkbenchConnectorUC01HTTP(t *testing.T) {
+	api, config := prepareUC01TestAPI(t)
+	api.scenarios(config)
+}
+
+func prepareUC01TestAPI(t *testing.T) (uc01TestAPI, string) {
+	t.Helper()
 	fixtureDir := t.TempDir()
 	binary := filepath.Join(fixtureDir, "apilot-fixture")
 	cmd := exec.Command("go", "-C", "../../../connectors/protocol", "build", "-o", binary, "./cmd/apilot-fixture")
@@ -48,7 +54,7 @@ func TestWorkbenchConnectorUC01HTTP(t *testing.T) {
 	path := filepath.Join(dir, "connectors", "fixture", "fixture.json")
 	api := uc01TestAPI{t: t, handler: router}
 
-	api.scenarios(path)
+	return api, path
 }
 
 type uc01TestAPI struct {

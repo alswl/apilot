@@ -48,7 +48,16 @@ var workbenchGitHubRateSchema string
 //go:embed migrations/012_workbench_connector_sync.sql
 var workbenchConnectorSyncSchema string
 
-var migrations = []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema, workbenchConnectorSyncSchema}
+//go:embed migrations/013_workbench_task_projection.sql
+var workbenchTaskProjectionSchema string
+
+//go:embed migrations/014_workbench_task_detail_cache.sql
+var workbenchTaskDetailsSchema string
+
+//go:embed migrations/015_workbench_sync_retry_bucket.sql
+var workbenchSyncRetryBucketSchema string
+
+var migrations = []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema, workbenchConnectorSyncSchema, workbenchTaskProjectionSchema, workbenchTaskDetailsSchema, workbenchSyncRetryBucketSchema}
 
 type Store struct{ db *sql.DB }
 

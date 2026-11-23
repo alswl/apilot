@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,14 +17,20 @@ import (
 )
 
 type fixtureConfig struct {
-	LoginDelayMS    int    `json:"login_delay_ms"`
-	BrowserURL      string `json:"browser_url"`
-	LoginResult     string `json:"login_result"`
-	Account         string `json:"account"`
-	DeniedScope     string `json:"denied_scope"`
-	FailSecondPage  string `json:"fail_second_page"`
-	UnverifiedScope string `json:"unverified_scope"`
-	EmptyScope      string `json:"empty_scope"`
+	ReadOnlyTask     string `json:"read_only_task"`
+	RateLimitedScope string `json:"rate_limited_scope"`
+	PartialScope     string `json:"partial_scope"`
+	DetailError      string `json:"detail_error"`
+	RemovedField     string `json:"removed_field"`
+	WriteResult      string `json:"write_result"`
+	LoginDelayMS     int    `json:"login_delay_ms"`
+	BrowserURL       string `json:"browser_url"`
+	LoginResult      string `json:"login_result"`
+	Account          string `json:"account"`
+	DeniedScope      string `json:"denied_scope"`
+	FailSecondPage   string `json:"fail_second_page"`
+	UnverifiedScope  string `json:"unverified_scope"`
+	EmptyScope       string `json:"empty_scope"`
 }
 
 const fixtureEndpoint = "fixture.local"
@@ -147,6 +153,54 @@ func fixtureHandler(ctx context.Context, req protocol.Request, notify protocol.N
 			return nil, protocol.Problem(protocol.InvalidConfig, "scope", "Choose PAY or OPS")
 		}
 		return protocol.ValidatedScope{ScopeRef: scope.Project, EndpointRef: fixtureEndpoint, Label: scope.Project}, nil
+	case protocol.EditMetadata:
+		var p protocol.DetailParams
+		if err := protocol.DecodeParams(req, &p); err != nil {
+			return nil, err
+		}
+		if err := config.checkScope(p.ScopeContext); err != nil {
+			return nil, err
+		}
+		if p.SourceID == "" {
+			return protocol.EditMetadataResult{Fields: []protocol.FieldDefinition{}, Actions: []protocol.StateAction{}}, nil
+		}
+		if p.SourceID != "1" && p.SourceID != "2" {
+			return nil, protocol.Problem(protocol.AccessDenied, "object", "Fixture task unavailable")
+		}
+		if config.ReadOnlyTask == p.ScopeRef+"-"+p.SourceID {
+			return protocol.EditMetadataResult{Fields: []protocol.FieldDefinition{}, Actions: []protocol.StateAction{}}, nil
+		}
+		return fixtureEditMetadata(fixtureCurrent(p.ScopeRef, p.SourceID)), nil
+	case protocol.Mutate, protocol.Reconcile:
+		var p protocol.MutationParams
+		if err := protocol.DecodeParams(req, &p); err != nil {
+			return nil, err
+		}
+		return config.mutation(ctx, p, req.Method == protocol.Reconcile)
+	case protocol.FieldsDescribe:
+		var p protocol.ScopeContext
+		if problem := protocol.DecodeParams(req, &p); problem != nil {
+			return nil, problem
+		}
+		if problem := config.checkScope(p); problem != nil {
+			return nil, problem
+		}
+		catalog := fixtureCatalog()
+		if config.RemovedField != "" {
+			catalog.Fields = slices.DeleteFunc(catalog.Fields, func(f protocol.FieldDefinition) bool { return f.ID == config.RemovedField })
+			for id, rule := range catalog.Defaults {
+				if rule.Field == config.RemovedField {
+					delete(catalog.Defaults, id)
+				}
+			}
+		}
+		return catalog, nil
+	case protocol.TaskDetail:
+		var p protocol.DetailParams
+		if problem := protocol.DecodeParams(req, &p); problem != nil {
+			return nil, problem
+		}
+		return config.detail(p)
 	case protocol.Sync:
 		var p protocol.SyncParams
 		if problem := protocol.DecodeParams(req, &p); problem != nil {
@@ -168,7 +222,7 @@ func fixtureHandler(ctx context.Context, req protocol.Request, notify protocol.N
 				resolved.Status = "unverified"
 			}
 			if p.ScopeRef != config.EmptyScope && (id == "1" || id == "2") {
-				record := fixtureRecord(p.ScopeRef, id, p.Fields)
+				record := fixtureSyncRecord(p.ScopeRef, id, p.Fields)
 				resolved.Status, resolved.Record = "present", &record
 				result.Usage.Received++
 			}
@@ -205,28 +259,64 @@ func (c fixtureConfig) sync(p protocol.SyncParams) (any, *protocol.RPCError) {
 		problem.Data.Usage = &protocol.Usage{Requests: 1}
 		return nil, problem
 	}
-	if p.Mode == "delta" && p.Checkpoint != "checkpoint-"+p.ScopeRef {
-		return nil, protocol.Problem(protocol.InvalidCheckpoint, "scope", "Fixture checkpoint is invalid")
+	if p.ScopeRef == c.RateLimitedScope {
+		retry := time.Now().UTC().Add(30 * time.Second)
+		problem := protocol.Problem(protocol.RateLimited, "scope", "Fixture scope rate limited")
+		problem.Data.RetryAt = &retry
+		problem.Data.RateLimitBucket = "fixture-read"
+		problem.Data.Usage = &protocol.Usage{Requests: 1, RateLimits: 1}
+		return nil, problem
+	}
+	if p.ScopeRef == c.PartialScope && p.Page != "" {
+		return nil, protocol.Problem(protocol.Temporary, "scope", "Fixture read interrupted without complete usage")
 	}
 	if p.Mode != "full" && p.Mode != "delta" {
 		return nil, protocol.Problem(protocol.InvalidConfig, "scope", "Unknown fixture sync mode")
 	}
+	checkpoint := "checkpoint-" + p.ScopeRef
+	watermark := time.Now().UTC()
+	var previous time.Time
+	if p.Mode == "delta" {
+		switch {
+		case p.Checkpoint == checkpoint:
+		case strings.HasPrefix(p.Checkpoint, checkpoint+"@"):
+			parsed, err := time.Parse(time.RFC3339Nano, strings.TrimPrefix(p.Checkpoint, checkpoint+"@"))
+			if err != nil {
+				return nil, protocol.Problem(protocol.InvalidCheckpoint, "scope", "Fixture checkpoint is invalid")
+			}
+			previous = parsed
+		default:
+			return nil, protocol.Problem(protocol.InvalidCheckpoint, "scope", "Fixture checkpoint is invalid")
+		}
+	}
 	usage := protocol.Usage{Requests: 1, Pages: 1}
-	result := protocol.SyncPage{Records: []protocol.SourceRecord{}, Coverage: p.Mode, NextCheckpoint: "checkpoint-" + p.ScopeRef, Usage: usage}
-	if p.Mode == "delta" || p.ScopeRef == c.EmptyScope {
+	result := protocol.SyncPage{Records: []protocol.SourceRecord{}, Coverage: p.Mode, NextCheckpoint: checkpoint + "@" + watermark.Format(time.RFC3339Nano), Usage: usage}
+	if p.ScopeRef == c.EmptyScope {
 		return result, nil
 	}
-	switch p.Page {
-	case "":
-		result.Records = append(result.Records, fixtureRecord(p.ScopeRef, "1", p.Fields))
-		result.NextPage, result.Coverage, result.NextCheckpoint = "second", "", ""
-	case "second":
+	switch {
+	case p.Mode == "delta":
+		for _, id := range []string{"1", "2"} {
+			record := fixtureSyncRecord(p.ScopeRef, id, p.Fields)
+			if record.SourceVersion != "v1" && record.UpdatedAt.After(previous) && !record.UpdatedAt.After(watermark) {
+				result.Records = append(result.Records, record)
+			}
+		}
+	case p.Page == "":
+		result.Records = append(result.Records, fixtureSyncRecord(p.ScopeRef, "1", p.Fields))
+		result.NextPage, result.Coverage, result.NextCheckpoint = "second@"+watermark.Format(time.RFC3339Nano), "", ""
+	case strings.HasPrefix(p.Page, "second@"):
+		from, err := time.Parse(time.RFC3339Nano, strings.TrimPrefix(p.Page, "second@"))
+		if err != nil {
+			return nil, protocol.Problem(protocol.InvalidConfig, "scope", "Unknown fixture sync page")
+		}
 		if p.ScopeRef == c.FailSecondPage {
 			problem := protocol.Problem(protocol.Temporary, "scope", "Fixture page temporarily unavailable")
 			problem.Data.Usage = &usage
 			return nil, problem
 		}
-		result.Records = append(result.Records, fixtureRecord(p.ScopeRef, "2", p.Fields))
+		result.NextCheckpoint = checkpoint + "@" + from.Format(time.RFC3339Nano)
+		result.Records = append(result.Records, fixtureSyncRecord(p.ScopeRef, "2", p.Fields))
 	default:
 		return nil, protocol.Problem(protocol.InvalidConfig, "scope", "Unknown fixture sync page")
 	}
@@ -239,9 +329,39 @@ func fixtureRecord(scope, id string, fields []string) protocol.SourceRecord {
 		SourceID: id, SourceVersion: "v1", Number: scope + "-" + id, Title: fmt.Sprintf("%s task %s", scope, id),
 		State: "open", StateID: "todo", StateLabel: "To do", UpdatedAt: time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC),
 	}
-	for _, field := range fields {
-		if field == "priority" {
-			record.Fields = map[string]protocol.FieldValue{"priority": {Type: protocol.FieldText, Value: json.RawMessage(strconv.Quote("normal"))}}
+	record.Fields = map[string]protocol.FieldValue{
+		"title":       protocol.Value(protocol.FieldText, record.Title),
+		"description": protocol.Value(protocol.FieldRichText, "Fixture task **description**"),
+		"assignees":   protocol.Value(protocol.FieldAccounts, []protocol.Option{{ID: "alice", Label: "Alice"}}),
+		"priority":    protocol.Value(protocol.FieldNumber, 2),
+		"due_date":    protocol.Value(protocol.FieldDate, nil),
+		"promised":    protocol.Value(protocol.FieldDate, "2026-12-01"),
+		"labels":      protocol.Value(protocol.FieldLabels, []string{"fixture"}),
+		"status":      protocol.Value(protocol.FieldText, "todo"),
+	}
+	if id == "1" {
+		record.Fields["due_date"] = protocol.Value(protocol.FieldDate, "2026-12-15")
+	}
+	if len(fields) > 0 {
+		for key := range record.Fields {
+			if key == "status" || key == "title" {
+				continue
+			}
+			if !slices.Contains(fields, key) {
+				delete(record.Fields, key)
+			}
+		}
+	}
+	return record
+}
+
+func fixtureSyncRecord(scope, id string, fields []string) protocol.SourceRecord {
+	record := fixtureCurrent(scope, id)
+	if len(fields) > 0 {
+		for key := range record.Fields {
+			if key != "status" && key != "title" && !slices.Contains(fields, key) {
+				delete(record.Fields, key)
+			}
 		}
 	}
 	return record

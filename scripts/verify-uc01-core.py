@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import selectors
 import shutil
 import socket
 import ssl
@@ -146,11 +147,131 @@ def scenarios(cli, env, config, verification, tls):
             'Independent retry did not keep PAY and publish OPS')
     require(call('task', 'list')['total'] == 4, 'Expected two published tasks per scope')
     print('Repeated save reused the connection. Retry left PAY unchanged and published 2 OPS tasks.')
+    return cid, first['scope_id'], second['scope_id']
 
+
+
+
+def sync_invalidation(cli, env, request_sync):
+    watcher = subprocess.Popen([str(cli), '--json', 'workbench', 'watch'],
+                               env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(watcher.stdout, selectors.EVENT_READ)
+            pending = b''
+
+            def next_event():
+                nonlocal pending
+                deadline = time.monotonic() + 10
+                while b'\n' not in pending:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0 or not selector.select(remaining):
+                        raise RuntimeError('Missing SSE event from the candidate')
+                    chunk = os.read(watcher.stdout.fileno(), 4096)
+                    if not chunk:
+                        raise RuntimeError('Candidate SSE stream closed unexpectedly')
+                    pending += chunk
+                line, pending = pending.split(b'\n', 1)
+                return json.loads(line)['data']
+
+            initial = next_event()
+            require(initial['type'] == 'snapshot', 'Initial SSE snapshot missing')
+            request_sync()
+            event = next_event()
+            require(event['type'] == 'changed' and event['instance'] == initial['instance']
+                    and event['sequence'] > initial['sequence'], 'SSE invalidation mismatch')
+    finally:
+        stop(watcher)
+        watcher.stdout.close()
+        watcher.stderr.close()
+
+def remaining_scenarios(cli, env, config, connection_id, pay, ops):
+    def call(*args, **kwargs):
+        return cli_call(cli, env, *args, **kwargs)
+
+    items = call('task', 'list', '--scope', pay, '--source', 'fixture', '--assignee', 'Alice',
+                 '--priority', '2', '--sort', 'due_date', '--descending')['items']
+    require(len(items) == 2 and items[0]['native_id'] == 'PAY-1' and 'due_date' not in items[1],
+            'UC07 task projection/filter/sort mismatch')
+    task_id = items[0]['source_object_id']
+    print('UC07 scope, source, assignee, priority and due-date sorting verified.')
+
+    detail = call('task', 'detail', task_id, '--segment', 'comments')
+    more = call('task', 'detail', task_id, '--segment', 'comments', '--page', detail['next_page'])
+    require(more['items'][0]['id'] == 'comments-2', 'UC09 detail pagination mismatch')
+    print('UC09 detail returned both comment pages.')
+
+    mapping = {
+        'revision': 0, 'task_id': task_id,
+        'rules': {'due_date': {'field': 'promised', 'write': True}},
+    }
+    preview = call('connection', 'mapping', 'preview', pay, '-', body=mapping)
+    require(preview['sample']['due_date'] == '2026-12-01' and 'issues' not in preview, 'UC11 mapping preview mismatch')
+    require(call('connection', 'mapping', 'save', pay, '-', body=mapping)['revision'] == 1,
+            'UC11 mapping revision mismatch')
+    task = wait_for(lambda: call('task', 'show', task_id),
+                    lambda value: value.get('due_date') == '2026-12-01', 'reprojected PAY task')
+    require(call('task', 'list', '--scope', ops, '--sort', 'due_date')['items'][0]['due_date'] == '2026-12-15',
+            'UC11 mapping affected another scope')
+    print('UC11 preview and save reprojected PAY, preserving task identity and OPS dates.')
+
+    connection = call('connection', 'show', pay)
+    updated = call('connection', 'save', '-', body={
+        'id': pay, 'kind': 'fixture', 'name': connection['name'],
+        'version': connection['version'], 'write_enabled': True,
+    })
+    require(updated['write_enabled'], 'UC13 scope write enablement failed')
+    metadata = call('task', 'edit-metadata', task_id)
+    require(any(field['id'] == 'title' for field in metadata['fields']), 'UC13 editable title missing')
+
+    def operation(request_id, wanted, **intent):
+        current = call('task', 'show', task_id)
+        command = {
+            'request_id': request_id, 'connection_id': pay,
+            'connection_version': current['connection_version'],
+            'source_object_id': task_id, 'target_version': current['target_version'],
+            'mapping_revision': 1, **intent,
+        }
+        call('task', 'operation', 'submit', '-', body=command)
+        return wait_for(
+            lambda: call('task', 'operation', 'show', request_id),
+            lambda value: value['sync_state'] == wanted, f'{request_id} to become {wanted}',
+        )
+
+    write_config(config, {'write_result': 'lost'})
+    operation('uc13-lost-reply', 'needs_review', fields={'title': {'type': 'text', 'value': 'Confirmed edit'}})
+    require(call('task', 'show', task_id)['title'] == task['title'], 'UC13 pending write changed displayed title')
+    require(call('task', 'operation', 'reconcile', 'uc13-lost-reply')['sync_state'] == 'confirmed'
+            and call('task', 'show', task_id)['title'] == 'Confirmed edit', 'UC13 readback did not settle')
+    print('UC13 lost-reply edit preserved the old title and settled on readback.')
+
+    write_config(config, {})
+    operation('uc14-resolution', 'confirmed', action='resolve',
+              action_fields={'resolution': {'type': 'text', 'value': 'completed'}})
+    require(call('task', 'show', task_id)['state'] == 'done', 'UC14 state not confirmed')
+    operation('uc14-reopen', 'confirmed', action='reopen')
+    require(call('task', 'show', task_id)['state'] == 'open', 'UC14 task not reopened')
+    print('UC14 completed and reopened the fixture task through source actions.')
+
+    write_config(config, {'rate_limited_scope': 'OPS'})
+    sync_invalidation(cli, env, lambda: call('sync', 'run', '--connection', connection_id))
+    log = wait_for(lambda: call('sync', 'list', '--scope', ops, '--status', 'failed')['items'],
+                   lambda rows: rows and rows[0].get('error_kind') == 'rate_limited', 'OPS rate limit')[0]
+    detail = call('sync', 'inspect', log['sync_run_id'])
+    require(detail['sync_run_id'] == log['sync_run_id'] and detail.get('retry_at'), 'UC18 run detail mismatch')
+    require(call('task', 'list', '--scope', pay)['total'] == 2, 'UC18 OPS rate limit affected PAY')
+    print(f"UC18 inspected OPS run {log['sync_run_id']} and its retry time.")
+
+    usage = call('sync', 'usage', '--scope', ops, '--status', 'failed')['items']
+    limited = next(row for row in usage if row['mode'] == log['mode'])
+    require(limited['rate_limits'] == 1 and limited['requests'] == detail['requests']
+            and limited['scope_id'] == detail['scope_id'], 'UC19 usage and sync log disagree')
+    print('UC19 filtered usage reconciled with the same run. SSE invalidation and API/CLI re-read verified.')
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('candidate', type=Path, help='directory containing apilot, apilot-app and apilot-fixture')
+    parser.add_argument('--remaining', action='store_true', help='also check UC07, UC09, UC11, UC13, UC14, UC18 and UC19')
     args = parser.parse_args()
     candidate = args.candidate.resolve()
     for name in ('apilot', 'apilot-app', 'apilot-fixture'):
@@ -200,7 +321,9 @@ def main():
                             return False
 
                     wait_for(listening, bool, 'loopback fixture browser')
-                    scenarios(candidate / 'apilot', env, config, verification, tls)
+                    target = scenarios(candidate / 'apilot', env, config, verification, tls)
+                    if args.remaining:
+                        remaining_scenarios(candidate / 'apilot', env, config, *target)
                 finally:
                     stop(browser)
             except Exception:

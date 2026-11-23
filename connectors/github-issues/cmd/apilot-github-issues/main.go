@@ -16,7 +16,7 @@ func main() {
 		ConnectorID:      "github-issues",
 		ReleaseVersion:   releaseVersion,
 		ProtocolVersions: []int{protocol.Version},
-		Capabilities:     []string{"auth.login", "config.options", "tasks.sync.full", "tasks.sync.delta"},
+		Capabilities:     []string{"auth.login", "config.options", "tasks.sync.full", "tasks.sync.delta", "fields.describe", "tasks.detail", "tasks.edit_metadata", "tasks.mutate", "tasks.reconcile"},
 		EndpointConfig: protocol.ConfigSchema{
 			Version: 1,
 			Schema:  json.RawMessage(`{"type":"object","additionalProperties":false}`),

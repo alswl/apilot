@@ -12,8 +12,8 @@ const connectorHidden = "connector_hidden"
 
 func (s *Store) RecoverWorkbenchConnectorRuns() error {
 	now := time.Now().UTC()
-	_, err := s.db.Exec(`UPDATE workbench_sync_runs SET status='interrupted',finished_at=?,error_kind='process_failure',failed_stage='interrupted'
-		WHERE status='running'`, formatWorkbenchTime(&now))
+	_, err := s.db.Exec(`UPDATE workbench_sync_runs SET status='interrupted',finished_at=?,duration_ms=MAX(0,CAST((julianday(?) - julianday(started_at))*86400000 AS INTEGER)),error_kind='process_failure',failed_stage='interrupted'
+		WHERE status='running'`, formatWorkbenchTime(&now), formatWorkbenchTime(&now))
 	return err
 }
 
@@ -27,44 +27,21 @@ func (s *Store) StartWorkbenchConnectorRun(run common.WorkbenchSyncRun) (int64, 
 }
 
 func readConnectorRun(tx *sql.Tx, id string) (*common.WorkbenchSyncRun, error) {
-	var run common.WorkbenchSyncRun
-	var started string
-	var finished, retry sql.NullString
-	err := tx.QueryRow(`SELECT rowid,id,scope_id,trigger,mode,status,started_at,finished_at,duration_ms,COALESCE(failed_stage,''),COALESCE(error_kind,''),
-		retry_at,requests,pages,fetched,changed,rate_limits,usage_complete
-		FROM workbench_sync_runs WHERE scope_id=? ORDER BY started_at DESC,rowid DESC LIMIT 1`, id).
-		Scan(&run.LegacyID, &run.ID, &run.ScopeID, &run.Trigger, &run.Mode, &run.Status, &started, &finished, &run.DurationMS, &run.FailedStage, &run.ErrorKind, &retry,
-			&run.Requests, &run.Pages, &run.Fetched, &run.Changed, &run.RateLimits, &run.UsageComplete)
+	run, err := scanConnectorRun(tx.QueryRow(connectorRunSelect+" WHERE r.scope_id=? ORDER BY r.rowid DESC LIMIT 1", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	run.StartedAt, err = time.Parse(time.RFC3339Nano, started)
-	if err != nil {
-		return nil, err
-	}
-	for _, entry := range []struct {
-		raw    sql.NullString
-		target **time.Time
-	}{{finished, &run.FinishedAt}, {retry, &run.RetryAt}} {
-		if entry.raw.Valid {
-			at, err := time.Parse(time.RFC3339Nano, entry.raw.String)
-			if err != nil {
-				return nil, err
-			}
-			*entry.target = &at
-		}
-	}
 	return &run, nil
 }
 
 func finishConnectorRun(tx *sql.Tx, run common.WorkbenchSyncRun) error {
 	res, err := tx.Exec(`UPDATE workbench_sync_runs SET status=?,finished_at=?,duration_ms=?,failed_stage=?,error_kind=?,
-		retry_at=?,requests=?,pages=?,fetched=?,changed=?,rate_limits=?,usage_complete=? WHERE id=? AND status='running'`,
+		retry_at=?,rate_limit_bucket=?,requests=?,pages=?,fetched=?,changed=?,rate_limits=?,usage_complete=? WHERE id=? AND status='running'`,
 		run.Status, formatWorkbenchTime(run.FinishedAt), run.DurationMS, run.FailedStage, run.ErrorKind,
-		formatWorkbenchTime(run.RetryAt), run.Requests, run.Pages, run.Fetched, run.Changed, run.RateLimits, run.UsageComplete, run.ID)
+		formatWorkbenchTime(run.RetryAt), run.RateLimitBucket, run.Requests, run.Pages, run.Fetched, run.Changed, run.RateLimits, run.UsageComplete, run.ID)
 	if err != nil {
 		return err
 	}
@@ -229,10 +206,11 @@ func (s *Store) WorkbenchConnectorLastRun(id string) (*common.WorkbenchSyncRun, 
 	return readConnectorRun(tx, id)
 }
 
-func (s *Store) WorkbenchConnectorBackoff(parentID string) (*time.Time, error) {
+func (s *Store) WorkbenchConnectorBackoff(parentID, scopeID string) (*time.Time, error) {
 	var raw sql.NullString
 	err := s.db.QueryRow(`SELECT MAX(r.retry_at) FROM workbench_sync_runs r JOIN workbench_connections c
-		ON r.scope_id=c.id WHERE c.connector_connection_id=? AND r.error_kind='rate_limited'`, parentID).Scan(&raw)
+		ON r.scope_id=c.id WHERE c.connector_connection_id=? AND r.error_kind='rate_limited'
+ AND (r.rate_limit_bucket IS NULL OR r.rate_limit_bucket = '' OR r.rate_limit_bucket NOT LIKE 'scope:%' OR r.scope_id=?)`, parentID, scopeID).Scan(&raw)
 	if err != nil || !raw.Valid {
 		return nil, err
 	}

@@ -99,7 +99,7 @@ func (s *Service) WorkbenchTasks(q common.WorkbenchQuery) (common.WorkbenchPage,
 	if q.Limit == 0 {
 		q.Limit = 50
 	}
-	if q.Limit < 0 || q.Limit > 100 || q.Offset < 0 || q.Revision < 0 || (q.State != "" && !validWorkbenchState(q.State)) {
+	if !validWorkbenchProjectionQuery(q) || q.Limit < 0 || q.Limit > 100 || q.Offset < 0 || q.Revision < 0 || (q.State != "" && !validWorkbenchState(q.State)) {
 		return common.WorkbenchPage{}, common.Err("INVALID_ARGUMENT", "Invalid workbench query")
 	}
 	st, err := s.workbenchStore()
@@ -857,4 +857,21 @@ func countWorkbenchChanges(attempt *common.WorkbenchAttempt, before, tasks []com
 		delete(old, task.ID)
 	}
 	attempt.Removed = len(old)
+}
+
+func validWorkbenchProjectionQuery(q common.WorkbenchQuery) bool {
+	switch q.Sort {
+	case "", "title", "priority", "due_date", "state", "assignee":
+	default:
+		return false
+	}
+	for _, date := range []string{q.DueAfter, q.DueBefore} {
+		if date != "" {
+			if _, err := time.Parse(time.DateOnly, date); err != nil {
+				return false
+			}
+		}
+	}
+	return (q.ScopeID == "" || q.Connection == "" || q.ScopeID == q.Connection) &&
+		(q.DueAfter == "" || q.DueBefore == "" || q.DueAfter <= q.DueBefore)
 }
