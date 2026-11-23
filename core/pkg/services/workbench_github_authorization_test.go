@@ -241,8 +241,7 @@ func TestGitHubAppInstallationRevocationHidesSnapshot(t *testing.T) {
 	if err := store.CommitWorkbenchGitHubSync(c, nil, nil, []common.WorkbenchTask{task}, now, 0, now, true); err != nil {
 		t.Fatal(err)
 	}
-	attempt, err := s.RunWorkbenchSync(c.ID)
-	if err != nil {
+	if _, err := s.RunWorkbenchSync(c.ID); err != nil {
 		t.Fatal(err)
 	}
 	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(5 * time.Millisecond) {
@@ -250,7 +249,10 @@ func TestGitHubAppInstallationRevocationHidesSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(snapshot.Attempts) > 0 && snapshot.Attempts[0].ID == attempt && snapshot.Attempts[0].State == "failed" {
+		if snapshot.AccessState == "unavailable" {
+			if len(snapshot.Attempts) != 0 || snapshot.LastSuccess != nil {
+				t.Fatalf("authorization loss retained sync details: %+v", snapshot)
+			}
 			break
 		}
 		if time.Now().After(deadline) {

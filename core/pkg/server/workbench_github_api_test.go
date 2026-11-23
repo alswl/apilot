@@ -59,6 +59,7 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 	second := issue{ID: 200, Number: 7, Title: "Second repo", State: "open", Updated: "2026-01-01T00:00:00Z"}
 	writes := 0
 	firstAllowed := true
+	accountID := 17
 	fixture := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/login/device/code" {
@@ -83,7 +84,7 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 		defer mu.Unlock()
 		switch r.Method + " " + r.URL.Path {
 		case "GET /user":
-			fmt.Fprint(w, `{"id":17,"login":"alice"}`)
+			fmt.Fprintf(w, `{"id":%d,"login":"account-%d"}`, accountID, accountID)
 		case "GET /user/installations":
 			fmt.Fprintf(w, `{"installations":[{"id":1,"app_slug":%q}]}`, services.GitHubAppSlug)
 		case "GET /user/installations/1/repositories":
@@ -140,7 +141,7 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	httpServer, err := listenWorkbenchHTTP(s, config.HTTPSocketPath(dir))
+	httpServer, err := listenWorkbenchHTTP(s, config.HTTPSocketPath(dir), dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,6 +239,14 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 	if _, err := remote.WorkbenchTaskOperationReceipt("create"); err == nil || common.ProtocolError(err).Code != "NOT_FOUND" {
 		t.Fatalf("revoked receipt is still visible: %v", err)
 	}
+	revoked, err := remote.WorkbenchSyncDetails(firstConn.ID)
+	if err != nil || revoked.AccessState != "unavailable" || len(revoked.Attempts) != 0 || revoked.LastSuccess != nil {
+		t.Fatalf("same-account revocation leaked old sync data: %+v %v", revoked, err)
+	}
+	otherDetails, err := remote.WorkbenchSyncDetails(secondConn.ID)
+	if err != nil || len(otherDetails.Attempts) == 0 || otherDetails.LastSuccess == nil {
+		t.Fatalf("revocation changed another repository's history: %+v %v", otherDetails, err)
+	}
 	other, err := remote.WorkbenchTasks(common.WorkbenchQuery{Connection: secondConn.ID, Limit: 5})
 	if err != nil || len(other.Items) != 1 || other.Items[0].ID == created.ID || other.Items[0].NativeID != "7" || !strings.Contains(other.Items[0].Title, "Second repo") {
 		t.Fatalf("second repository changed: %+v, %v", other, err)
@@ -251,5 +260,27 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 	waitSync(firstConn.ID, "full")
 	if restored, err := remote.WorkbenchTask(created.ID); err != nil || restored.ID != created.ID || restored.State != "open" {
 		t.Fatalf("reauthorized task: %+v, %v", restored, err)
+	}
+	mu.Lock()
+	accountID = 18
+	mu.Unlock()
+	switched, err := remote.ConfigureWorkbenchGitHub(common.WorkbenchConnection{
+		ID: firstConn.ID, Version: firstConn.Version, Kind: common.WorkbenchGitHubRepository,
+		Name: "First", Repository: "owner/first",
+	}, accessToken, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitSync(switched.ID, "full")
+	details, err := remote.WorkbenchSyncDetails(switched.ID)
+	if err != nil || details.AccountLogin != "account-18" || len(details.Attempts) != 1 || details.Attempts[0].SyncType != "full" {
+		t.Fatalf("new account received old attempts: %+v %v", details, err)
+	}
+	if _, err := remote.WorkbenchTaskOperationReceipt("create"); err == nil || common.ProtocolError(err).Code != "NOT_FOUND" {
+		t.Fatalf("new account can access old receipt: %v", err)
+	}
+	sibling, err := remote.WorkbenchSyncDetails(secondConn.ID)
+	if err != nil || sibling.AccountLogin != "account-17" || len(sibling.Attempts) == 0 {
+		t.Fatalf("sibling history was affected: %+v %v", sibling, err)
 	}
 }

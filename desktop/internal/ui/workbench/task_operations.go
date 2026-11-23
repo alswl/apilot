@@ -206,7 +206,9 @@ func (m *mockup) reconcileLiveTask(taskID, requestID string) {
 	go func() {
 		receipt, err := remote.ReconcileWorkbenchTaskOperation(requestID)
 		mygo.RunOnMain(func() {
-			m.finishLiveTaskToggle(taskID, receipt, err)
+			if m.pendingTaskEdits[taskID] {
+				m.finishLiveTaskToggle(taskID, receipt, err)
+			}
 			m.liveGeneration++
 			if m.win != nil && !m.win.IsDestroyed() {
 				m.win.Invalidate()

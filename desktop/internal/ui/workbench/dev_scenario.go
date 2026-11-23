@@ -39,8 +39,12 @@ func (m *mockup) resolveDevTask(state string) {
 }
 
 func RunDevScenario(name string) error {
-	if name != taskCreateScenario {
-		return fmt.Errorf("unknown development scenario %q; available: %s", name, taskCreateScenario)
+	switch name {
+	case taskCreateScenario:
+		return runWorkspace(newDevTaskScenario(), "", "", "")
+	case "workbench-events":
+		return runWorkspace(newDevEventScenario(), "", "", "")
+	default:
+		return fmt.Errorf("unknown development scenario %q; available: %s, workbench-events", name, taskCreateScenario)
 	}
-	return runWorkspace(newDevTaskScenario(), "", "", "")
 }

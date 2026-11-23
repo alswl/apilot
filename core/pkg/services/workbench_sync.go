@@ -61,7 +61,15 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 			if !ok {
 				return nil, common.Err("INTERNAL", "GitHub connection storage unavailable")
 			}
-			progress, err := store.WorkbenchGitHubProgress(connections[i].ID)
+			var progress common.WorkbenchGitHubProgress
+			var err error
+			if consistent, ok := s.store.(interface {
+				WorkbenchGitHubProgressAt(string, int64, int64) (common.WorkbenchGitHubProgress, error)
+			}); ok {
+				progress, err = consistent.WorkbenchGitHubProgressAt(connections[i].ID, connections[i].Version, connections[i].SnapshotVersion)
+			} else {
+				progress, err = store.WorkbenchGitHubProgress(connections[i].ID)
+			}
 			if err != nil {
 				return nil, err
 			}
@@ -417,6 +425,7 @@ func (s *Service) startWorkbenchPathsLocked(st workbenchStore, id, trigger strin
 	}
 	ctx = integrations.WithWorkbenchReadProgress(ctx, func(progress common.WorkbenchReadProgress) {
 		s.readProgress.Store(attempt.ID, progress)
+		s.volatileRevision.Add(1)
 	})
 	s.workbenchActive[id] = cancel
 	s.wg.Add(1)
@@ -426,7 +435,11 @@ func (s *Service) startWorkbenchPathsLocked(st workbenchStore, id, trigger strin
 
 func (s *Service) runWorkbench(ctx context.Context, cancel context.CancelFunc, st workbenchStore, c common.WorkbenchConnection, attempts []common.WorkbenchAttempt, version int64, paths []string, read workbenchReader) {
 	defer s.wg.Done()
-	defer s.readProgress.Delete(attempts[0].ID)
+	defer func() {
+		if _, existed := s.readProgress.LoadAndDelete(attempts[0].ID); existed {
+			s.volatileRevision.Add(1)
+		}
+	}()
 	defer cancel()
 	if ready, ok := ctx.Value(workbenchWatchReadyKey{}).(<-chan struct{}); ok {
 		select {

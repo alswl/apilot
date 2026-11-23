@@ -1,4 +1,9 @@
 {
+  "外部更新": "External update",
+  "刷新失败": "Refresh failed",
+  "重连": "Reconnect",
+  "撤回访问权": "Revoke access",
+  "数据可能已过时": "Data may be out of date",
   " · %d 次请求 / %d 页": " · %d requests / %d pages",
   " · 下次 ": " · Next ",
   " · 冲突": " · Conflict",

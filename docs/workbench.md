@@ -66,6 +66,14 @@ apilot workbench connection pause CONNECTION_ID VERSION --json
 apilot workbench connection resume CONNECTION_ID VERSION --json
 ```
 
+检查监听状态用 `apilot workbench health --json`，检查工作台数据库是否可读用 `apilot workbench ready --json`。失败时 CLI 返回非零退出码。
+
+GitHub 授权可用 `workbench github authorization start` 发起，`show ID` 查看，`cancel ID` 取消。用 `workbench github repositories --authorization ID` 列出已验证会话可访问的仓库，也可省略参数复用已存授权。不要把待输入的凭据放在命令行参数中。
+
+标签列表用 `workbench label list`，用 `workbench label set FILE|-` 提交 `{"id":"TASK_ID","names":["review"]}` 替换一项任务的标签。任务列表可按 `--label-id` 筛选。用 `workbench task annotation list TASK_ID` 读取批注，`put FILE|-` 提交 `{"id":"TASK_ID","annotation_id":"NOTE_ID","body":"Text"}`，`delete TASK_ID NOTE_ID` 删除批注。
+
+`apilot workbench watch` 输出一行一个 JSON 通知，`--once` 只读初始通知。通知包含服务实例、该实例的序号和类型。收到通知后用普通查询重新读取当前可见状态。序号可跳跃，通知可合并，CLI 会在临时断线后自动重连，收到新的初始通知后应全量读取。`--once` 只尝试一次，协议或输出错误返回非零退出码。Ctrl-C 结束订阅。运行中日志文件追加由 `apilot logs --follow` 独立读取，不产生工作台事件。工作台自动重连，读取恢复前将旧状态标为可能过时。
+
 任务操作可用 `apilot workbench task operation submit FILE|- --json` 提交 JSON，返回的 `request_id` 可用于 `apilot workbench task operation show REQUEST_ID --json` 查询。回执为待核对时，使用 `apilot workbench task operation reconcile REQUEST_ID --json` 核对原请求；重复提交须使用相同请求 ID 和输入。
 
 `apilot workbench connection remove CONNECTION_ID` 可删除用户创建的连接及本地快照。默认 Local 连接可用空的 `tasks` 数组清空。GitHub 样例来源只读。Obsidian 连接可按需启用回写。要体验样例任务的修改、简报、助理回复和定时运行，请启动独立样例模式。

@@ -57,7 +57,7 @@ func (c *client) saveObserveInput(op string, cmd *cobra.Command, a []string) err
 	}
 	if f.Changed("env-file") {
 		path, _ := f.GetString("env-file")
-		in.EnvSet, e = readEnv(path)
+		in.EnvSet, e = readEnv(path, cmd.InOrStdin())
 		if e != nil {
 			return e
 		}
@@ -79,7 +79,7 @@ func configureObserveInputFlags(cmd *cobra.Command) {
 	f.String("cwd", "", "Working directory")
 	f.String("output", "text", "text or json")
 	f.Bool("disabled", false, "Disable polling")
-	f.String("env-file", "", "Read KEY=VALUE environment file")
+	f.String("env-file", "", "Read KEY=VALUE environment file or stdin (-)")
 	f.StringArray("env-unset", nil, "Remove environment key")
 	f.Int64("if-revision", 0, "Require revision")
 }

@@ -39,7 +39,14 @@ func newSettingsUpdateCommand(c *client) *cobra.Command {
 				*p, _ = f.GetBool(name)
 			}
 		}
-		return c.invoke("settings.update", map[string]any{"patch": s, "expected_revision": s.Revision})
+		revision := s.Revision
+		if f.Changed("if-revision") {
+			revision, _ = f.GetInt64("if-revision")
+			if revision < 1 {
+				return common.Err("INVALID_ARGUMENT", "A positive settings revision is required")
+			}
+		}
+		return c.invoke("settings.update", map[string]any{"patch": s, "expected_revision": revision})
 	}}
 	f := cmd.Flags()
 	f.Duration("default-timeout", 30*time.Minute, "Default task timeout")
@@ -49,5 +56,6 @@ func newSettingsUpdateCommand(c *client) *cobra.Command {
 	f.Bool("notify-failure", true, "Notify on task failure")
 	f.Bool("notify-success", false, "Notify on success")
 	f.Bool("notify-observer", true, "Notify on observation changes")
+	f.Int64("if-revision", 0, "Require a specific settings revision")
 	return cmd
 }

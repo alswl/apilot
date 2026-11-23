@@ -325,11 +325,18 @@ func (m *mockup) reconcileLiveOperation(requestID string) {
 		m.checkingOperations = make(map[string]bool)
 	}
 	m.checkingOperations[requestID] = true
+	connectionID := m.syncLogID
 	remote := m.live
 	go func() {
 		receipt, err := remote.ReconcileWorkbenchTaskOperation(requestID)
 		mygo.RunOnMain(func() {
+			if !m.checkingOperations[requestID] {
+				return
+			}
 			delete(m.checkingOperations, requestID)
+			if m.syncLogID != connectionID {
+				return
+			}
 			if err != nil {
 				m.syncDetailProblem = common.ProtocolError(err).Message
 			} else if receipt.SyncState == common.WorkbenchOperationNeedsReview {

@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,10 @@ func (r *Remote) Call(method string, params any) (json.RawMessage, error) {
 		return integrations.CallWorkbenchHTTP(socket, method, params)
 	}
 	return integrations.Call(r.socket, method, params)
+}
+
+func (r *Remote) WatchWorkbenchEvents(ctx context.Context, receive func(common.WorkbenchEvent) error) error {
+	return integrations.WatchWorkbenchEvents(ctx, filepath.Join(filepath.Dir(r.socket), "http.sock"), receive)
 }
 
 func remoteResult[T any](r *Remote, method string, input any) (T, error) {

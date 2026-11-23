@@ -757,6 +757,11 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 	ListWorkbenchConnectors(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// WatchWorkbenchEvents Subscribe to snapshot and change notices; reread visible state on each notice and reconnect
+	//
+	// Corresponds with GET /v1/workbench/events (the `WatchWorkbenchEvents` operationId).
+	WatchWorkbenchEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// StartGitHubAuthorization Start GitHub browser authorization
 	//
 	// Corresponds with POST /v1/workbench/github-authorizations (the `StartGitHubAuthorization` operationId).
@@ -1139,6 +1144,21 @@ func (c *Client) CancelWorkbenchSync(ctx context.Context, id string, attemptId i
 // Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 func (c *Client) ListWorkbenchConnectors(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWorkbenchConnectorsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// WatchWorkbenchEvents Subscribe to snapshot and change notices; reread visible state on each notice and reconnect
+//
+// Corresponds with GET /v1/workbench/events (the `WatchWorkbenchEvents` operationId).
+func (c *Client) WatchWorkbenchEvents(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWatchWorkbenchEventsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -2013,6 +2033,33 @@ func NewListWorkbenchConnectorsRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/v1/workbench/connectors")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewWatchWorkbenchEventsRequest constructs an http.Request for the WatchWorkbenchEvents method
+func NewWatchWorkbenchEventsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/events")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -2987,6 +3034,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/workbench/connectors (the `ListWorkbenchConnectors` operationId).
 	ListWorkbenchConnectorsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkbenchConnectorsResponse, error)
+
+	// WatchWorkbenchEventsWithResponse Subscribe to snapshot and change notices; reread visible state on each notice and reconnect
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/events (the `WatchWorkbenchEvents` operationId).
+	WatchWorkbenchEventsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*WatchWorkbenchEventsResponse, error)
 
 	// StartGitHubAuthorizationWithResponse Start GitHub browser authorization
 	//
@@ -4041,6 +4095,40 @@ func (r ListWorkbenchConnectorsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ListWorkbenchConnectorsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type WatchWorkbenchEventsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// GetBody returns the raw response body bytes
+func (r WatchWorkbenchEventsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r WatchWorkbenchEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WatchWorkbenchEventsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r WatchWorkbenchEventsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5532,6 +5620,19 @@ func (c *ClientWithResponses) ListWorkbenchConnectorsWithResponse(ctx context.Co
 	return ParseListWorkbenchConnectorsResponse(rsp)
 }
 
+// WatchWorkbenchEventsWithResponse Subscribe to snapshot and change notices; reread visible state on each notice and reconnect
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/events (the `WatchWorkbenchEvents` operationId).
+func (c *ClientWithResponses) WatchWorkbenchEventsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*WatchWorkbenchEventsResponse, error) {
+	rsp, err := c.WatchWorkbenchEvents(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWatchWorkbenchEventsResponse(rsp)
+}
+
 // StartGitHubAuthorizationWithResponse Start GitHub browser authorization
 //
 // Returns a wrapper object for the known response body format(s).
@@ -6546,6 +6647,22 @@ func ParseListWorkbenchConnectorsResponse(rsp *http.Response) (*ListWorkbenchCon
 		}
 		response.ApplicationproblemJSON500 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseWatchWorkbenchEventsResponse parses an HTTP response from a WatchWorkbenchEventsWithResponse call
+func ParseWatchWorkbenchEventsResponse(rsp *http.Response) (*WatchWorkbenchEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WatchWorkbenchEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
 	}
 
 	return response, nil

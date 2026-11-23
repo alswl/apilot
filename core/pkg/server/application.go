@@ -32,7 +32,7 @@ func Open(dir string) (*Runtime, error) {
 		s.Close()
 		return nil, e
 	}
-	workbenchHTTP, err := listenWorkbenchHTTP(s, config.HTTPSocketPath(dir))
+	workbenchHTTP, err := listenWorkbenchHTTP(s, config.HTTPSocketPath(dir), dir)
 	if err != nil {
 		server.Close()
 		s.Close()

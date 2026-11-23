@@ -105,8 +105,18 @@ func exitCode(e *common.Error) int {
 		return 1
 	}
 }
-func readEnv(path string) (map[string]string, error) {
-	b, e := os.ReadFile(path)
+func readEnv(path string, stdin io.Reader) (map[string]string, error) {
+	const maxInput = 1024*1024 - 4096
+	var b []byte
+	var e error
+	if path == "-" {
+		b, e = io.ReadAll(io.LimitReader(stdin, maxInput+1))
+		if len(b) > maxInput {
+			return nil, common.Err("INVALID_ARGUMENT", "Environment input exceeds the IPC request limit")
+		}
+	} else {
+		b, e = os.ReadFile(path)
+	}
 	if e != nil {
 		return nil, common.Err("INVALID_ARGUMENT", "Cannot read environment file")
 	}

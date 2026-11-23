@@ -1491,6 +1491,19 @@ paths:
       summary: List registered connectors
       tags:
         - Connectors
+  /v1/workbench/events:
+    get:
+      operationId: watchWorkbenchEvents
+      responses:
+        "200":
+          content:
+            text/event-stream:
+              schema:
+                type: string
+          description: Server-sent events. Each data line is a WorkbenchEvent JSON object.
+        "503":
+          description: Event stream unavailable or subscriber limit reached
+      summary: Subscribe to snapshot and change notices; reread visible state on each notice and reconnect
   /v1/workbench/github-authorizations:
     post:
       operationId: startGitHubAuthorization
