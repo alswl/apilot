@@ -242,3 +242,27 @@ func TestLiveAnnotationReadRecoversWithoutAnotherEvent(t *testing.T) {
 		t.Fatal("access denial was retried")
 	}
 }
+
+func TestPermissionRetryBudgetSurvivesChangedEventsAndResetsOnReconnect(t *testing.T) {
+	m := newFramework()
+	m.live = services.NewRemote("")
+	m.liveBusy = true
+	for range 3 {
+		delay, ok := m.nextPermissionRetry()
+		if !ok || delay < 500*time.Millisecond {
+			t.Fatalf("unexpected retry schedule: %v %t", delay, ok)
+		}
+		m.receiveLiveEvent(common.WorkbenchEvent{Type: "changed"})
+	}
+	if _, ok := m.nextPermissionRetry(); ok || !m.liveQueued {
+		t.Fatal("ordinary event failed to queue recovery or incorrectly reset the conflict budget")
+	}
+	m.receiveLiveDisconnect()
+	if _, ok := m.nextPermissionRetry(); ok {
+		t.Fatal("disconnected state scheduled a retry")
+	}
+	m.receiveLiveEvent(common.WorkbenchEvent{Type: "snapshot", Instance: "reconnected", Sequence: 1})
+	if delay, ok := m.nextPermissionRetry(); !ok || delay == 0 {
+		t.Fatal("reconnect failed to restore the retry budget")
+	}
+}

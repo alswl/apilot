@@ -21,7 +21,10 @@ func (m *mockup) startLiveEvents() {
 	m.liveGeneration++
 	remote, window := m.live, m.win
 	ctx, cancel := context.WithCancel(context.Background())
-	window.OnClosed(cancel)
+	window.OnClosed(func() {
+		cancel()
+		m.stopPermissionRetry()
+	})
 	current := func() bool {
 		return ctx.Err() == nil && m.win == window && !window.IsDestroyed()
 	}
@@ -52,6 +55,7 @@ func (m *mockup) startLiveEvents() {
 }
 
 func (m *mockup) receiveLiveDisconnect() {
+	m.stopPermissionRetry()
 	m.liveDisconnected, m.liveStale = true, true
 	if !m.liveLoaded {
 		m.liveError = true
@@ -61,6 +65,7 @@ func (m *mockup) receiveLiveDisconnect() {
 func (m *mockup) receiveLiveEvent(event common.WorkbenchEvent) {
 	if event.Type == "snapshot" {
 		m.liveDisconnected = false
+		m.livePermissionRetries = 0
 		m.liveGeneration++
 	}
 	m.liveAnnotationsDirty = true
@@ -105,6 +110,7 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 		m.liveQueued = true
 		return
 	}
+	m.stopPermissionRetry()
 	m.liveBusy, m.liveQueued = true, false
 	generation := m.liveGeneration
 	syncID := m.syncLogID
@@ -237,8 +243,16 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 					m.refreshLive()
 				}
 			}()
-			if generation != m.liveGeneration || (detailAccessChanged && err == nil) {
+			if generation != m.liveGeneration {
 				m.liveQueued = true
+				return
+			}
+			if detailAccessChanged {
+				m.liveStale = true
+				m.win.Invalidate()
+				if !m.liveQueued {
+					m.schedulePermissionRetry(dispatch)
+				}
 				return
 			}
 			settled := false
@@ -264,7 +278,7 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 			}
 			hadError, wasStale := m.liveError, m.liveStale
 			m.liveError = err != nil
-			m.liveStale = m.liveDisconnected || err != nil
+			m.liveStale = m.liveDisconnected || err != nil || revalidate
 			if err == nil && (!m.liveLoaded || !reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(tasks, m.objects)) {
 				m.liveConnections = connections
 				m.livePlugins = plugins
@@ -273,8 +287,17 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 			} else if hadError != m.liveError || wasStale != m.liveStale || detailChanged || settled || annotationsChanged {
 				m.win.Invalidate()
 			}
-			if settled || revalidate {
+			if settled && !revalidate {
 				m.liveQueued = true
+			}
+			switch {
+			case revalidate || (err != nil && m.livePermissionRetries > 0):
+				if !m.liveQueued {
+					m.schedulePermissionRetry(dispatch)
+				}
+				return
+			case err == nil:
+				m.livePermissionRetries = 0
 			}
 			if err != nil && !m.liveQueued && !m.liveDisconnected {
 				window := m.win
@@ -288,6 +311,50 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 			}
 		})
 	}()
+}
+
+const (
+	livePermissionRetryLimit = 3
+	livePermissionRetryDelay = 750 * time.Millisecond
+)
+
+func (m *mockup) nextPermissionRetry() (time.Duration, bool) {
+	if m.liveDisconnected || m.livePermissionRetries >= livePermissionRetryLimit {
+		return 0, false
+	}
+	m.livePermissionRetries++
+	return livePermissionRetryDelay, true
+}
+
+func (m *mockup) stopPermissionRetry() {
+	if m.livePermissionTimer != nil {
+		m.livePermissionTimer.Stop()
+		m.livePermissionTimer = nil
+	}
+}
+
+func (m *mockup) schedulePermissionRetry(dispatch func(func())) {
+	if m.livePermissionTimer != nil {
+		return
+	}
+	delay, ok := m.nextPermissionRetry()
+	if !ok {
+		return
+	}
+	window := m.win
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
+		dispatch(func() {
+			if m.livePermissionTimer != timer {
+				return
+			}
+			m.livePermissionTimer = nil
+			if m.win == window && !window.IsDestroyed() && !m.liveDisconnected {
+				m.refreshLiveWithDispatch(dispatch)
+			}
+		})
+	})
+	m.livePermissionTimer = timer
 }
 
 func confirmLiveConnections(read func() ([]common.WorkbenchSnapshot, error), confirm func([]common.WorkbenchSnapshot)) ([]common.WorkbenchSnapshot, error) {

@@ -46,6 +46,8 @@ type mockup struct {
 	liveBusy, liveError, liveLoaded                           bool
 	liveQueued, liveDisconnected, liveStale                   bool
 	liveAnnotationsDirty                                      bool
+	livePermissionRetries                                     int
+	livePermissionTimer                                       *time.Timer
 	devEvents                                                 *devEventScenario
 	liveGeneration                                            uint64
 	framework                                                 bool
