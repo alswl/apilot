@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/alswl/apilot/core/pkg/dal"
 	"github.com/alswl/apilot/core/pkg/integrations"
 )
 
@@ -393,28 +394,41 @@ func TestReconcileOperationAfterPermissionChange(t *testing.T) {
 				t.Fatal(err)
 			}
 			dir := t.TempDir()
-			s, err := openService(dir)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer func() { _ = s.Close() }()
-			store, err := s.workbenchStore()
-			if err != nil {
-				t.Fatal(err)
-			}
 			conn := common.WorkbenchConnection{ID: "vault", Kind: common.WorkbenchObsidianTasks, Name: "Vault", Vault: vault, Scope: ".", Version: 1, WriteEnabled: true}
-			if err := store.SaveWorkbench(conn, false); err != nil {
-				t.Fatal(err)
-			}
 			tasks, err := readWorkbenchObsidianWrittenVault(context.Background(), conn)
 			if err != nil || len(tasks) != 1 {
 				t.Fatalf("tasks: %+v %v", tasks, err)
 			}
 			matchWorkbench(conn, nil, tasks)
-			now := time.Now().UTC()
-			if err := store.RecordWorkbench(conn, nil, nil, tasks, &now); err != nil {
+			// Seed before starting the service so its watcher cannot import the same task concurrently.
+			func() {
+				store, err := dal.Open(filepath.Join(dir, "apilot.db"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() {
+					if err := store.Close(); err != nil {
+						t.Error(err)
+					}
+				}()
+				if err := store.SaveWorkbench(conn, false); err != nil {
+					t.Fatal(err)
+				}
+				now := time.Now().UTC()
+				if err := store.RecordWorkbench(conn, nil, nil, tasks, &now); err != nil {
+					t.Fatal(err)
+				}
+			}()
+			open := func() (*Service, error) {
+				return NewWithWorkbenchDependencies(dir, func(path string) (Store, error) { return dal.Open(path) },
+					BuiltinWorkbenchPluginRegistry(), ObsidianSyncOptions{MaxRetries: 3},
+					WorkbenchGitHubDependencies{Credentials: githubTestCredentials{}})
+			}
+			s, err := open()
+			if err != nil {
 				t.Fatal(err)
 			}
+			defer func() { _ = s.Close() }()
 			input := common.WorkbenchTaskWrite{RequestID: "request", ConnectionID: conn.ID, ConnectionVersion: 1, SourceObjectID: tasks[0].ID, State: "done", TargetVersion: workbenchFingerprint(tasks[0])}
 			if _, _, err := s.admitWorkbenchTaskOperation(input); err != nil {
 				t.Fatal(err)
@@ -439,7 +453,7 @@ func TestReconcileOperationAfterPermissionChange(t *testing.T) {
 				if err := s.Close(); err != nil {
 					t.Fatal(err)
 				}
-				s, err = openService(dir)
+				s, err = open()
 				if err != nil {
 					t.Fatal(err)
 				}
