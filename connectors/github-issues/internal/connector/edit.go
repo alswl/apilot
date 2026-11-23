@@ -60,7 +60,7 @@ func githubEditFields() []protocol.FieldDefinition {
 }
 
 func (c *Connector) editMetadata(ctx context.Context, p protocol.DetailParams) (any, *protocol.RPCError) {
-	out := protocol.EditMetadataResult{Fields: []protocol.FieldDefinition{}, Actions: []protocol.StateAction{}}
+	out := protocol.ConnectorEditMetadataResult{EditMetadataResult: protocol.EditMetadataResult{Fields: []protocol.FieldDefinition{}, Actions: []protocol.StateAction{}}}
 	if !positiveID(p.ScopeRef) {
 		return nil, protocol.Problem(protocol.InvalidConfig, "scope", "Invalid GitHub repository")
 	}
@@ -84,16 +84,23 @@ func (c *Connector) editMetadata(ctx context.Context, p protocol.DetailParams) (
 			return nil, problem
 		}
 		out.Actions = githubActions(issue)
+		out.Observation = &protocol.DetailPage{
+			Version: issue.UpdatedAt.UTC().Format(time.RFC3339Nano),
+			Fields: map[string]protocol.FieldValue{
+				"state":        protocol.Value(protocol.FieldText, issue.State),
+				"state_reason": protocol.Value(protocol.FieldText, issue.StateReason),
+			},
+		}
 	}
 	labels, problem := client.repositoryLabelOptions(ctx, repo, p.ScopeRef)
-	if problem != nil {
-		return nil, problem
-	}
-	out.Fields = githubEditFields()
-	for i := range out.Fields {
-		if out.Fields[i].ID == "labels" {
-			out.Fields[i].Options = labels
+	for _, field := range githubEditFields() {
+		if field.ID == "labels" {
+			if problem != nil {
+				continue
+			}
+			field.Options = labels
 		}
+		out.Fields = append(out.Fields, field)
 	}
 	return out, nil
 }

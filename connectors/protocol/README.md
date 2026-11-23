@@ -241,3 +241,34 @@ make check-openapi check-workbench
 make app
 python3 scripts/verify-bundled-connectors.py build/darwin-arm64/Apilot.app --arch arm64
 ```
+
+### State conflicts and label metadata failures
+
+`tasks.edit_metadata` can return an optional `observation` from the same
+authorized source read as its available actions. It contains the source
+version and native `state`, plus `state_reason` when supplied. When that
+version has changed and a previously selected action is absent, Core persists
+the conflict before dispatch. The Workbench receipt includes the prior state
+as `conflict.previous_state`, the current source state and the requested
+action and inputs. A GitHub label lookup failure omits label editing for that
+metadata response while keeping the confirmed actions and other edit fields.
+
+From the candidate checkout, run the local fixture and headless regressions:
+
+```sh
+go -C core test ./pkg/server -count=1 \
+  -run 'TestWorkbench(UnavailableStaleActionReturnsDurableConflict|RemainingMVPWritesAndActions)$'
+go -C connectors/github-issues test ./internal/connector -count=1 \
+  -run '^TestGitHub(EditMetadata|MutationConfirms)'
+go -C desktop test ./internal/ui/workbench -count=1 \
+  -run '^TestConnector011Desktop(ReviewActionConflictAndRepositoryLabels|RetriesConflictInOriginalEditor)$'
+make check-openapi check-workbench check-format
+make app
+```
+
+The fixture starts with an available action, then replaces it with the actions
+from a newer source state. It checks the initial conflict and repeated
+submission under the same request ID. The Connector test supplies a local
+HTTP 503 response for repository labels. The headless desktop cases reopen
+the matching editor mode and select labels that match the menu caption or
+contain commas, with existing labels named after control keys.

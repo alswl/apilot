@@ -286,12 +286,36 @@ func TestConnector011DesktopReviewActionConflictAndRepositoryLabels(t *testing.T
 		t.Fatalf("action conflict: %v", view.Texts())
 	}
 
-	editor := &connectorTaskEditor{task: task, repositoryLabels: []string{"existing"}}
-	options := []protocol.Option{{ID: "existing", Label: "existing"}, {ID: "available, too", Label: "available, too"}}
+	editor := &connectorTaskEditor{task: task, repositoryLabels: []string{"options", "label"}}
+	options := []protocol.Option{{ID: "添加仓库标签", Label: "添加仓库标签"}, {ID: "available, too", Label: "available, too"}}
 	view = ui.NewTester(func(c *ui.Context) { editor.editRepositoryLabels(c, options) }, 680, 580)
-	click(t, view, "添加仓库标签")
-	click(t, view, "available, too")
-	if len(editor.repositoryLabels) != 2 || editor.repositoryLabels[1] != "available, too" || !view.HasText("available, too") {
+	for _, label := range []string{"available, too", "添加仓库标签"} {
+		click(t, view, "添加仓库标签")
+		if err := view.ChooseMenuItem(label); err != nil {
+			t.Fatal(err)
+		}
+		if editor.repositoryLabels[len(editor.repositoryLabels)-1] != label {
+			t.Fatalf("chosen labels: %v", editor.repositoryLabels)
+		}
+	}
+	if len(editor.repositoryLabels) != 4 || !view.HasText("options") || !view.HasText("label") {
 		t.Fatalf("chosen labels: %v, UI: %v", editor.repositoryLabels, view.Texts())
+	}
+}
+
+func TestConnector011DesktopRetriesConflictInOriginalEditor(t *testing.T) {
+	for _, actionMode := range []bool{false, true} {
+		m := connectorUIFixture()
+		task := m.objects[0]
+		m.page, m.taskSelection = tasksPage, task.ID
+		m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, version: task.TargetVersion, actionMode: actionMode}
+		task.TargetVersion = "refreshed"
+		snapshot := common.WorkbenchSnapshot{ParentConnectionID: "parent", WorkbenchConnection: common.WorkbenchConnection{
+			ID: task.ConnectionID, Kind: managedGitHub, Name: "example/pay", WriteEnabled: true, AccessState: "available", Version: 1,
+		}}
+		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != "refreshed" || m.retryConnectorEdit != nil {
+			t.Fatalf("retry action mode %v: %+v", actionMode, editor)
+		}
 	}
 }

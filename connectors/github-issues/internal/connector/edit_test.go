@@ -172,7 +172,7 @@ func TestGitHubEditMetadataListsRepositoryLabels(t *testing.T) {
 	if problem != nil {
 		t.Fatal(problem)
 	}
-	for _, field := range result.(protocol.EditMetadataResult).Fields {
+	for _, field := range result.(protocol.ConnectorEditMetadataResult).Fields {
 		if field.ID != "labels" {
 			continue
 		}
@@ -182,4 +182,40 @@ func TestGitHubEditMetadataListsRepositoryLabels(t *testing.T) {
 		return
 	}
 	t.Fatal("no editable labels")
+}
+
+func TestGitHubEditMetadataPreservesActionsWhenLabelsUnavailable(t *testing.T) {
+	c := New(t.TempDir())
+	c.loadCredential = func(string, string) ([]byte, error) { return json.Marshal(storedCredential{Access: "test"}) }
+	c.transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		switch req.URL.Path {
+		case "/repositories/7":
+			return testAPIResponse(req, 200, `{"id":7,"full_name":"owner/selected","has_issues":true,"permissions":{"push":true}}`, nil), nil
+		case "/repositories/7/issues/3":
+			return testAPIResponse(req, 200, `{"id":42,"number":3,"state":"open","updated_at":"2026-11-23T12:00:00Z"}`, nil), nil
+		case "/repos/owner/selected/labels":
+			return testAPIResponse(req, 503, `{}`, nil), nil
+		}
+		t.Fatalf("unexpected request %s", req.URL)
+		return nil, errors.New("unexpected request")
+	})
+	result, problem := c.editMetadata(context.Background(), protocol.DetailParams{
+		ScopeContext: protocol.ScopeContext{ScopeRef: "7", AccountRef: "42", EndpointRef: endpoint}, SourceID: "42", Number: "3",
+	})
+	if problem != nil {
+		t.Fatal(problem)
+	}
+	meta := result.(protocol.ConnectorEditMetadataResult)
+	if len(meta.Actions) != 2 || meta.Actions[0].ID != "close" || meta.Actions[1].ID != "close_not_planned" ||
+		meta.Observation == nil || string(meta.Observation.Fields["state"].Value) != `"open"` {
+		t.Fatalf("metadata after label failure: %+v", meta)
+	}
+	for _, field := range meta.Fields {
+		if field.ID == "labels" {
+			t.Fatal("unavailable labels still editable")
+		}
+	}
+	if len(meta.Fields) == 0 {
+		t.Fatal("unrelated edit fields disappeared")
+	}
 }

@@ -361,3 +361,36 @@ func TestWorkbenchConnectorFullOnlyAndTemporaryFailureRetainsTasks(t *testing.T)
 		t.Fatalf("temporary refresh failure hid tasks: %+v", after)
 	}
 }
+
+func TestWorkbenchUnavailableStaleActionReturnsDurableConflict(t *testing.T) {
+	api, config, _, scopes := prepareRemainingMVP(t)
+	task := api.scopeTasks(scopes["PAY"].ScopeID).Items[0]
+	request := common.WorkbenchTaskWrite{
+		RequestID: "stale-action-metadata", SourceObjectID: task.ID, ConnectionVersion: task.ConnectionVersion,
+		TargetVersion: task.TargetVersion, Action: "resolve",
+		ActionFields: map[string]protocol.FieldValue{"resolution": protocol.Value(protocol.FieldText, "completed")},
+	}
+	var meta protocol.EditMetadataResult
+	api.call(http.MethodGet, "/tasks/"+task.ID+"/edit-metadata", nil, &meta)
+	if !slices.ContainsFunc(meta.Actions, func(action protocol.StateAction) bool { return action.ID == request.Action }) {
+		t.Fatalf("original action was unavailable: %+v", meta.Actions)
+	}
+	writeUC01JSON(t, config, map[string]any{"close_before_submit": task.NativeID})
+	api.call(http.MethodGet, "/tasks/"+task.ID+"/edit-metadata", nil, &meta)
+	if slices.ContainsFunc(meta.Actions, func(action protocol.StateAction) bool { return action.ID == request.Action }) {
+		t.Fatalf("original action did not disappear: %+v", meta.Actions)
+	}
+	var receipt common.WorkbenchTaskReceipt
+	api.call(http.MethodPost, "/task-operations", request, &receipt)
+	if receipt.SyncState != "conflict" || receipt.Conflict == nil || receipt.Conflict.Action != "resolve" ||
+		receipt.Conflict.PreviousState == nil || string(receipt.Conflict.PreviousState.Value) != `"todo"` ||
+		string(receipt.Conflict.Current["state"].Value) != `"closed"` || string(receipt.Conflict.Proposed["resolution"].Value) != `"completed"` {
+		t.Fatalf("admission conflict: %+v", receipt.Conflict)
+	}
+	writeUC01JSON(t, config, map[string]any{})
+	for _, replay := range []common.WorkbenchTaskReceipt{api.submit(request, "conflict"), api.submit(request, "conflict")} {
+		if replay.Conflict == nil || replay.Conflict.Action != "resolve" || api.task(task.ID).State != "open" {
+			t.Fatalf("persisted conflict was redispatched: %+v", replay)
+		}
+	}
+}

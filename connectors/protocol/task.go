@@ -62,6 +62,11 @@ type EditMetadataResult struct {
 	Create  bool              `json:"create"`
 }
 
+type ConnectorEditMetadataResult struct {
+	EditMetadataResult
+	Observation *DetailPage `json:"observation,omitempty"`
+}
+
 type StateAction struct {
 	ID       string            `json:"id"`
 	Label    string            `json:"label"`

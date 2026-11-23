@@ -575,9 +575,10 @@ type WorkbenchConnectorSelection struct {
 
 // WorkbenchFieldConflict defines model for WorkbenchFieldConflict.
 type WorkbenchFieldConflict struct {
-	Action   *string                `json:"action,omitempty"`
-	Current  *map[string]FieldValue `json:"current,omitempty"`
-	Proposed *map[string]FieldValue `json:"proposed,omitempty"`
+	Action        *string                `json:"action,omitempty"`
+	Current       *map[string]FieldValue `json:"current,omitempty"`
+	PreviousState *FieldValue            `json:"previous_state,omitempty"`
+	Proposed      *map[string]FieldValue `json:"proposed,omitempty"`
 }
 
 // WorkbenchHeading defines model for WorkbenchHeading.

@@ -742,6 +742,8 @@ components:
           additionalProperties:
             $ref: "#/components/schemas/FieldValue"
           type: object
+        previous_state:
+          $ref: "#/components/schemas/FieldValue"
         proposed:
           additionalProperties:
             $ref: "#/components/schemas/FieldValue"

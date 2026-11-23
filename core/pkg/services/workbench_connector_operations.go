@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -13,13 +14,18 @@ import (
 )
 
 type managedOperationStore interface {
-	AdmitWorkbenchConnectorOperation(common.WorkbenchTaskWrite, string, string, common.WorkbenchConnectorOperationBinding) (common.WorkbenchTaskOperation, bool, error)
+	AdmitWorkbenchConnectorOperation(common.WorkbenchTaskWrite, string, string, common.WorkbenchConnectorOperationBinding, *common.WorkbenchFieldConflict) (common.WorkbenchTaskOperation, bool, error)
 	RecordWorkbenchConnectorEvidence(string, protocol.MutationEvidence) error
 	CommitWorkbenchConnectorOperation(common.WorkbenchConnectorSyncCommit, string, common.WorkbenchTask, common.WorkbenchTaskReceipt) (common.WorkbenchTaskReceipt, error)
 }
 
 func (s *Service) WorkbenchEditMetadata(ctx context.Context, taskID, scopeID string) (protocol.EditMetadataResult, error) {
-	result := protocol.EditMetadataResult{Fields: []protocol.FieldDefinition{}, Actions: []protocol.StateAction{}}
+	result, err := s.workbenchEditMetadata(ctx, taskID, scopeID)
+	return result.EditMetadataResult, err
+}
+
+func (s *Service) workbenchEditMetadata(ctx context.Context, taskID, scopeID string) (protocol.ConnectorEditMetadataResult, error) {
+	result := protocol.ConnectorEditMetadataResult{EditMetadataResult: protocol.EditMetadataResult{Fields: []protocol.FieldDefinition{}, Actions: []protocol.StateAction{}}}
 	var task common.WorkbenchTask
 	var err error
 	if taskID != "" {
@@ -57,7 +63,7 @@ func (s *Service) WorkbenchEditMetadata(ctx context.Context, taskID, scopeID str
 	if err != nil {
 		return result, err
 	}
-	meta, err := callWorkbenchConnector[protocol.EditMetadataResult](ctx, process, common.ID(), protocol.EditMetadata,
+	meta, err := callWorkbenchConnector[protocol.ConnectorEditMetadataResult](ctx, process, common.ID(), protocol.EditMetadata,
 		protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID}, nil)
 	if err != nil {
 		return result, publicConnectorError(err)
@@ -77,7 +83,7 @@ func (s *Service) WorkbenchEditMetadata(ctx context.Context, taskID, scopeID str
 			}
 		}
 	}
-	result.Actions, result.Create = meta.Actions, meta.Create
+	result.Actions, result.Create, result.Observation = meta.Actions, meta.Create, meta.Observation
 	return result, nil
 }
 
@@ -153,14 +159,21 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 			}
 		}
 	}
+	var conflict *common.WorkbenchFieldConflict
 	if mutation.Action != "" || len(input.Fields) > 0 || input.SourceObjectID == "" {
-		meta, metaErr := s.WorkbenchEditMetadata(ctx, input.SourceObjectID, connection.ID)
+		meta, metaErr := s.workbenchEditMetadata(ctx, input.SourceObjectID, connection.ID)
 		if metaErr != nil {
 			return empty, metaErr
 		}
 		if mutation.Action != "" {
-			if !connectorActionValid(meta, mutation.Action, mutation.ActionFields) {
-				return empty, common.Err("INVALID_ARGUMENT", "Action is unavailable or required fields are missing")
+			if !connectorActionValid(meta.EditMetadataResult, mutation.Action, mutation.ActionFields) {
+				observation := meta.Observation
+				if mutation.ExpectedVersion == "" || observation == nil || observation.Version == "" ||
+					observation.Version == mutation.ExpectedVersion || !protocol.ValidFieldValue(observation.Fields["state"]) ||
+					slices.ContainsFunc(meta.Actions, func(action protocol.StateAction) bool { return action.ID == mutation.Action }) {
+					return empty, common.Err("INVALID_ARGUMENT", "Action is unavailable or required fields are missing")
+				}
+				conflict = connectorOperationConflict(mutation, observation.Fields, &task)
 			}
 		} else {
 			if input.SourceObjectID == "" && !meta.Create {
@@ -182,7 +195,7 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 			baseline := make(map[string]protocol.FieldValue)
 			for id, value := range fields {
 				rule := rules[id]
-				if !connectorWritableField(meta, id) || !validWorkbenchEditField(id, value) || rule.Field == "" {
+				if !connectorWritableField(meta.EditMetadataResult, id) || !validWorkbenchEditField(id, value) || rule.Field == "" {
 					return empty, common.Err("INVALID_ARGUMENT", "Field is read only or its value is invalid: "+id)
 				}
 				patch[rule.Field] = value
@@ -239,10 +252,13 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 		s.mu.Unlock()
 		return empty, common.Err("STALE_REVISION", "Scope changed before operation admission")
 	}
-	op, _, err := ops.AdmitWorkbenchConnectorOperation(input, connection.ID, workbenchFingerprint(input), common.WorkbenchConnectorOperationBinding{
+	op, inserted, err := ops.AdmitWorkbenchConnectorOperation(input, connection.ID, workbenchFingerprint(input), common.WorkbenchConnectorOperationBinding{
 		Mutation: mutation, ConfigRevision: scope.ConfigRevision, MappingRevision: scope.MappingRevision, AuthGeneration: scope.AuthGeneration,
 		PackageDigest: s.workbenchConnectorRelease.PackageDigest,
-	})
+	}, conflict)
+	if err == nil && inserted && conflict != nil {
+		s.volatileRevision.Add(1)
+	}
 	s.mu.Unlock()
 	if err == nil && op.Phase == common.WorkbenchOperationAccepted {
 		s.scheduleWorkbenchOperation(input.RequestID)
@@ -369,21 +385,7 @@ func (s *Service) runConnectorOperation(ctx context.Context, op common.Workbench
 	switch {
 	case err == nil && result.Status == "conflict":
 		receipt.SyncState, receipt.Reason = common.WorkbenchOperationConflict, "Source changed since the operation was prepared"
-		conflict := &common.WorkbenchFieldConflict{Action: request.Action, Proposed: request.Patch, Current: make(map[string]protocol.FieldValue)}
-		if request.Action != "" {
-			conflict.Proposed = request.ActionFields
-			for _, id := range []string{"state", "state_reason"} {
-				if field, ok := result.Current[id]; ok {
-					conflict.Current[id] = field
-				}
-			}
-		}
-		for id := range conflict.Proposed {
-			if field, ok := result.Current[id]; ok {
-				conflict.Current[id] = field
-			}
-		}
-		receipt.Conflict = conflict
+		receipt.Conflict = connectorOperationConflict(request, result.Current, op.Binding.Baseline)
 	case err == nil && result.Status == "not_executed":
 		receipt.SyncState, receipt.Reason = common.WorkbenchOperationNotExecuted, "Source rejected the operation before writing"
 	default:
@@ -397,4 +399,26 @@ func (s *Service) runConnectorOperation(ctx context.Context, op common.Workbench
 	}
 	s.volatileRevision.Add(1)
 	return receipt, nil
+}
+
+func connectorOperationConflict(request protocol.MutationParams, current map[string]protocol.FieldValue, baseline *common.WorkbenchTask) *common.WorkbenchFieldConflict {
+	conflict := &common.WorkbenchFieldConflict{Action: request.Action, Proposed: request.Patch, Current: make(map[string]protocol.FieldValue)}
+	if request.Action != "" {
+		conflict.Proposed = request.ActionFields
+		if baseline != nil {
+			state := protocol.Value(protocol.FieldText, baseline.NativeFields["state"])
+			conflict.PreviousState = &state
+		}
+		for _, id := range []string{"state", "state_reason"} {
+			if field, ok := current[id]; ok {
+				conflict.Current[id] = field
+			}
+		}
+	}
+	for id := range conflict.Proposed {
+		if field, ok := current[id]; ok {
+			conflict.Current[id] = field
+		}
+	}
+	return conflict
 }

@@ -17,22 +17,23 @@ import (
 )
 
 type fixtureConfig struct {
-	FullOnlyScope    string `json:"full_only_scope"`
-	TemporaryScope   string `json:"temporary_scope"`
-	ReadOnlyTask     string `json:"read_only_task"`
-	RateLimitedScope string `json:"rate_limited_scope"`
-	PartialScope     string `json:"partial_scope"`
-	DetailError      string `json:"detail_error"`
-	RemovedField     string `json:"removed_field"`
-	WriteResult      string `json:"write_result"`
-	LoginDelayMS     int    `json:"login_delay_ms"`
-	BrowserURL       string `json:"browser_url"`
-	LoginResult      string `json:"login_result"`
-	Account          string `json:"account"`
-	DeniedScope      string `json:"denied_scope"`
-	FailSecondPage   string `json:"fail_second_page"`
-	UnverifiedScope  string `json:"unverified_scope"`
-	EmptyScope       string `json:"empty_scope"`
+	CloseBeforeSubmit string `json:"close_before_submit"`
+	FullOnlyScope     string `json:"full_only_scope"`
+	TemporaryScope    string `json:"temporary_scope"`
+	ReadOnlyTask      string `json:"read_only_task"`
+	RateLimitedScope  string `json:"rate_limited_scope"`
+	PartialScope      string `json:"partial_scope"`
+	DetailError       string `json:"detail_error"`
+	RemovedField      string `json:"removed_field"`
+	WriteResult       string `json:"write_result"`
+	LoginDelayMS      int    `json:"login_delay_ms"`
+	BrowserURL        string `json:"browser_url"`
+	LoginResult       string `json:"login_result"`
+	Account           string `json:"account"`
+	DeniedScope       string `json:"denied_scope"`
+	FailSecondPage    string `json:"fail_second_page"`
+	UnverifiedScope   string `json:"unverified_scope"`
+	EmptyScope        string `json:"empty_scope"`
 }
 
 const fixtureEndpoint = "fixture.local"
@@ -172,7 +173,15 @@ func fixtureHandler(ctx context.Context, req protocol.Request, notify protocol.N
 		if config.ReadOnlyTask == p.ScopeRef+"-"+p.SourceID {
 			return protocol.EditMetadataResult{Fields: []protocol.FieldDefinition{}, Actions: []protocol.StateAction{}}, nil
 		}
-		return fixtureEditMetadata(fixtureCurrent(p.ScopeRef, p.SourceID)), nil
+		record := fixtureCurrent(p.ScopeRef, p.SourceID)
+		if config.CloseBeforeSubmit == p.ScopeRef+"-"+p.SourceID {
+			record.State, record.StateID, record.StateLabel, record.SourceVersion = "done", "closed", "Closed", "changed-before-submit"
+		}
+		meta := protocol.ConnectorEditMetadataResult{EditMetadataResult: fixtureEditMetadata(record)}
+		meta.Observation = &protocol.DetailPage{Version: record.SourceVersion, Fields: map[string]protocol.FieldValue{
+			"state": protocol.Value(protocol.FieldText, record.StateID),
+		}}
+		return meta, nil
 	case protocol.Mutate, protocol.Reconcile:
 		var p protocol.MutationParams
 		if err := protocol.DecodeParams(req, &p); err != nil {

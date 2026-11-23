@@ -331,7 +331,7 @@ func (p *connectorTaskEditor) editRepositoryLabels(c *ui.Context, options []prot
 	components.Muted(c.Key("label"), fieldCaption("labels"))
 	remove := -1
 	for i, label := range p.repositoryLabels {
-		ui.Row(c.Key(label)).FillWidth().Gap(8).Children(func() {
+		ui.Row(c.Key("selected-" + label)).FillWidth().Gap(8).Children(func() {
 			components.Body(c.Key("name"), label)
 			if ui.Button(c.Key("remove"), tr("移除标签")).Clicked() {
 				remove = i
@@ -341,21 +341,16 @@ func (p *connectorTaskEditor) editRepositoryLabels(c *ui.Context, options []prot
 	if remove >= 0 {
 		p.repositoryLabels = slices.Delete(p.repositoryLabels, remove, remove+1)
 	}
-	placeholder := tr("添加仓库标签")
-	selected := placeholder
-	labels := []string{placeholder}
-	for _, option := range options {
-		if !slices.Contains(p.repositoryLabels, option.ID) {
-			labels = append(labels, option.Label)
-		}
-	}
-	if len(labels) > 1 && ui.Select(c.Key("options"), &selected, labels).FillWidth().Changed() {
-		for _, option := range options {
-			if selected == option.Label {
-				p.repositoryLabels = append(p.repositoryLabels, option.ID)
-				break
+	if slices.ContainsFunc(options, func(option protocol.Option) bool {
+		return !slices.Contains(p.repositoryLabels, option.ID)
+	}) {
+		ui.MenuButton(c.Key("options"), tr("添加仓库标签"), func(menu *ui.Menu) {
+			for _, option := range options {
+				if !slices.Contains(p.repositoryLabels, option.ID) && menu.Item(option.Label).ID(option.ID).Chosen() {
+					p.repositoryLabels = append(p.repositoryLabels, option.ID)
+				}
 			}
-		}
+		}).FillWidth()
 	}
 }
 
@@ -394,6 +389,9 @@ func (m *mockup) connectorConflictView(c *ui.Context, task sourceObject) {
 	components.Muted(c.Key("status"), tr("来源已变化，请重新核对任务"))
 	if action := receipt.Conflict.Action; action != "" {
 		components.Body(c.Key("proposed-action"), tr("状态操作")+" · "+connectorActionLabel(protocol.StateAction{ID: action, Label: action}))
+		if previous := receipt.Conflict.PreviousState; previous != nil {
+			components.Body(c.Key("previous-state"), tr("提交前状态")+" · "+detailValue(*previous))
+		}
 		for _, key := range []string{"state", "state_reason"} {
 			if value, ok := receipt.Conflict.Current[key]; ok {
 				components.Body(c.Key("current-"+key), fieldCaption(key)+" · "+tr("来源值")+" "+detailValue(value))
@@ -440,11 +438,16 @@ func connectorRequiredFieldLabel(field protocol.FieldDefinition) string {
 	return field.Label
 }
 
-type connectorConflictRetry struct{ taskID, scopeID, version string }
+type connectorConflictRetry struct {
+	taskID, scopeID, version string
+	actionMode               bool
+}
 
 func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
+	conflict := m.connectorConflicts[task.ID].Conflict
+	actionMode := conflict != nil && conflict.Action != ""
 	if !isManagedConnector(task.Kind) {
-		m.openConnectorTaskEditor(task, false)
+		m.openConnectorTaskEditor(task, actionMode)
 		return
 	}
 	m.pendingSync[task.ConnectionID] = true
@@ -457,7 +460,7 @@ func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
 		delete(m.connectorConflicts, task.ID)
 		delete(m.liveTaskProblems, task.ID)
 		if edit {
-			m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, version: task.TargetVersion}
+			m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, version: task.TargetVersion, actionMode: actionMode}
 		}
 		m.refreshLive()
 	})

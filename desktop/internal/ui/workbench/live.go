@@ -690,7 +690,7 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			if task.ID == retry.taskID && task.TargetVersion != retry.version {
 				m.retryConnectorEdit = nil
 				if m.page == tasksPage && m.taskSelection == task.ID {
-					m.openConnectorTaskEditor(task, false)
+					m.openConnectorTaskEditor(task, retry.actionMode)
 				}
 				break
 			}
