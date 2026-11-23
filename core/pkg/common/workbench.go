@@ -144,6 +144,7 @@ type WorkbenchCapabilities struct {
 }
 
 type WorkbenchSnapshot struct {
+	GitHubAccountID int64                  `json:"-"`
 	SnapshotVersion int64                  `json:"-"`
 	Capabilities    WorkbenchCapabilities  `json:"capabilities"`
 	PendingWrites   []WorkbenchTaskReceipt `json:"pending_writes,omitempty"`

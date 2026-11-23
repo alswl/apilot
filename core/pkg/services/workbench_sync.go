@@ -56,32 +56,11 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 				attempts[0].Progress = &value
 			}
 		}
-		if connections[i].Kind == common.WorkbenchGitHubRepository {
-			store, ok := s.store.(workbenchGitHubStore)
-			if !ok {
-				return nil, common.Err("INTERNAL", "GitHub connection storage unavailable")
-			}
-			var progress common.WorkbenchGitHubProgress
-			var err error
-			if consistent, ok := s.store.(interface {
-				WorkbenchGitHubProgressAt(string, int64, int64) (common.WorkbenchGitHubProgress, error)
-			}); ok {
-				progress, err = consistent.WorkbenchGitHubProgressAt(connections[i].ID, connections[i].Version, connections[i].SnapshotVersion)
-			} else {
-				progress, err = store.WorkbenchGitHubProgress(connections[i].ID)
-			}
-			if err != nil {
-				return nil, err
-			}
-			connections[i].AccountLogin = progress.AccountLogin
-			connections[i].AccessState = progress.AccessState
-			connections[i].WriteDenied = progress.WriteDenied
-			if s.githubRate != nil {
-				now := time.Now()
-				if delay := s.githubRate.BackoffDelay(progress.AccountID, now); delay > 0 {
-					until := now.Add(delay).UTC()
-					connections[i].RateLimitUntil = &until
-				}
+		if connections[i].Kind == common.WorkbenchGitHubRepository && s.githubRate != nil {
+			now := time.Now()
+			if delay := s.githubRate.BackoffDelay(connections[i].GitHubAccountID, now); delay > 0 {
+				until := now.Add(delay).UTC()
+				connections[i].RateLimitUntil = &until
 			}
 		}
 		connections[i].Capabilities = s.workbenchConnectionCapabilities(connections[i])
