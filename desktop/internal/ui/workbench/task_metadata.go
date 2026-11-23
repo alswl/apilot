@@ -3,6 +3,7 @@ package workbench
 import (
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/desktop/internal/ui/components"
@@ -94,6 +95,34 @@ func (m *mockup) saveTaskLabels(taskID string, detail *taskDetailUI, names []str
 	}()
 }
 
+func (m *mockup) invalidateLiveAnnotations() bool {
+	invalidated := false
+	for _, detail := range m.taskDetails {
+		if detail.annotationsLoaded || detail.annotationsLoading {
+			detail.annotationGeneration++
+			detail.annotationsLoaded, detail.annotationsLoading = false, false
+			detail.annotations = nil
+			invalidated = true
+		}
+	}
+	return invalidated
+}
+
+func readLiveAnnotations(read func() ([]common.WorkbenchAnnotation, error)) ([]common.WorkbenchAnnotation, error) {
+	for attempt := 0; ; attempt++ {
+		items, err := read()
+		if err == nil || attempt == 2 {
+			return items, err
+		}
+		switch common.ProtocolError(err).Code {
+		case "APP_NOT_RUNNING", "IPC_TIMEOUT", "IPC_UNAVAILABLE", "SOURCE_UNAVAILABLE":
+			time.Sleep(time.Duration(attempt+1) * 250 * time.Millisecond)
+		default:
+			return nil, err
+		}
+	}
+}
+
 func (m *mockup) loadTaskAnnotations(taskID string, detail *taskDetailUI) {
 	if detail.annotationsLoading {
 		return
@@ -103,7 +132,9 @@ func (m *mockup) loadTaskAnnotations(taskID string, detail *taskDetailUI) {
 	generation := detail.annotationGeneration
 	remote := m.live
 	go func() {
-		items, err := remote.WorkbenchAnnotations(taskID)
+		items, err := readLiveAnnotations(func() ([]common.WorkbenchAnnotation, error) {
+			return remote.WorkbenchAnnotations(taskID)
+		})
 		mygo.RunOnMain(func() {
 			if m.taskDetails[taskID] != detail || detail.annotationGeneration != generation {
 				return
@@ -112,9 +143,7 @@ func (m *mockup) loadTaskAnnotations(taskID string, detail *taskDetailUI) {
 			if err != nil {
 				problem := common.ProtocolError(err)
 				detail.annotationProblem = problem.Message
-				if problem.Code == "NOT_FOUND" {
-					detail.annotations = nil
-				}
+				detail.annotations = nil
 			} else {
 				detail.annotations, detail.annotationProblem = items, ""
 			}

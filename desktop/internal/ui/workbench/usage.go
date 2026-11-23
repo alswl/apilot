@@ -77,7 +77,7 @@ type syncUsageSummary struct {
 func summarizeSyncUsage(snapshots []common.WorkbenchSnapshot) []syncUsageSummary {
 	var summaries []syncUsageSummary
 	for _, snapshot := range snapshots {
-		if snapshot.Kind == common.WorkbenchLocal {
+		if snapshot.Kind == common.WorkbenchLocal || (snapshot.Kind == common.WorkbenchGitHubRepository && snapshot.AccessState != "available") {
 			continue
 		}
 		summary := syncUsageSummary{name: snapshot.Name}

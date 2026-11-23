@@ -8,13 +8,16 @@ usage() {
 case "${1:-}" in
   scene|test)
     case "${2:-}" in
-      task-create-pending) ;;
-      *) printf '%s\n' 'Available scenes: task-create-pending' >&2; exit 2 ;;
+      task-create-pending|workbench-events) ;;
+      *) printf '%s\n' 'Available scenes: task-create-pending, workbench-events' >&2; exit 2 ;;
     esac
     if [[ "$1" == scene ]]; then
       export APILOT_DEV_SCENARIO="$2"
       export CGO_ENABLED=1
       exec "$root/scripts/dev-scene"
+    fi
+    if [[ "$2" == workbench-events ]]; then
+      exec go -C desktop test -count=1 ./internal/ui/workbench -run '^TestDevWorkbenchEvents$'
     fi
     exec go -C desktop test -count=1 ./internal/ui/workbench -run '^TestDevTaskCreatePendingScenario$'
     ;;

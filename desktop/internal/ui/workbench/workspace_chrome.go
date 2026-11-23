@@ -132,6 +132,9 @@ func (m *mockup) statusBar(c *ui.Context) {
 				m.selectTaskView(taskStatus.id)
 			}
 		}
+		if m.liveStale {
+			components.StatusLabel(c.Key("live-stale"), components.Status{Text: tr("数据可能已过时"), Icon: "exclamationmark.circle", Color: c.Theme().Warning})
+		}
 		ui.Spacer(c).Grow(1).MinWidth(0)
 		for _, item := range []struct {
 			icon, description, short string

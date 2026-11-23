@@ -35,6 +35,7 @@ func (s *Service) Resume() {
 		_ = s.resetSchedule(&t, time.Now().UTC())
 		s.tasks[id] = t
 	}
+	s.volatileRevision.Add(1)
 }
 
 func (s *Service) tick() {

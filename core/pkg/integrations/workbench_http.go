@@ -81,6 +81,8 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 	switch method {
 	case "workbench.health":
 		return client.Health(ctx)
+	case "workbench.ready":
+		return client.Ready(ctx)
 	case "workbench.connector.list":
 		return client.ListWorkbenchConnectors(ctx)
 	case "workbench.connection.list":

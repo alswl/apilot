@@ -1,6 +1,7 @@
 package workbench
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"slices"
@@ -12,19 +13,63 @@ import (
 	"github.com/egoist/mygo"
 )
 
-func (m *mockup) pollLive() {
-	if m.live == nil {
+func (m *mockup) startLiveEvents() {
+	if m.live == nil || m.win == nil {
 		return
 	}
-	m.refreshLive()
-	window := m.win
-	time.AfterFunc(time.Second, func() {
-		mygo.RunOnMain(func() {
-			if m.win == window && window != nil && !window.IsDestroyed() {
-				m.pollLive()
-			}
-		})
+	m.liveStale = m.liveLoaded
+	m.liveGeneration++
+	remote, window := m.live, m.win
+	ctx, cancel := context.WithCancel(context.Background())
+	window.OnClosed(func() {
+		cancel()
+		m.stopPermissionRetry()
 	})
+	current := func() bool {
+		return ctx.Err() == nil && m.win == window && !window.IsDestroyed()
+	}
+	go func() {
+		for ctx.Err() == nil {
+			_ = remote.WatchWorkbenchEvents(ctx, func(event common.WorkbenchEvent) error {
+				mygo.RunOnMain(func() {
+					if current() {
+						m.receiveLiveEvent(event)
+					}
+				})
+				return ctx.Err()
+			})
+			mygo.RunOnMain(func() {
+				if current() {
+					m.receiveLiveDisconnect()
+					window.Invalidate()
+				}
+			})
+			timer := time.NewTimer(time.Second)
+			select {
+			case <-ctx.Done():
+			case <-timer.C:
+			}
+			timer.Stop()
+		}
+	}()
+}
+
+func (m *mockup) receiveLiveDisconnect() {
+	m.stopPermissionRetry()
+	m.liveDisconnected, m.liveStale = true, true
+	if !m.liveLoaded {
+		m.liveError = true
+	}
+}
+
+func (m *mockup) receiveLiveEvent(event common.WorkbenchEvent) {
+	if event.Type == "snapshot" {
+		m.liveDisconnected = false
+		m.livePermissionRetries = 0
+		m.liveGeneration++
+	}
+	m.liveAnnotationsDirty = true
+	m.refreshLive()
 }
 
 func (m *mockup) runLiveTaskWrite(request common.WorkbenchTaskWrite, finish func(common.WorkbenchTaskReceipt, error)) {
@@ -32,7 +77,13 @@ func (m *mockup) runLiveTaskWrite(request common.WorkbenchTaskWrite, finish func
 	go func() {
 		receipt, err := remote.SubmitWorkbenchTaskOperation(request)
 		mygo.RunOnMain(func() {
-			finish(receipt, err)
+			if request.SourceObjectID == "" {
+				if m.newTaskRequest.RequestID == request.RequestID {
+					finish(receipt, err)
+				}
+			} else if m.liveTaskRequests[request.SourceObjectID].RequestID == request.RequestID {
+				finish(receipt, err)
+			}
 			m.liveGeneration++
 			if m.win != nil && !m.win.IsDestroyed() {
 				m.win.Invalidate()
@@ -43,11 +94,24 @@ func (m *mockup) runLiveTaskWrite(request common.WorkbenchTaskWrite, finish func
 }
 
 func (m *mockup) refreshLive() {
-	remote := m.live
-	if remote == nil || m.liveBusy {
+	m.refreshLiveWithDispatch(mygo.RunOnMain)
+}
+
+func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
+	if m.devEvents != nil {
+		m.devEvents.read(m)
 		return
 	}
-	m.liveBusy = true
+	remote := m.live
+	if remote == nil {
+		return
+	}
+	if m.liveBusy {
+		m.liveQueued = true
+		return
+	}
+	m.stopPermissionRetry()
+	m.liveBusy, m.liveQueued = true, false
 	generation := m.liveGeneration
 	syncID := m.syncLogID
 	requests := make(map[string]string)
@@ -60,8 +124,43 @@ func (m *mockup) refreshLive() {
 	if m.newTaskPending {
 		createRequest = m.newTaskRequest.RequestID
 	}
+	confirm := func(snapshots []common.WorkbenchSnapshot) {
+		confirmed := slices.Clone(snapshots)
+		dispatch(func() {
+			// Connection lists are observed by one refresh worker in request order.
+			// A local UI generation change only invalidates the aggregate result.
+			if m.clearChangedGitHubAccess(confirmed) && m.win != nil && !m.win.IsDestroyed() {
+				m.win.Invalidate()
+			}
+		})
+	}
 	go func() {
-		connections, err := remote.WorkbenchConnections()
+		connections, err := confirmLiveConnections(remote.WorkbenchConnections, confirm)
+		detailAccessChanged := false
+		readDetail := func(id string) (common.WorkbenchSnapshot, error) {
+			snapshot, err := remote.WorkbenchSyncDetails(id)
+			if err != nil || snapshot.ID != id || snapshot.Kind != common.WorkbenchGitHubRepository ||
+				matchesLiveGitHubAccess(connections, snapshot) {
+				return snapshot, err
+			}
+			index := slices.IndexFunc(connections, func(connection common.WorkbenchSnapshot) bool {
+				return connection.ID == id
+			})
+			switch {
+			case index >= 0 && snapshot.Version < connections[index].Version:
+				return common.WorkbenchSnapshot{}, nil
+			case index < 0 && snapshot.AccessState == "available":
+				return common.WorkbenchSnapshot{}, nil
+			}
+			detailAccessChanged = true
+			dispatch(func() {
+				m.clearGitHubAccess(map[string]bool{id: true})
+				if m.win != nil && !m.win.IsDestroyed() {
+					m.win.Invalidate()
+				}
+			})
+			return snapshot, nil
+		}
 		var detail common.WorkbenchSnapshot
 		var detailErr error
 		if err == nil {
@@ -70,7 +169,7 @@ func (m *mockup) refreshLive() {
 					continue
 				}
 				var snapshot common.WorkbenchSnapshot
-				snapshot, err = remote.WorkbenchSyncDetails(connections[i].ID)
+				snapshot, err = readDetail(connections[i].ID)
 				if err != nil {
 					break
 				}
@@ -85,6 +184,7 @@ func (m *mockup) refreshLive() {
 			plugins, err = remote.WorkbenchPlugins()
 		}
 		var tasks []sourceObject
+		revalidate := false
 		if err == nil {
 			q := common.WorkbenchQuery{Limit: 100}
 			for {
@@ -104,14 +204,24 @@ func (m *mockup) refreshLive() {
 			// The task pages and connection list are separate requests. Reject a
 			// page captured across an account or authorization transition.
 			var latest []common.WorkbenchSnapshot
-			latest, err = remote.WorkbenchConnections()
-			if err == nil && !sameGitHubVisibility(connections, latest) {
-				connections = latest
-				tasks = slices.DeleteFunc(tasks, func(task sourceObject) bool { return task.Kind == common.WorkbenchGitHubRepository })
+			latest, err = confirmLiveConnections(remote.WorkbenchConnections, confirm)
+			if err == nil {
+				changed := changedGitHubVisibility(connections, latest)
+				if len(changed) != 0 {
+					revalidate = true
+					connections = latest
+					tasks = slices.DeleteFunc(tasks, func(task sourceObject) bool { return changed[task.ConnectionID] })
+					if changed[syncID] {
+						detail, detailErr = common.WorkbenchSnapshot{}, nil
+					}
+				}
 			}
 		}
 		if syncID != "" && detail.ID == "" {
-			detail, detailErr = remote.WorkbenchSyncDetails(syncID)
+			detail, detailErr = readDetail(syncID)
+		}
+		if detail.Kind == common.WorkbenchGitHubRepository && !matchesLiveGitHubAccess(connections, detail) {
+			detail = common.WorkbenchSnapshot{}
 		}
 		receipts := make(map[string]common.WorkbenchTaskReceipt, len(requests))
 		for taskID, requestID := range requests {
@@ -123,13 +233,26 @@ func (m *mockup) refreshLive() {
 		if createRequest != "" {
 			createReceipt, _ = remote.WorkbenchTaskOperationReceipt(createRequest)
 		}
-		mygo.RunOnMain(func() {
+		dispatch(func() {
 			m.liveBusy = false
 			if m.win == nil || m.win.IsDestroyed() {
 				return
 			}
+			defer func() {
+				if m.liveQueued {
+					m.refreshLive()
+				}
+			}()
 			if generation != m.liveGeneration {
-				m.refreshLive()
+				m.liveQueued = true
+				return
+			}
+			if detailAccessChanged {
+				m.liveStale = true
+				m.win.Invalidate()
+				if !m.liveQueued {
+					m.schedulePermissionRetry(dispatch)
+				}
 				return
 			}
 			settled := false
@@ -148,24 +271,115 @@ func (m *mockup) refreshLive() {
 				detailChanged = !reflect.DeepEqual(detail, m.syncDetail)
 				m.syncDetail = detail
 			}
-			hadError := m.liveError
+			annotationsChanged := false
+			if err == nil && !m.liveQueued && m.liveAnnotationsDirty {
+				annotationsChanged = m.invalidateLiveAnnotations()
+				m.liveAnnotationsDirty = false
+			}
+			hadError, wasStale := m.liveError, m.liveStale
 			m.liveError = err != nil
+			m.liveStale = m.liveDisconnected || err != nil || revalidate
 			if err == nil && (!m.liveLoaded || !reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(tasks, m.objects)) {
 				m.liveConnections = connections
 				m.livePlugins = plugins
 				m.applyLive(connections, tasks)
 				m.win.Invalidate()
-			} else if hadError != m.liveError || detailChanged || settled {
+			} else if hadError != m.liveError || wasStale != m.liveStale || detailChanged || settled || annotationsChanged {
 				m.win.Invalidate()
 			}
-			if settled {
-				m.refreshLive()
+			if settled && !revalidate {
+				m.liveQueued = true
+			}
+			switch {
+			case revalidate || (err != nil && m.livePermissionRetries > 0):
+				if !m.liveQueued {
+					m.schedulePermissionRetry(dispatch)
+				}
+				return
+			case err == nil:
+				m.livePermissionRetries = 0
+			}
+			if err != nil && !m.liveQueued && !m.liveDisconnected {
+				window := m.win
+				time.AfterFunc(time.Second, func() {
+					dispatch(func() {
+						if m.win == window && !window.IsDestroyed() && m.liveError && !m.liveDisconnected && generation == m.liveGeneration {
+							m.refreshLive()
+						}
+					})
+				})
 			}
 		})
 	}()
 }
 
+const (
+	livePermissionRetryLimit = 3
+	livePermissionRetryDelay = 750 * time.Millisecond
+)
+
+func (m *mockup) nextPermissionRetry() (time.Duration, bool) {
+	if m.liveDisconnected || m.livePermissionRetries >= livePermissionRetryLimit {
+		return 0, false
+	}
+	m.livePermissionRetries++
+	return livePermissionRetryDelay, true
+}
+
+func (m *mockup) stopPermissionRetry() {
+	if m.livePermissionTimer != nil {
+		m.livePermissionTimer.Stop()
+		m.livePermissionTimer = nil
+	}
+}
+
+func (m *mockup) schedulePermissionRetry(dispatch func(func())) {
+	if m.livePermissionTimer != nil {
+		return
+	}
+	delay, ok := m.nextPermissionRetry()
+	if !ok {
+		return
+	}
+	window := m.win
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
+		dispatch(func() {
+			if m.livePermissionTimer != timer {
+				return
+			}
+			m.livePermissionTimer = nil
+			if m.win == window && !window.IsDestroyed() && !m.liveDisconnected {
+				m.refreshLiveWithDispatch(dispatch)
+			}
+		})
+	})
+	m.livePermissionTimer = timer
+}
+
+func confirmLiveConnections(read func() ([]common.WorkbenchSnapshot, error), confirm func([]common.WorkbenchSnapshot)) ([]common.WorkbenchSnapshot, error) {
+	snapshots, err := read()
+	if err == nil {
+		confirm(snapshots)
+	}
+	return snapshots, err
+}
+
+func matchesLiveGitHubAccess(connections []common.WorkbenchSnapshot, detail common.WorkbenchSnapshot) bool {
+	for _, connection := range connections {
+		if connection.ID == detail.ID {
+			return connection.Kind == detail.Kind && connection.Version == detail.Version &&
+				connection.AccessState == detail.AccessState && connection.AccountLogin == detail.AccountLogin
+		}
+	}
+	return false
+}
+
 func sameGitHubVisibility(before, after []common.WorkbenchSnapshot) bool {
+	return len(changedGitHubVisibility(before, after)) == 0
+}
+
+func changedGitHubVisibility(before, after []common.WorkbenchSnapshot) map[string]bool {
 	type visibility struct {
 		version       int64
 		access, login string
@@ -179,7 +393,70 @@ func sameGitHubVisibility(before, after []common.WorkbenchSnapshot) bool {
 		}
 		return result
 	}
-	return reflect.DeepEqual(states(before), states(after))
+	previous, current := states(before), states(after)
+	changed := make(map[string]bool)
+	for id, state := range previous {
+		if current[id] != state {
+			changed[id] = true
+		}
+	}
+	for id, state := range current {
+		if previous[id] != state {
+			changed[id] = true
+		}
+	}
+	return changed
+}
+
+func (m *mockup) clearChangedGitHubAccess(snapshots []common.WorkbenchSnapshot) bool {
+	changed := changedGitHubVisibility(m.liveConnections, snapshots)
+	if len(changed) == 0 {
+		return false
+	}
+	m.clearGitHubAccess(changed)
+	return true
+}
+
+func (m *mockup) clearGitHubAccess(changed map[string]bool) {
+	for id := range changed {
+		m.clearGitHubTaskDrafts(id)
+		delete(m.syncLogs, id)
+		delete(m.pendingSync, id)
+		delete(m.syncPhase, id)
+		delete(m.syncAttempts, id)
+		if m.syncDetail.ID == id || m.syncLogID == id {
+			m.syncDetailProblem = ""
+		}
+		if m.syncDetail.ID == id {
+			for _, receipt := range m.syncDetail.PendingWrites {
+				delete(m.checkingOperations, receipt.RequestID)
+			}
+			m.syncDetail = common.WorkbenchSnapshot{}
+		}
+	}
+	for i := range m.liveConnections {
+		if snapshot := &m.liveConnections[i]; changed[snapshot.ID] {
+			snapshot.Attempts = nil
+			snapshot.PendingWrites = nil
+			snapshot.LastSuccess = nil
+		}
+	}
+	for i := range m.connectionsData {
+		conn := &m.connectionsData[i]
+		if changed[conn.ID] {
+			conn.Identity, conn.Writable = "", false
+			conn.ActiveAttempt, conn.ReadProgress = 0, nil
+			conn.LastConfirmedAt, conn.RateLimitUntil = "—", nil
+			conn.Status, conn.Capabilities = "授权不可用", "只读"
+		}
+	}
+	for id, receipt := range m.serverTaskOperations {
+		if changed[receipt.ConnectionID] {
+			delete(m.serverTaskOperations, id)
+		}
+	}
+	tasks := slices.DeleteFunc(slices.Clone(m.objects), func(task sourceObject) bool { return changed[task.ConnectionID] })
+	m.replaceLiveTasks(tasks)
 }
 
 func workbenchOperationInProgress(state string) bool {
@@ -282,11 +559,12 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			for symbol, state := range snapshot.Statuses {
 				draft.CheckboxMapping[workbenchStateLabel(state)] = symbol
 			}
-			if snapshot.LastSuccess != nil {
+			showSync := snapshot.Kind != common.WorkbenchGitHubRepository || snapshot.AccessState != "unavailable"
+			if showSync && snapshot.LastSuccess != nil {
 				draft.LastConfirmedAt = snapshot.LastSuccess.Local().Format(time.DateTime)
 			}
 			delete(m.pendingSync, draft.ID)
-			if len(snapshot.Attempts) > 0 {
+			if showSync && len(snapshot.Attempts) > 0 {
 				switch snapshot.Attempts[0].State {
 				case "running":
 					draft.ActiveAttempt = snapshot.Attempts[0].ID
@@ -344,7 +622,11 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 				}
 				events = append(events, syncEvent{a.Started.Local().Format(time.DateTime), message})
 			}
-			m.syncLogs[draft.ID] = events
+			if snapshot.Kind == common.WorkbenchGitHubRepository && snapshot.AccessState != "available" {
+				delete(m.syncLogs, draft.ID)
+			} else {
+				m.syncLogs[draft.ID] = events
+			}
 			connections = append(connections, draft)
 		}
 	}

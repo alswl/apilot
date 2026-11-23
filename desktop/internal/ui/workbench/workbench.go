@@ -44,6 +44,11 @@ type mockup struct {
 	removeConnectionID                                        string
 	live                                                      *services.Remote
 	liveBusy, liveError, liveLoaded                           bool
+	liveQueued, liveDisconnected, liveStale                   bool
+	liveAnnotationsDirty                                      bool
+	livePermissionRetries                                     int
+	livePermissionTimer                                       *time.Timer
+	devEvents                                                 *devEventScenario
 	liveGeneration                                            uint64
 	framework                                                 bool
 	layout                                                    workbenchLayout
@@ -206,7 +211,7 @@ func runWorkspace(m *mockup, capture, keybindingsPath, language string) error {
 		m.win.OnClosed(func() { mygo.App.Quit() })
 		m.win.OnBlur(func() { m.keyboard.prefix = keystroke{} })
 		m.win.Show()
-		m.pollLive()
+		m.startLiveEvents()
 		if capture != "" {
 			go func() {
 				done <- m.capture(capture)
@@ -492,7 +497,9 @@ func (m *mockup) view(c *ui.Context) {
 			if components.IconButton(c.Key("assistant"), "sparkles", tr("问助理"), false).Clicked() {
 				m.openAssistant()
 			}
-			if !m.framework {
+			if m.devEvents != nil {
+				m.devEventControls(c.Key("dev-events"))
+			} else if !m.framework {
 				m.debugPane(c.Key("debug"))
 			}
 			if m.unifiedTasks() {

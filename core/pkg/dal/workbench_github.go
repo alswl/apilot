@@ -81,10 +81,25 @@ func (s *Store) WorkbenchGitHubCredentialAccounts() (map[string]int64, error) {
 }
 
 func (s *Store) WorkbenchGitHubProgress(id string) (common.WorkbenchGitHubProgress, error) {
+	return s.workbenchGitHubProgress("WHERE connection_id=?", id)
+}
+
+// WorkbenchGitHubProgressAt rejects a mixed connection/authorization read.
+func (s *Store) WorkbenchGitHubProgressAt(id string, version, snapshotVersion int64) (common.WorkbenchGitHubProgress, error) {
+	progress, err := s.workbenchGitHubProgress(`WHERE connection_id=? AND EXISTS (
+		SELECT 1 FROM workbench_connections c WHERE c.id=connection_id AND c.version=? AND c.snapshot_version=?
+	)`, id, version, snapshotVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return progress, common.Err("STALE_REVISION", "GitHub connection changed during read")
+	}
+	return progress, err
+}
+
+func (s *Store) workbenchGitHubProgress(where string, args ...any) (common.WorkbenchGitHubProgress, error) {
 	var progress common.WorkbenchGitHubProgress
 	var cursor, full, nextPoll sql.NullString
 	err := s.db.QueryRow(`SELECT connection_id,repository_id,account_id,account_login,credential_ref,access_state,cursor,last_full_sync,write_denied,next_poll_at
-		FROM workbench_github_connections WHERE connection_id=?`, id).Scan(
+		FROM workbench_github_connections `+where, args...).Scan(
 		&progress.ConnectionID, &progress.RepositoryID, &progress.AccountID, &progress.AccountLogin,
 		&progress.CredentialRef, &progress.AccessState, &cursor, &full, &progress.WriteDenied, &nextPoll)
 	if err != nil {
@@ -172,7 +187,7 @@ func (s *Store) RejectWorkbenchGitHubWrite(requestID string, receipt common.Work
 			if _, err := tx.Exec(`UPDATE workbench_github_connections SET access_state='unavailable',cursor=NULL,last_full_sync=NULL WHERE connection_id=?`, receipt.ConnectionID); err != nil {
 				return err
 			}
-			if _, err := tx.Exec(`UPDATE workbench_connections SET snapshot_version=snapshot_version+1,last_success=NULL WHERE id=?`, receipt.ConnectionID); err != nil {
+			if _, err := tx.Exec(`UPDATE workbench_connections SET snapshot_version=snapshot_version+1,last_success=NULL,attempts='[]' WHERE id=?`, receipt.ConnectionID); err != nil {
 				return err
 			}
 			if _, err := tx.Exec(`UPDATE workbench_revision SET revision=revision+1`); err != nil {
@@ -191,7 +206,7 @@ func (s *Store) InvalidateWorkbenchGitHubAccess(c common.WorkbenchConnection, sn
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.Exec(`UPDATE workbench_connections SET snapshot_version=snapshot_version+1,last_success=NULL
+	result, err := tx.Exec(`UPDATE workbench_connections SET snapshot_version=snapshot_version+1,last_success=NULL,attempts='[]'
 		WHERE id=? AND version=? AND snapshot_version=?`, c.ID, c.Version, snapshotVersion)
 	if err != nil {
 		return err
@@ -302,7 +317,7 @@ func (s *Store) SaveWorkbenchGitHub(c common.WorkbenchConnection, expectedVersio
 			if _, err := tx.Exec("UPDATE workbench_github_connections SET cursor=NULL,last_full_sync=NULL,next_poll_at=NULL WHERE connection_id=?", c.ID); err != nil {
 				return err
 			}
-			if _, err := tx.Exec("UPDATE workbench_connections SET snapshot_version=snapshot_version+1,last_success=NULL WHERE id=?", c.ID); err != nil {
+			if _, err := tx.Exec("UPDATE workbench_connections SET snapshot_version=snapshot_version+1,last_success=NULL,attempts='[]' WHERE id=?", c.ID); err != nil {
 				return err
 			}
 		}

@@ -89,7 +89,8 @@ func TestGitHubAccountSwitchHidesUntilFullSync(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	task := common.WorkbenchTask{ID: "task", ConnectionID: c.ID, SourceKey: "issue:1", Title: "A", State: "open"}
-	if err := store.CommitWorkbenchGitHubSync(c, nil, nil, []common.WorkbenchTask{task}, now, 0, now, true); err != nil {
+	oldAttempt := common.WorkbenchAttempt{ID: 1, State: "success", Error: "first account history", RequestCount: 7}
+	if err := store.CommitWorkbenchGitHubSync(c, []common.WorkbenchAttempt{oldAttempt}, nil, []common.WorkbenchTask{task}, now, 0, now, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SetWorkbenchLabels(task.ID, []string{"private-label"}); err != nil {
@@ -98,10 +99,32 @@ func TestGitHubAccountSwitchHidesUntilFullSync(t *testing.T) {
 	if err := store.PutWorkbenchAnnotation(task.ID, "private-note", "private annotation"); err != nil {
 		t.Fatal(err)
 	}
+	other := common.WorkbenchConnection{ID: "other", Kind: common.WorkbenchGitHubRepository, Version: 1}
+	otherProgress := common.WorkbenchGitHubProgress{ConnectionID: other.ID, RepositoryID: 43, AccountID: 1, CredentialRef: "one", AccessState: "available"}
+	if err := store.SaveWorkbenchGitHub(other, 0, otherProgress); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitWorkbenchGitHubSync(other, []common.WorkbenchAttempt{oldAttempt}, nil, nil, now, 0, now, true); err != nil {
+		t.Fatal(err)
+	}
 	c.Version = 2
 	p.AccountID, p.AccountLogin, p.CredentialRef = 2, "second", "two"
 	if err := store.SaveWorkbenchGitHub(c, 1, p); err != nil {
 		t.Fatal(err)
+	}
+	snapshots, err := store.WorkbenchConnections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := make(map[string][]common.WorkbenchAttempt)
+	for _, snapshot := range snapshots {
+		history[snapshot.ID] = snapshot.Attempts
+	}
+	if len(history[c.ID]) != 0 || len(history[other.ID]) != 1 || history[other.ID][0].RequestCount != 7 {
+		t.Fatalf("account switch did not isolate history: %+v", history)
+	}
+	if _, err := store.WorkbenchGitHubProgressAt(c.ID, 1, 1); err == nil || common.ProtocolError(err).Code != "STALE_REVISION" {
+		t.Fatalf("old connection can still read new account authorization: %v", err)
 	}
 	if _, err := store.WorkbenchObject(task.ID); err == nil {
 		t.Fatal("previous account's task remains visible")
@@ -181,7 +204,8 @@ func TestGitHubRevocationHidesAndFencesSnapshot(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	task := common.WorkbenchTask{ID: "task", ConnectionID: c.ID, SourceKey: "issue:1"}
-	if err := store.CommitWorkbenchGitHubSync(c, nil, nil, []common.WorkbenchTask{task}, now, 0, now, true); err != nil {
+	old := common.WorkbenchAttempt{ID: 7, State: "failed", Error: "private error"}
+	if err := store.CommitWorkbenchGitHubSync(c, []common.WorkbenchAttempt{old}, nil, []common.WorkbenchTask{task}, now, 0, now, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.InvalidateWorkbenchGitHubAccess(c, 0); err == nil {
@@ -189,6 +213,15 @@ func TestGitHubRevocationHidesAndFencesSnapshot(t *testing.T) {
 	}
 	if err := store.InvalidateWorkbenchGitHubAccess(c, 1); err != nil {
 		t.Fatal(err)
+	}
+	snapshots, err := store.WorkbenchConnections()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.ID == c.ID && (len(snapshot.Attempts) != 0 || snapshot.LastSuccess != nil) {
+			t.Fatal("same-account revocation retained old attempt or last success")
+		}
 	}
 	if _, err := store.WorkbenchObject(task.ID); err == nil {
 		t.Fatal("revoked task remains visible")

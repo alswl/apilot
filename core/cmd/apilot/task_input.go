@@ -98,7 +98,7 @@ func (c *client) saveTaskInput(op string, cmd *cobra.Command, a []string) error 
 	}
 	if f.Changed("env-file") {
 		path, _ := f.GetString("env-file")
-		env, e := readEnv(path)
+		env, e := readEnv(path, cmd.InOrStdin())
 		if e != nil {
 			return e
 		}
@@ -125,7 +125,7 @@ func configureTaskInputFlags(cmd *cobra.Command) {
 	f.String("timezone", "Local", "IANA timezone")
 	f.Bool("schedule-enabled", true, "Enable the schedule")
 	f.Bool("clear-schedule", false, "Remove the schedule")
-	f.String("env-file", "", "Read explicit KEY=VALUE environment file")
+	f.String("env-file", "", "Read explicit KEY=VALUE environment file or stdin (-)")
 	f.StringArray("env-unset", nil, "Remove environment key")
 	f.Int64("if-revision", 0, "Require task revision")
 }

@@ -55,7 +55,7 @@ func (w *HostedWorkspace) Open() *mygo.Window {
 			TitleBarStyle: mygo.TitleBarHiddenInset, Content: ui.View(m.view),
 		})
 		m.win.OnBlur(func() { m.keyboard.prefix = keystroke{} })
-		m.pollLive()
+		m.startLiveEvents()
 	}
 	m.win.Show()
 	m.win.Focus()

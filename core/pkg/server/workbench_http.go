@@ -110,6 +110,10 @@ type workbenchHealth struct {
 }
 
 func workbenchRouter(s *services.Service) (http.Handler, huma.API) {
+	return workbenchRouterWithEvents(s, nil)
+}
+
+func workbenchRouterWithEvents(s *services.Service, events *workbenchEvents) (http.Handler, huma.API) {
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID, workbenchRequestLog, middleware.Recoverer, workbenchAPIVersion, redactWorkbenchConnectionErrors)
 	config := huma.DefaultConfig("Apilot Local Workbench", "1.0.0")
@@ -117,6 +121,7 @@ func workbenchRouter(s *services.Service) (http.Handler, huma.API) {
 	config.Servers = []*huma.Server{{URL: "http://apilot", Description: "HTTP over the Apilot Unix domain socket"}}
 	api := humachi.New(router, config)
 	registerWorkbenchHTTP(api, s)
+	registerWorkbenchEventHTTP(router, api, events)
 	return router, api
 }
 

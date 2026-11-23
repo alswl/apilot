@@ -36,7 +36,7 @@ func (s *Service) gitHubAuthorizationManager() (*githubAuthorizationManager, err
 	if err != nil {
 		return nil, err
 	}
-	s.githubAuthorization = &githubAuthorizationManager{flow: flow, installationURL: "https://github.com/apps/" + url.PathEscape(s.githubAppSlug) + "/installations/new"}
+	s.githubAuthorization = &githubAuthorizationManager{flow: flow, changed: func() { s.volatileRevision.Add(1) }, installationURL: "https://github.com/apps/" + url.PathEscape(s.githubAppSlug) + "/installations/new"}
 	return s.githubAuthorization, nil
 }
 
@@ -156,6 +156,13 @@ type githubAuthorizationManager struct {
 	installationURL string
 	current         *githubAuthorizationSession
 	closed          bool
+	changed         func()
+}
+
+func (m *githubAuthorizationManager) notifyChange() {
+	if m.changed != nil {
+		m.changed()
+	}
 }
 
 func (m *githubAuthorizationManager) begin(ctx context.Context) (GitHubAuthorizationStatus, error) {
@@ -174,6 +181,7 @@ func (m *githubAuthorizationManager) begin(ctx context.Context) (GitHubAuthoriza
 	pollCtx, cancel := context.WithCancel(context.Background())
 	session := &githubAuthorizationSession{status: GitHubAuthorizationStatus{ID: common.ID(), State: "waiting", VerificationURI: attempt.VerificationURI, UserCode: attempt.UserCode, ExpiresAt: attempt.ExpiresAt, InstallationURL: m.installationURL}, cancel: cancel}
 	m.current = session
+	m.notifyChange()
 	session.expiry = time.AfterFunc(time.Until(attempt.ExpiresAt), func() { m.expire(session) })
 	go func() {
 		credential, pollErr := m.flow.Poll(pollCtx, attempt)
@@ -182,6 +190,7 @@ func (m *githubAuthorizationManager) begin(ctx context.Context) (GitHubAuthoriza
 		if m.current != session || session.status.State != "waiting" {
 			return
 		}
+		defer m.notifyChange()
 		session.status.UserCode = ""
 		switch {
 		case pollErr == nil:
@@ -213,6 +222,7 @@ func (m *githubAuthorizationManager) expire(session *githubAuthorizationSession)
 		session.credential = integrations.GitHubUserCredential{}
 		session.status.UserCode = ""
 		session.status.State = "expired"
+		m.notifyChange()
 	}
 }
 
@@ -238,6 +248,7 @@ func (m *githubAuthorizationManager) claim(id string) (integrations.GitHubUserCr
 	credential, err := m.readyCredentialLocked(id)
 	if err == nil {
 		m.current.status.State = "saving"
+		m.notifyChange()
 	}
 	return credential, err
 }
@@ -255,6 +266,7 @@ func (m *githubAuthorizationManager) finish(id string, saved bool) {
 	if m.current == nil || m.current.status.ID != id || m.current.status.State != "saving" {
 		return
 	}
+	defer m.notifyChange()
 	if !saved && time.Now().Before(m.current.status.ExpiresAt) {
 		m.current.status.State = "authorized"
 		return
@@ -275,6 +287,7 @@ func (m *githubAuthorizationManager) cancel(id string) error {
 	m.current.expiry.Stop()
 	m.current.credential = integrations.GitHubUserCredential{}
 	m.current = nil
+	m.notifyChange()
 	return nil
 }
 

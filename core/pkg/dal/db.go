@@ -47,6 +47,11 @@ var workbenchGitHubRateSchema string
 
 type Store struct{ db *sql.DB }
 
+func sqliteURL(path, query string) string {
+	u := url.URL{Scheme: "file", Path: path, RawQuery: query}
+	return u.String()
+}
+
 func Open(path string) (*Store, error) {
 	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 		return nil, e
@@ -56,8 +61,7 @@ func Open(path string) (*Store, error) {
 		return nil, e
 	}
 	f.Close()
-	u := url.URL{Scheme: "file", Path: path}
-	db, e := sql.Open("sqlite3", u.String()+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
+	db, e := sql.Open("sqlite3", sqliteURL(path, "_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000"))
 	if e != nil {
 		return nil, e
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
@@ -30,6 +31,7 @@ type ObsidianSyncOptions struct {
 }
 
 type Service struct {
+	volatileRevision      atomic.Uint64
 	workbenchActive       map[string]context.CancelFunc
 	workbenchDirty        map[string]bool
 	workbenchPaths        map[string]map[string]bool
@@ -240,7 +242,17 @@ func (s *Service) Close() error {
 	return s.closeError
 }
 
-func (s *Service) Suspend() { s.mu.Lock(); s.suspended = true; s.mu.Unlock() }
+// VolatileRevision covers externally visible transitions outside SQLite.
+func (s *Service) VolatileRevision() uint64 { return s.volatileRevision.Load() }
+
+func (s *Service) Suspend() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.suspended {
+		s.suspended = true
+		s.volatileRevision.Add(1)
+	}
+}
 
 func (s *Service) Status() map[string]any {
 	s.mu.Lock()
