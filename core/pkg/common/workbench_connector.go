@@ -40,6 +40,7 @@ const (
 )
 
 type WorkbenchSyncRun struct {
+	LegacyID      int64      `json:"-"`
 	ID            string     `json:"sync_run_id"`
 	ScopeID       string     `json:"scope_id"`
 	Trigger       string     `json:"trigger"`
@@ -64,4 +65,58 @@ type WorkbenchConnectorRelease struct {
 	ReleaseVersion  string `json:"release_version"`
 	ProtocolVersion int    `json:"protocol_version"`
 	PackageDigest   string `json:"package_digest"`
+}
+
+type WorkbenchConnectorLoginInput struct {
+	ConnectorID  string `json:"connector_id"`
+	ConnectionID string `json:"connection_id,omitempty"`
+}
+
+type WorkbenchConnectorAuthorization struct {
+	ID              string    `json:"id"`
+	ConnectorID     string    `json:"connector_id"`
+	Status          string    `json:"status"`
+	DisplayName     string    `json:"display_name,omitempty"`
+	EndpointRef     string    `json:"endpoint_ref,omitempty"`
+	VerificationURL string    `json:"verification_url,omitempty"`
+	UserCode        string    `json:"user_code,omitempty"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	ErrorKind       string    `json:"error_kind,omitempty"`
+}
+
+type WorkbenchConnectorSelection struct {
+	Config       map[string]any `json:"config"`
+	WriteEnabled bool           `json:"write_enabled,omitempty"`
+}
+
+type WorkbenchConnectorSaveInput struct {
+	AuthorizationID       string                        `json:"authorization_id"`
+	EndpointConfig        map[string]any                `json:"endpoint_config,omitempty"`
+	EndpointSchemaVersion int                           `json:"endpoint_schema_version" minimum:"1"`
+	ScopeSchemaVersion    int                           `json:"scope_schema_version" minimum:"1"`
+	Scopes                []WorkbenchConnectorSelection `json:"scopes" minItems:"1" maxItems:"20"`
+}
+
+type WorkbenchConnectorScopeResult struct {
+	ScopeID   string `json:"scope_id,omitempty"`
+	ScopeRef  string `json:"scope_ref,omitempty"`
+	Label     string `json:"label,omitempty"`
+	Status    string `json:"status"`
+	ErrorKind string `json:"error_kind,omitempty"`
+}
+
+type WorkbenchConnectorSaveResult struct {
+	ConnectionID string                          `json:"connection_id,omitempty"`
+	Scopes       []WorkbenchConnectorScopeResult `json:"scopes"`
+}
+
+type WorkbenchConnectorOverview struct {
+	Connection WorkbenchConnectorConnection      `json:"connection"`
+	Scopes     []WorkbenchConnectorScopeOverview `json:"scopes"`
+}
+
+type WorkbenchConnectorScopeOverview struct {
+	WorkbenchScopeState
+	Label   string            `json:"label"`
+	LastRun *WorkbenchSyncRun `json:"last_run,omitempty"`
 }

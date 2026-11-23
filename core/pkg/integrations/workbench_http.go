@@ -25,7 +25,7 @@ func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, erro
 	}
 	timeout := 3 * time.Second
 	switch method {
-	case "workbench.connection.save":
+	case "workbench.connection.save", "workbench.connector.connection.save", "workbench.connector.options":
 		timeout = 40 * time.Second
 	case "workbench.github.authorization.start":
 		timeout = 20 * time.Second
@@ -87,6 +87,8 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return client.ListWorkbenchConnectors(ctx)
 	case "workbench.connection.list":
 		return client.ListWorkbenchConnections(ctx)
+	case "workbench.connector.connection.list":
+		return client.ListWorkbenchConnectorConnections(ctx)
 	case "workbench.label.list":
 		return client.ListWorkbenchLabels(ctx)
 	case "workbench.github.authorization.start":
@@ -97,6 +99,47 @@ func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Resp
 		return nil, common.Err("INVALID_ARGUMENT", "Invalid workbench request")
 	}
 	switch method {
+	case "workbench.connector.login":
+		var in StartWorkbenchConnectorAuthorizationJSONRequestBody
+		if json.Unmarshal(input, &in) != nil || in.ConnectorId == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "Connector ID is required")
+		}
+		return client.StartWorkbenchConnectorAuthorization(ctx, in)
+	case "workbench.connector.connection.save":
+		var in SaveWorkbenchConnectorConnectionJSONRequestBody
+		if json.Unmarshal(input, &in) != nil {
+			return nil, common.Err("INVALID_ARGUMENT", "Invalid Connector selection")
+		}
+		return client.SaveWorkbenchConnectorConnection(ctx, in)
+	case "workbench.connector.options":
+		var in struct {
+			ID string `json:"id"`
+			ListWorkbenchConnectorOptionsParams
+		}
+		if json.Unmarshal(input, &in) != nil || in.ID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "Connector ID is required")
+		}
+		return client.ListWorkbenchConnectorOptions(ctx, in.ID, &in.ListWorkbenchConnectorOptionsParams)
+	case "workbench.connector.auth-status", "workbench.connector.cancel-login", "workbench.connector.connection.show", "workbench.connector.connection.remove", "workbench.connector.connection.sync":
+		var in struct {
+			ID string `json:"id"`
+			SyncWorkbenchConnectorConnectionParams
+		}
+		if json.Unmarshal(input, &in) != nil || in.ID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "ID is required")
+		}
+		switch method {
+		case "workbench.connector.auth-status":
+			return client.GetWorkbenchConnectorAuthorization(ctx, in.ID)
+		case "workbench.connector.cancel-login":
+			return client.CancelWorkbenchConnectorAuthorization(ctx, in.ID)
+		case "workbench.connector.connection.show":
+			return client.GetWorkbenchConnectorConnection(ctx, in.ID)
+		case "workbench.connector.connection.remove":
+			return client.RemoveWorkbenchConnectorConnection(ctx, in.ID)
+		default:
+			return client.SyncWorkbenchConnectorConnection(ctx, in.ID, &in.SyncWorkbenchConnectorConnectionParams)
+		}
 	case "workbench.github.repository.list":
 		var in struct {
 			AuthorizationID *string `json:"authorization_id"`

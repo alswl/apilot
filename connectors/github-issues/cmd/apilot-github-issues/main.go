@@ -1,11 +1,11 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
+	"github.com/alswl/apilot/connectors/github-issues/internal/connector"
 	"github.com/alswl/apilot/connectors/protocol"
 )
 
@@ -16,7 +16,7 @@ func main() {
 		ConnectorID:      "github-issues",
 		ReleaseVersion:   releaseVersion,
 		ProtocolVersions: []int{protocol.Version},
-		Capabilities:     []string{},
+		Capabilities:     []string{"auth.login", "config.options", "tasks.sync.full", "tasks.sync.delta"},
 		EndpointConfig: protocol.ConfigSchema{
 			Version: 1,
 			Schema:  json.RawMessage(`{"type":"object","additionalProperties":false}`),
@@ -29,7 +29,9 @@ func main() {
 			},
 		},
 	}
-	if err := protocol.Serve(context.Background(), os.Args[1:], os.Stdin, os.Stdout, description, nil); err != nil {
+	ctx, cancel := protocol.RequestContext(os.Getenv("APILOT_CONNECTOR_DEADLINE"))
+	defer cancel()
+	if err := protocol.Serve(ctx, os.Args[1:], os.Stdin, os.Stdout, description, connector.New(os.Getenv("APILOT_CONNECTOR_DATA_DIR")).Handle); err != nil {
 		fmt.Fprintln(os.Stderr, "GitHub Issues Connector:", err)
 		os.Exit(1)
 	}

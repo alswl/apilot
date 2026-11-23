@@ -144,12 +144,14 @@ type WorkbenchCapabilities struct {
 }
 
 type WorkbenchSnapshot struct {
-	GitHubAccountID int64                  `json:"-"`
-	SnapshotVersion int64                  `json:"-"`
-	Capabilities    WorkbenchCapabilities  `json:"capabilities"`
-	PendingWrites   []WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
-	PluginDisabled  bool                   `json:"plugin_disabled,omitempty"`
-	RateLimitUntil  *time.Time             `json:"rate_limit_until,omitempty"`
+	ParentConnectionID string                 `json:"connection_id,omitempty"`
+	ScopeRef           string                 `json:"scope_ref,omitempty"`
+	GitHubAccountID    int64                  `json:"-"`
+	SnapshotVersion    int64                  `json:"-"`
+	Capabilities       WorkbenchCapabilities  `json:"capabilities"`
+	PendingWrites      []WorkbenchTaskReceipt `json:"pending_writes,omitempty"`
+	PluginDisabled     bool                   `json:"plugin_disabled,omitempty"`
+	RateLimitUntil     *time.Time             `json:"rate_limit_until,omitempty"`
 	WorkbenchConnection
 	LastSuccess *time.Time         `json:"last_success,omitempty"`
 	Attempts    []WorkbenchAttempt `json:"attempts"`

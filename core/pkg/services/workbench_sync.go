@@ -45,6 +45,12 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 		return nil, err
 	}
 	for i := range connections {
+		if connections[i].ParentConnectionID != "" {
+			_, err := s.managedConnector(connections[i].Kind)
+			connections[i].PluginDisabled = err != nil
+			connections[i].Capabilities = s.workbenchConnectionCapabilities(connections[i])
+			continue
+		}
 		enabled, err := s.workbenchPluginEnabled(connections[i].Kind)
 		if err != nil {
 			return nil, err
@@ -299,10 +305,25 @@ func (s *Service) RunWorkbenchSync(id string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	snapshot, err := s.WorkbenchSnapshot(id)
+	if err != nil {
+		return 0, err
+	}
+	if snapshot.ParentConnectionID != "" {
+		store, err := s.managedConnectorStore()
+		if err != nil {
+			return 0, err
+		}
+		attempt, err := s.startWorkbenchConnectorRunLocked(store, id, "manual", false)
+		if attempt == 0 && err != nil && connectorErrorKind(err) == "rate_limited" {
+			return 0, publicConnectorError(err)
+		}
+		return attempt, err
+	}
 	if err := s.startWorkbenchLocked(st, id, "manual"); err != nil {
 		return 0, err
 	}
-	snapshot, err := s.WorkbenchSnapshot(id)
+	snapshot, err = s.WorkbenchSnapshot(id)
 	if err != nil {
 		return 0, err
 	}
@@ -335,6 +356,14 @@ func (s *Service) startWorkbenchPathsLocked(st workbenchStore, id, trigger strin
 	}
 	snapshot, err := s.WorkbenchSnapshot(id)
 	if err != nil {
+		return err
+	}
+	if snapshot.ParentConnectionID != "" {
+		store, err := s.managedConnectorStore()
+		if err != nil {
+			return err
+		}
+		_, err = s.startWorkbenchConnectorRunLocked(store, id, trigger, false)
 		return err
 	}
 	if snapshot.LastSuccess == nil || snapshot.Kind != common.WorkbenchObsidianTasks {
@@ -746,6 +775,12 @@ func (s *Service) startScheduledWorkbenchMatching(st workbenchStore, trigger str
 		return
 	}
 	for _, c := range connections {
+		if c.ParentConnectionID != "" {
+			if matches(c.Kind) && !c.Paused {
+				s.scheduleWorkbenchConnectorScope(c, trigger)
+			}
+			continue
+		}
 		if !matches(c.Kind) || !s.workbenchPlugins[c.Kind].capabilities.Refresh {
 			continue
 		}

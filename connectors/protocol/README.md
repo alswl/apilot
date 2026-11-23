@@ -48,12 +48,12 @@ the manifest before registration. The host provides a private data namespace
 and request deadline in `APILOT_CONNECTOR_DATA_DIR` and
 `APILOT_CONNECTOR_DEADLINE` (RFC 3339).
 
-The first Core delivery negotiates only `describe`, which returns the
-Connector ID, release, supported protocol versions, supported capabilities
-and versioned endpoint and scope schemas. Each schema declares a JSON Schema
-object and may include UI fields with control and dynamic option hints.
-Other methods are listed below for later implementation. The example
-returns a structured `unsupported` error when called with one of them.
+The `describe` response returns the Connector ID, release, protocol versions,
+supported capabilities, and versioned endpoint and scope schemas. Each
+schema declares a JSON Schema object and may include UI fields with control
+and dynamic option hints. The UC01 fixture and GitHub Issues implement login,
+configuration options and validation, full and incremental sync, and missing
+item resolution. Unsupported methods return a structured `unsupported` error.
 
 | Method | Purpose |
 | --- | --- |
@@ -81,3 +81,63 @@ non-execution. Reconcile uncertain writes using the original operation ID.
 
 In a Go module, import `github.com/alswl/apilot/connectors/protocol`.
 The two commands in this repository demonstrate the shared `Serve` entrypoint.
+
+
+## UC01 Core and CLI candidate
+
+From the repository root, build the selected commit into a directory outside
+an App bundle. The headless command uses the existing Core Unix socket and
+opens no window.
+
+```sh
+candidate="$PWD/tmp/uc01-$(git rev-parse --short HEAD)"
+mkdir -p "$candidate"
+go -C core build -o "$candidate/apilot" ./cmd/apilot
+go -C desktop build -o "$candidate/apilot-app" ./cmd/apilot-app
+go -C connectors/protocol build -o "$candidate/apilot-fixture" ./cmd/apilot-fixture
+go -C connectors/github-issues build -o "$candidate/apilot-github-issues" ./cmd/apilot-github-issues
+python3 scripts/verify-uc01-core.py "$candidate"
+```
+
+The Core/CLI check uses Python, OpenSSL, a loopback HTTPS browser fixture and a
+disposable database. It checks cancel, pagewise discovery, repeated
+selection, independent first runs and retry. For independently probing the
+HTTP layer and publish transaction, run:
+
+```sh
+go -C core test ./pkg/server ./pkg/dal ./cmd/apilot \
+  -run 'TestWorkbenchConnector(UC01HTTP|SyncRejectsOlderSnapshot)$|TestWorkbenchCLIOperationRoutes$' -count=1
+```
+
+For manual use, start `apilot-app --serve` with a fresh `APILOT_DATA_DIR` and an
+absolute `APILOT_DEV_CONNECTOR_MANIFEST` next to the fixture binary. Use the
+same data directory for the CLI. The developer manifest is available to the
+standalone executable. App bundles discover their signed Connector through
+the bundle resources.
+
+- `apilot --json workbench connector login fixture` starts an asynchronous
+  session. Poll `connector auth-status ID` or stop it via `connector cancel-login ID`.
+- `apilot --json workbench connector options fixture --authorization ID --field project`
+  returns the first page. Pass the returned `next_page` with `--page`.
+- Pass the selection below to `apilot --json workbench connector connection save -`.
+  Use `connector connection list` and `connector connection show CONNECTION_ID`
+  to identify the parent, scope IDs and first run results. Use
+  `connector connection sync CONNECTION_ID` to retry.
+- Set `fail_second_page` to `OPS` in
+  `$APILOT_DATA_DIR/connectors/fixture/fixture.json` before saving to simulate a
+  partial upstream read. Replace it with `{}` to recover.
+  `denied_scope`, `empty_scope` and `unverified_scope` exercise access loss,
+  an empty full enumeration, and an incomplete membership check.
+
+```json
+{
+  "authorization_id": "<completed session ID>",
+  "endpoint_schema_version": 1,
+  "scope_schema_version": 1,
+  "scopes": [
+    {"config": {"project": "PAY"}},
+    {"config": {"project": "OPS"}},
+    {"config": {"project": "PAY"}}
+  ]
+}
+```

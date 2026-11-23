@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/alswl/apilot/connectors/protocol"
 
@@ -63,7 +64,7 @@ func (s *Service) readWorkbench(ctx context.Context, c common.WorkbenchConnectio
 }
 
 func (s *Service) workbenchPluginEnabled(kind string) (bool, error) {
-	if _, ok := s.workbenchPlugins[kind]; !ok {
+	if _, ok := s.workbenchPlugins[kind]; !ok && (s.workbenchConnectorRelease == nil || s.workbenchConnectorRelease.ConnectorID != kind) {
 		return false, common.Err("INVALID_ARGUMENT", "Unknown connector type")
 	}
 	if store, ok := s.store.(workbenchPluginStore); ok {
@@ -91,6 +92,13 @@ func (s *Service) WorkbenchPlugins() ([]WorkbenchPlugin, error) {
 			return nil, err
 		}
 		plugins = append(plugins, s.workbenchPluginInfo(connector.Kind, enabled))
+	}
+	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID == "fixture" {
+		enabled, err := s.workbenchPluginEnabled("fixture")
+		if err != nil {
+			return nil, err
+		}
+		plugins = append(plugins, s.workbenchPluginInfo("fixture", enabled))
 	}
 	return plugins, nil
 }
@@ -122,7 +130,7 @@ func (s *Service) SetWorkbenchPluginEnabled(id string, enabled bool) (WorkbenchP
 	}
 	if !enabled {
 		for _, connection := range connections {
-			if cancel := s.workbenchActive[connection.ID]; connection.Kind == id && cancel != nil {
+			if cancel := s.workbenchActive[connection.ID]; (connection.Kind == id || (connection.ParentConnectionID != "" && s.managedPluginID(connection.Kind) == id)) && cancel != nil {
 				cancel()
 			}
 		}
@@ -149,12 +157,22 @@ func (s *Service) WorkbenchConnectors() ([]WorkbenchConnector, error) {
 		descriptor.Capabilities = plugin.capabilities
 		result = append(result, descriptor)
 	}
+	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID == "fixture" {
+		enabled, err := s.workbenchPluginEnabled("fixture")
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, WorkbenchConnector{Kind: "fixture", Name: "Local protocol fixture", PluginID: "fixture", Release: s.workbenchPluginInfo("fixture", enabled).Release, Capabilities: common.WorkbenchCapabilities{Read: enabled, Refresh: enabled}})
+	}
 	return result, nil
 }
 
 func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) common.WorkbenchCapabilities {
 	if c.PluginDisabled || c.Paused {
 		return common.WorkbenchCapabilities{}
+	}
+	if c.ParentConnectionID != "" {
+		return common.WorkbenchCapabilities{Read: true, Refresh: true}
 	}
 	caps := s.workbenchPlugins[c.Kind].capabilities
 	if (c.Kind == common.WorkbenchObsidianTasks || c.Kind == common.WorkbenchGitHubRepository) && !c.WriteEnabled {
@@ -168,7 +186,7 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 
 func (s *Service) workbenchPluginInfo(id string, enabled bool) WorkbenchPlugin {
 	info := WorkbenchPlugin{ID: id, Enabled: enabled, Connector: id}
-	if enabled && id == common.WorkbenchGitHubRepository && s.workbenchConnectorRelease != nil {
+	if enabled && s.workbenchConnectorRelease != nil && id == s.managedPluginID(s.workbenchConnectorRelease.ConnectorID) {
 		release := *s.workbenchConnectorRelease
 		info.Release = &release
 	}
@@ -187,6 +205,20 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 	packages, err := integrations.DiscoverBundledWorkbenchConnectors(executable)
 	if err != nil {
 		log.Printf("workbench: bundled Connector registration failed: %v", err)
+	}
+	if file := os.Getenv("APILOT_DEV_CONNECTOR_MANIFEST"); len(packages) == 0 && file != "" && !insideWorkbenchApp(executable) {
+		dir, err := filepath.EvalSymlinks(filepath.Dir(file))
+		if err != nil || !filepath.IsAbs(file) {
+			return common.Err("INVALID_ARGUMENT", "Development Connector manifest must use an absolute path")
+		}
+		pkg, err := integrations.LoadWorkbenchConnectorPackage(filepath.Join(dir, filepath.Base(file)), dir)
+		if err != nil {
+			return err
+		}
+		if pkg.Manifest.ConnectorID != "fixture" && pkg.Manifest.ConnectorID != "github-issues" {
+			return common.Err("INVALID_ARGUMENT", "Unknown development Connector")
+		}
+		packages = append(packages, pkg)
 	}
 	for _, pkg := range packages {
 		namespace := filepath.Join(s.dir, "connectors", pkg.Manifest.ConnectorID)
@@ -209,9 +241,29 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 	if store, ok := s.store.(interface {
 		RegisterWorkbenchPluginRelease(string, *common.WorkbenchConnectorRelease) error
 	}); ok {
-		return store.RegisterWorkbenchPluginRelease(common.WorkbenchGitHubRepository, release)
+		for _, id := range []string{common.WorkbenchGitHubRepository, "fixture"} {
+			var current *common.WorkbenchConnectorRelease
+			if release != nil && id == s.managedPluginID(release.ConnectorID) {
+				current = release
+			}
+			if err := store.RegisterWorkbenchPluginRelease(id, current); err != nil {
+				return err
+			}
+		}
+	}
+	if store, ok := s.store.(workbenchManagedConnectorStore); ok {
+		return store.RecoverWorkbenchConnectorRuns()
 	}
 	return nil
+}
+
+func insideWorkbenchApp(executable string) bool {
+	for dir := filepath.Dir(executable); dir != filepath.Dir(dir); dir = filepath.Dir(dir) {
+		if strings.EqualFold(filepath.Ext(dir), ".app") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) closeWorkbenchConnector() {

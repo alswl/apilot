@@ -74,6 +74,7 @@ type Service struct {
 	stopping              bool
 	lastError             string
 
+	workbenchConnectorAuth    map[string]*connectorAuthorization
 	workbenchConnectorRelease *common.WorkbenchConnectorRelease
 	workbenchConnectorProcess *integrations.WorkbenchConnectorProcess
 }

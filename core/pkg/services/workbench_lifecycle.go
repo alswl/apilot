@@ -17,7 +17,7 @@ func (s *Service) PauseWorkbench(id string, version int64, paused bool) (common.
 	if err != nil {
 		return snapshot, err
 	}
-	if !s.workbenchPlugins[snapshot.Kind].capabilities.Refresh {
+	if snapshot.ParentConnectionID == "" && !s.workbenchPlugins[snapshot.Kind].capabilities.Refresh {
 		return snapshot, common.Err("INVALID_ARGUMENT", "Local does not run scheduled scans")
 	}
 	if snapshot.Version != version {
@@ -28,6 +28,22 @@ func (s *Service) PauseWorkbench(id string, version int64, paused bool) (common.
 	}
 	if snapshot.Paused == paused {
 		return snapshot, nil
+	}
+	if snapshot.ParentConnectionID != "" {
+		connectorStore, err := s.managedConnectorStore()
+		if err != nil {
+			return snapshot, err
+		}
+		if err := connectorStore.PauseWorkbenchConnectorScope(id, version, paused); err != nil {
+			return snapshot, err
+		}
+		if cancel := s.workbenchActive[id]; cancel != nil {
+			cancel()
+		} else if !paused {
+			_, _ = s.startWorkbenchConnectorRunLocked(connectorStore, id, "resume", false)
+		}
+		s.volatileRevision.Add(1)
+		return s.WorkbenchSnapshot(id)
 	}
 	connection := snapshot.WorkbenchConnection
 	connection.Paused = paused
@@ -52,6 +68,27 @@ func (s *Service) CancelWorkbenchSync(id string, attemptID int64) (common.Workbe
 	snapshot, err := s.WorkbenchSnapshot(id)
 	if err != nil {
 		return snapshot, err
+	}
+	if snapshot.ParentConnectionID != "" {
+		store, err := s.managedConnectorStore()
+		if err != nil {
+			return snapshot, err
+		}
+		run, err := store.WorkbenchConnectorLastRun(id)
+		if err != nil {
+			return snapshot, err
+		}
+		appendConnectorAttempt(&snapshot, run)
+		if run != nil && run.LegacyID == attemptID {
+			if run.Status == "cancelled" {
+				return snapshot, nil
+			}
+			if cancel := s.workbenchActive[id]; run.Status == "running" && cancel != nil {
+				cancel()
+				return snapshot, nil
+			}
+		}
+		return snapshot, common.Err("CONFLICT", "Sync attempt is no longer active")
 	}
 	for i, attempt := range snapshot.Attempts {
 		if attempt.ID != attemptID {
@@ -78,6 +115,18 @@ func (s *Service) WorkbenchSyncDetails(id string) (common.WorkbenchSnapshot, err
 	if err != nil {
 		return snapshot, err
 	}
+	if snapshot.ParentConnectionID != "" {
+		store, err := s.managedConnectorStore()
+		if err != nil {
+			return snapshot, err
+		}
+		run, err := store.WorkbenchConnectorLastRun(id)
+		if err != nil {
+			return snapshot, err
+		}
+		appendConnectorAttempt(&snapshot, run)
+		return snapshot, nil
+	}
 	if store, ok := s.store.(interface {
 		WorkbenchPendingWrites(string) ([]common.WorkbenchTaskReceipt, error)
 	}); ok {
@@ -90,4 +139,12 @@ func (s *Service) WorkbenchSyncDetails(id string) (common.WorkbenchSnapshot, err
 		}
 	}
 	return snapshot, err
+}
+
+func appendConnectorAttempt(snapshot *common.WorkbenchSnapshot, run *common.WorkbenchSyncRun) {
+	if run == nil {
+		return
+	}
+	snapshot.Attempts = []common.WorkbenchAttempt{{ID: run.LegacyID, Started: run.StartedAt, Finished: run.FinishedAt, Trigger: run.Trigger,
+		State: run.Status, SyncType: run.Mode, RequestCount: run.Requests, PageCount: run.Pages, Error: run.ErrorKind}}
 }

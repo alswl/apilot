@@ -91,6 +91,7 @@ func (e *RPCError) Error() string {
 }
 
 type ErrorData struct {
+	Reason          string     `json:"reason,omitempty"`
 	Kind            ErrorKind  `json:"kind"`
 	AffectedLevel   string     `json:"affected_level,omitempty"`
 	RetryAt         *time.Time `json:"retry_at,omitempty"`

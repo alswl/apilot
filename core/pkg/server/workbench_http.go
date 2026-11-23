@@ -202,6 +202,7 @@ func WorkbenchOpenAPI() ([]byte, error) {
 }
 
 func registerWorkbenchHTTP(api huma.API, s *services.Service) {
+	registerWorkbenchConnectorHTTP(api, s)
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/github-repositories", "listGitHubRepositories", "List authorized GitHub Issues repositories", "Connections", []int{401, 403, 409, 429, 503},
 		func(in *struct {
 			AuthorizationID string `query:"authorization_id"`
@@ -383,11 +384,15 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 }
 
 func registerWorkbench[I, O any](api huma.API, method, path, id, summary, tag string, statuses []int, call func(*I) (O, error)) {
+	registerWorkbenchContext(api, method, path, id, summary, tag, statuses, func(_ context.Context, in *I) (O, error) { return call(in) })
+}
+
+func registerWorkbenchContext[I, O any](api huma.API, method, path, id, summary, tag string, statuses []int, call func(context.Context, *I) (O, error)) {
 	huma.Register(api, huma.Operation{
 		Method: method, Path: path, OperationID: id, Summary: summary, Tags: []string{tag}, Errors: append(statuses, http.StatusInternalServerError),
 		MaxBodyBytes: 1 << 20,
-	}, func(_ context.Context, in *I) (*workbenchBody[O], error) {
-		result, err := call(in)
+	}, func(ctx context.Context, in *I) (*workbenchBody[O], error) {
+		result, err := call(ctx, in)
 		if err != nil {
 			return nil, workbenchHTTPError(err)
 		}
