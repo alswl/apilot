@@ -13,6 +13,7 @@ import (
 
 type connectorTaskDetailState struct {
 	version         string
+	mappingRevision int64
 	segment         string
 	loading, loaded bool
 	problem         string
@@ -67,14 +68,26 @@ func detailValue(field protocol.FieldValue) string {
 	return string(field.Value)
 }
 
+func (m *mockup) connectorMappingRevision(scopeID string) int64 {
+	for _, parent := range m.connectorParents {
+		for _, scope := range parent.Scopes {
+			if scope.ScopeID == scopeID {
+				return scope.MappingRevision
+			}
+		}
+	}
+	return 0
+}
+
 func (m *mockup) managedTaskDetail(c *ui.Context, task *sourceObject, detail *taskDetailUI) {
 	state := detail.connectorDetail
-	if state == nil || state.version != task.TargetVersion {
+	mappingRevision := m.connectorMappingRevision(task.ConnectionID)
+	if state == nil || state.version != task.TargetVersion || state.mappingRevision != mappingRevision {
 		segment := "description"
 		if state != nil {
 			segment = state.segment
 		}
-		state = &connectorTaskDetailState{version: task.TargetVersion, segment: segment}
+		state = &connectorTaskDetailState{version: task.TargetVersion, mappingRevision: mappingRevision, segment: segment}
 		detail.connectorDetail = state
 	}
 	segments := map[string]string{"来源字段": "fields", "描述": "description"}
@@ -94,7 +107,7 @@ func (m *mockup) managedTaskDetail(c *ui.Context, task *sourceObject, detail *ta
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
 		ui.Row(c.Key("actions")).FillWidth().Wrap().Gap(8).Children(func() {
 			if usageChoice(c.Key("section"), &selected, segments, "描述", 130) && state.segment != segments[selected] {
-				state = &connectorTaskDetailState{version: task.TargetVersion, segment: segments[selected]}
+				state = &connectorTaskDetailState{version: task.TargetVersion, mappingRevision: mappingRevision, segment: segments[selected]}
 				detail.connectorDetail = state
 			}
 			openURLButton(c.Key("open"), tr("打开原任务"), task.Locator)

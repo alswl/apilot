@@ -500,3 +500,40 @@ func TestConnector011DesktopConcurrentConflictRecovery(t *testing.T) {
 		})
 	}
 }
+
+func TestConnector011DesktopDetailReloadsAfterScopeMappingChange(t *testing.T) {
+	m := connectorUIFixture()
+	pay, ops := m.objects[0], m.objects[1]
+	pay.Kind, ops.Kind = managedFixture, managedFixture
+	payDetail, opsDetail := m.taskDetailUI(pay.ID), m.taskDetailUI(ops.ID)
+	payDetail.draft = "Local draft"
+	for _, entry := range []struct {
+		task   sourceObject
+		detail *taskDetailUI
+	}{{pay, payDetail}, {ops, opsDetail}} {
+		entry.detail.connectorDetail = &connectorTaskDetailState{
+			version: entry.task.TargetVersion, segment: "description", loaded: true,
+			page: common.WorkbenchTaskDetail{Items: []protocol.DetailItem{{
+				ID: "description", Text: &protocol.RichText{Content: protocol.Value(protocol.FieldRichText, "Original description").Value},
+			}}},
+		}
+	}
+	render := func(task *sourceObject, detail *taskDetailUI) *ui.Tester {
+		return ui.NewTester(func(c *ui.Context) { m.managedTaskDetail(c, task, detail) }, 680, 580)
+	}
+	if view := render(&pay, payDetail); !view.HasText("Original description") {
+		t.Fatal("PAY detail did not load before the mapping save")
+	}
+	payCache, opsCache := payDetail.connectorDetail, opsDetail.connectorDetail
+	// A live refresh reads the scope revision after the CLI saves a description-only rule.
+	m.connectorParents[0].Scopes[0].MappingRevision++
+	if view := render(&pay, payDetail); view.HasText("Original description") || payDetail.connectorDetail == payCache {
+		t.Fatal("PAY retained its cached description after the mapping revision changed")
+	}
+	if payDetail.connectorDetail.segment != "description" || payDetail.draft != "Local draft" {
+		t.Fatal("mapping refresh lost the selected segment or local draft")
+	}
+	if view := render(&ops, opsDetail); !view.HasText("Original description") || opsDetail.connectorDetail != opsCache {
+		t.Fatal("PAY mapping change invalidated the independent OPS detail")
+	}
+}
