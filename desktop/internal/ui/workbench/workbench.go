@@ -31,7 +31,7 @@ var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 type mockup struct {
 	fixtureConnector                                          bool
 	connectorConflicts                                        map[string]common.WorkbenchTaskReceipt
-	connectorConflictRefresh                                  *connectorConflictRefresh
+	connectorConflictRefreshes                                map[string]connectorConflictRefresh
 	connectorParents                                          []common.WorkbenchConnectorOverview
 	expandedConnectors                                        map[string]bool
 	connectorLogin                                            *connectorLoginPanel

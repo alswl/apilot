@@ -315,3 +315,18 @@ go -C desktop test ./internal/ui/workbench -count=1 -run '^TestConnector011Deskt
 make check-workbench check-format
 make app
 ```
+
+### Concurrent conflict recovery
+
+In two writable scopes with conflicts, start recovery in the first scope,
+switch to the second scope and start recovery there before the first
+finishes. Both scopes show **Syncing** while their recovery buttons are
+disabled. Complete one scope successfully and fail the other temporarily,
+then repeat with the completion order reversed. The successful scope clears
+its conflict. The failed scope retains both recovery buttons for a retry.
+
+```sh
+go -C desktop test ./internal/ui/workbench -count=1 -run '^TestConnector011Desktop(ConcurrentConflictRecovery|AcceptSourceKeepsRecoveryUntilSyncSucceeds|RetriesConflictInOriginalEditor|ConflictButtonsVisibleInDefaultSplit)$'
+make check-workbench check-format
+make app
+```

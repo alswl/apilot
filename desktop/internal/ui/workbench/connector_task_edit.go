@@ -386,10 +386,14 @@ func (m *mockup) connectorConflictView(c *ui.Context, task sourceObject) {
 	if receipt.Conflict == nil {
 		return
 	}
-	components.Muted(c.Key("status"), tr("来源已变化，请重新核对任务"))
+	_, recovering := m.connectorConflictRefreshes[task.ConnectionID]
+	working := m.pendingSync[task.ConnectionID] || recovering
+	if working {
+		components.StatusLabel(c.Key("progress"), components.Status{Text: tr("正在同步"), Loading: true, Color: c.Theme().TextMuted})
+	} else {
+		components.Muted(c.Key("status"), tr("来源已变化，请重新核对任务"))
+	}
 	ui.Row(c.Key("actions")).FillWidth().Wrap().Gap(8).Children(func() {
-		refresh := m.connectorConflictRefresh
-		working := m.pendingSync[task.ConnectionID] || (refresh != nil && refresh.scopeID == task.ConnectionID)
 		if ui.Button(c.Key("keep"), tr("接受来源值")).Disabled(working).Clicked() {
 			m.resolveConnectorConflict(task, false)
 		}
@@ -440,7 +444,7 @@ func connectorRequiredFieldLabel(field protocol.FieldDefinition) string {
 }
 
 type connectorConflictRefresh struct {
-	taskID, scopeID  string
+	taskID           string
 	attemptID        int64
 	edit, actionMode bool
 }
@@ -452,12 +456,17 @@ func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
 		m.openConnectorTaskEditor(task, actionMode)
 		return
 	}
+	if _, recovering := m.connectorConflictRefreshes[task.ConnectionID]; recovering {
+		return
+	}
+	m.trackConnectorConflictRefresh(task, 0, edit, actionMode)
 	m.pendingSync[task.ConnectionID] = true
 	type syncResult struct {
 		AttemptID int64 `json:"attempt_id"`
 	}
 	connectorUIRequest(m, "workbench.sync.run", map[string]string{"id": task.ConnectionID}, func(result syncResult, err error) {
 		if err != nil {
+			delete(m.connectorConflictRefreshes, task.ConnectionID)
 			delete(m.pendingSync, task.ConnectionID)
 			m.liveTaskProblems[task.ID] = common.ProtocolError(err).Message
 			return
@@ -469,7 +478,10 @@ func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
 
 func (m *mockup) trackConnectorConflictRefresh(task sourceObject, attemptID int64, edit, actionMode bool) {
 	delete(m.liveTaskProblems, task.ID)
-	m.connectorConflictRefresh = &connectorConflictRefresh{
-		taskID: task.ID, scopeID: task.ConnectionID, attemptID: attemptID, edit: edit, actionMode: actionMode,
+	if m.connectorConflictRefreshes == nil {
+		m.connectorConflictRefreshes = make(map[string]connectorConflictRefresh)
+	}
+	m.connectorConflictRefreshes[task.ConnectionID] = connectorConflictRefresh{
+		taskID: task.ID, attemptID: attemptID, edit: edit, actionMode: actionMode,
 	}
 }

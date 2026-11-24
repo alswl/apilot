@@ -309,7 +309,7 @@ func TestConnector011DesktopRetriesConflictInOriginalEditor(t *testing.T) {
 		task := m.objects[0]
 		m.page, m.taskSelection = tasksPage, task.ID
 		started := time.Now()
-		m.connectorConflictRefresh = &connectorConflictRefresh{taskID: task.ID, scopeID: task.ConnectionID, attemptID: 10, edit: true, actionMode: actionMode}
+		m.trackConnectorConflictRefresh(task, 10, true, actionMode)
 		if !actionMode {
 			task.TargetVersion = "refreshed"
 		}
@@ -318,7 +318,7 @@ func TestConnector011DesktopRetriesConflictInOriginalEditor(t *testing.T) {
 			ID: task.ConnectionID, Kind: managedGitHub, Name: "example/pay", WriteEnabled: true, AccessState: "available", Version: 1,
 		}}
 		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
-		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != task.TargetVersion || m.connectorConflictRefresh != nil {
+		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != task.TargetVersion || len(m.connectorConflictRefreshes) != 0 {
 			t.Fatalf("retry action mode %v: %+v", actionMode, editor)
 		}
 	}
@@ -406,7 +406,7 @@ func TestConnector011DesktopAcceptSourceKeepsRecoveryUntilSyncSucceeds(t *testin
 			attempt.State, attempt.Finished, attempt.Error = "failed", &finished, "temporary"
 			snapshot.Attempts[0] = attempt
 			m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
-			if m.connectorConflictRefresh != nil || m.connectorConflicts[task.ID].Conflict == nil ||
+			if len(m.connectorConflictRefreshes) != 0 || m.connectorConflicts[task.ID].Conflict == nil ||
 				m.liveTaskProblems[task.ID] != "同步失败" || m.objects[0].State != "open" {
 				t.Fatal("failed refresh lost recovery or changed confirmed state")
 			}
@@ -425,9 +425,78 @@ func TestConnector011DesktopAcceptSourceKeepsRecoveryUntilSyncSucceeds(t *testin
 		snapshot.Attempts[0] = attempt
 		task.State, task.TargetVersion = "done", "closed-version"
 		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
-		if m.connectorConflictRefresh != nil || m.connectorConflicts[task.ID].Conflict != nil ||
+		if len(m.connectorConflictRefreshes) != 0 || m.connectorConflicts[task.ID].Conflict != nil ||
 			m.liveTaskProblems[task.ID] != "" || m.connectorEditor011 != nil || m.objects[0].State != "done" {
 			t.Fatal("successful refresh did not settle Keep source value")
 		}
+	}
+}
+
+func TestConnector011DesktopConcurrentConflictRecovery(t *testing.T) {
+	old := englishUI.Swap(false)
+	t.Cleanup(func() { englishUI.Store(old) })
+	for _, successFirst := range []bool{true, false} {
+		name := "failure-first"
+		if successFirst {
+			name = "success-first"
+		}
+		t.Run(name, func(t *testing.T) {
+			m := connectorUIFixture()
+			pay, ops := m.objects[0], m.objects[1]
+			m.liveTaskProblems = map[string]string{}
+			conflict := common.WorkbenchTaskReceipt{Conflict: &common.WorkbenchFieldConflict{Action: "close"}}
+			m.connectorConflicts = map[string]common.WorkbenchTaskReceipt{pay.ID: conflict, ops.ID: conflict}
+			m.trackConnectorConflictRefresh(pay, 10, false, true)
+			m.trackConnectorConflictRefresh(ops, 11, false, true)
+
+			finished := time.Now()
+			snapshot := func(task sourceObject, id int64) common.WorkbenchSnapshot {
+				return common.WorkbenchSnapshot{ParentConnectionID: "parent", WorkbenchConnection: common.WorkbenchConnection{
+					ID: task.ConnectionID, Kind: managedGitHub, Name: task.ConnectionID, WriteEnabled: true, AccessState: "available", Version: 1,
+				}, Attempts: []common.WorkbenchAttempt{{ID: id, State: "running"}}}
+			}
+			paySnapshot, opsSnapshot := snapshot(pay, 10), snapshot(ops, 11)
+			apply := func() {
+				m.applyLive([]common.WorkbenchSnapshot{paySnapshot, opsSnapshot}, []sourceObject{pay, ops})
+			}
+			view := func(task sourceObject) *ui.Tester {
+				return ui.NewTester(func(c *ui.Context) { m.connectorConflictView(c, task) }, 680, 580)
+			}
+			apply()
+			for _, task := range []sourceObject{pay, ops} {
+				if !view(task).HasText("正在同步") {
+					t.Errorf("%s: running refresh has no status", task.ConnectionID)
+				}
+			}
+
+			success := func() {
+				paySnapshot.Attempts[0].State, paySnapshot.Attempts[0].Finished = "success", &finished
+				pay.State = "done"
+				apply()
+				if m.connectorConflicts[pay.ID].Conflict != nil || m.liveTaskProblems[pay.ID] != "" {
+					t.Error("successful PAY refresh did not close its conflict")
+				}
+			}
+			failure := func() {
+				opsSnapshot.Attempts[0].State, opsSnapshot.Attempts[0].Finished = "failed", &finished
+				apply()
+				if m.connectorConflicts[ops.ID].Conflict == nil || m.liveTaskProblems[ops.ID] != "同步失败" || view(ops).HasText("正在同步") {
+					t.Error("failed OPS refresh did not return to recovery")
+				}
+			}
+			if successFirst {
+				success()
+				if !view(ops).HasText("正在同步") {
+					t.Error("PAY success lost ongoing OPS recovery")
+				}
+				failure()
+			} else {
+				failure()
+				if !view(pay).HasText("正在同步") {
+					t.Error("OPS failure lost ongoing PAY recovery")
+				}
+				success()
+			}
+		})
 	}
 }

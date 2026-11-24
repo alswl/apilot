@@ -685,30 +685,28 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 	m.connectionsData = connections
 	m.sourceFilter = m.resolveTaskViewSource(sourceName, sourceID)
 	m.replaceLiveTasks(tasks)
-	if retry := m.connectorConflictRefresh; retry != nil {
-		for _, snapshot := range snapshots {
-			if snapshot.ID != retry.scopeID || len(snapshot.Attempts) == 0 {
-				continue
-			}
-			attempt := snapshot.Attempts[0]
-			if attempt.ID < retry.attemptID || attempt.Finished == nil {
-				break
-			}
-			m.connectorConflictRefresh = nil
-			if attempt.State != "success" {
-				m.liveTaskProblems[retry.taskID] = "同步失败"
-				break
-			}
-			delete(m.connectorConflicts, retry.taskID)
-			if retry.edit && m.page == tasksPage && m.taskSelection == retry.taskID {
-				for _, task := range m.objects {
-					if task.ID == retry.taskID {
-						m.openConnectorTaskEditor(task, retry.actionMode)
-						break
-					}
+	for _, snapshot := range snapshots {
+		recovery, tracking := m.connectorConflictRefreshes[snapshot.ID]
+		if !tracking || recovery.attemptID == 0 || len(snapshot.Attempts) == 0 {
+			continue
+		}
+		attempt := snapshot.Attempts[0]
+		if attempt.ID < recovery.attemptID || attempt.Finished == nil {
+			continue
+		}
+		delete(m.connectorConflictRefreshes, snapshot.ID)
+		if attempt.State != "success" {
+			m.liveTaskProblems[recovery.taskID] = "同步失败"
+			continue
+		}
+		delete(m.connectorConflicts, recovery.taskID)
+		if recovery.edit && m.page == tasksPage && m.taskSelection == recovery.taskID {
+			for _, task := range m.objects {
+				if task.ID == recovery.taskID {
+					m.openConnectorTaskEditor(task, recovery.actionMode)
+					break
 				}
 			}
-			break
 		}
 	}
 }
