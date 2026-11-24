@@ -1,8 +1,23 @@
 # 交付与验证
 
-## 维护规格和需求
+## 从 Issue 到发布
 
-以仓库的 `specs/` 为实现依据。把实现和验收细节更新到对应的本地 spec。GitHub Issue 只描述需求目标。
+1. 在集中需求仓库的 Issue 定义一个问题或需求、预期结果和目标版本。涉及规格的改动在 Issue 链接对应的 `specs/`，把实现约束和可复用的验收步骤维护在 spec。
+2. 一个 PR 解决一个 Issue。在 Issue 中用行内代码记录 PR 的仓库名和编号，关联从 Issue 侧查看。PR 正文简述改动和 reviewer 需要留意的地方。
+3. 每个 Issue 维护一份验收记录，放在 Issue 正文或一条持续更新的评论里。写明验证的 commit、命令或场景、实际结果和未验证项，按需链接 CI 和截图或录屏。
+4. 合并后把 Issue 及其绑定 PR 纳入同一次版本发布，在 Issue 记录发布 tag 或 Release 链接。
+
+## 验证顺序
+
+1. 先验证 Core 和 API。开发中先跑受影响的定向测试，提交前按改动范围跑 `make test-core`、`make check-openapi` 和 `make test-connectors`。CI 先跑 Core、API 契约和连接器检查，再跑桌面测试。
+2. 涉及工作台时，最后在 macOS 用实际场景走查；可复现的场景优先用 `make dev SCENE=…`。需要验证安装包、窗口、菜单或退出行为时，本地用 ad-hoc 签名打包，无需 Apple 证书或 API key。
+
+   ```sh
+   make app
+   make VERIFY_SKIP_BUILD=1 verify-ui verify-lifecycle
+   ```
+
+3. 日常 PR 和主分支检查以测试为止。CI 在版本 tag 或显式请求签名公证时产出分发包，见[分发说明](../distribution.md)。
 
 ## 跟进 CI
 

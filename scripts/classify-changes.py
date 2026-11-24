@@ -5,7 +5,7 @@ import os
 from pathlib import PurePosixPath
 import subprocess
 
-DOC_ROOTS = {'README.md', 'CONTRIBUTING.md', 'GLOSSARY.md', 'LICENSE', 'LICENSE.md'}
+DOC_ROOTS = {'README.md', 'GLOSSARY.md', 'LICENSE', 'LICENSE.md'}
 DOC_SUFFIXES = {'.md', '.png', '.jpg', '.jpeg', '.svg', '.webp'}
 
 def requires_full(paths, event, baseline_available):

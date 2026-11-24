@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def check():
     errors = []
-    files = [ROOT / name for name in ('README.md', 'CONTRIBUTING.md', 'GLOSSARY.md')]
+    files = [ROOT / name for name in ('README.md', 'GLOSSARY.md')]
     for folder in ('docs', 'skills'):
         files.extend((ROOT / folder).rglob('*.md'))
     for path in files:

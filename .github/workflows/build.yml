@@ -24,6 +24,7 @@ concurrency:
 env:
   CGO_ENABLED: '1'
   GOFLAGS: '-mod=readonly -trimpath'
+  PACKAGE_REQUESTED: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.notarize) }}
   ARTIFACT_NAME: apilot-macos-arm64-${{ github.run_id }}-${{ github.run_attempt }}
 
 jobs:
@@ -50,9 +51,9 @@ jobs:
         run: python3 scripts/check-workbench.py
       - name: Documentation-only summary
         if: steps.changes.outputs.full != 'true'
-        run: echo 'Documentation checks passed. Native tests and packaging were not required.' >> "$GITHUB_STEP_SUMMARY"
+        run: echo 'Documentation checks passed. Core/API and desktop tests were skipped for this documentation-only change.' >> "$GITHUB_STEP_SUMMARY"
       - name: Select signing mode
-        if: steps.changes.outputs.full == 'true'
+        if: env.PACKAGE_REQUESTED == 'true'
         id: signing
         env:
           REQUESTED: ${{ (github.event_name == 'workflow_dispatch' && inputs.notarize) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && vars.APPLE_SIGNING_ENABLED == 'true') }}
@@ -93,9 +94,9 @@ jobs:
       - name: Check formatting
         if: steps.changes.outputs.full == 'true'
         run: make check-format
-      - name: Vet
+      - name: Vet Core
         if: steps.changes.outputs.full == 'true'
-        run: make vet
+        run: go -C core vet ./...
       - name: Check dependency boundary and versions
         if: steps.changes.outputs.full == 'true'
         run: make check-architecture check-version check-portable
@@ -103,14 +104,19 @@ jobs:
         if: steps.changes.outputs.full == 'true'
         run: make check-openapi
 
-      - name: Test complete suite with race detector
+      - name: Test Core, API and connectors with race detector
         if: steps.changes.outputs.full == 'true'
         run: |
-          make race
+          make race-core
           make test-connectors TEST_FLAGS=-race
+      - name: Vet and test desktop
+        if: steps.changes.outputs.full == 'true'
+        run: |
+          go -C desktop vet ./...
+          make race-ui
           go -C desktop test -tags apilot_mockup ./cmd/apilot-mockup
-      - name: Build development App and DMG
-        if: steps.changes.outputs.full == 'true' && steps.signing.outputs.enabled != 'true'
+      - name: Build ad-hoc App and DMG for tagged release
+        if: env.PACKAGE_REQUESTED == 'true' && steps.signing.outputs.enabled == 'false'
         run: make app
       - name: Sign and notarize App and DMG
         if: steps.signing.outputs.enabled == 'true'
@@ -126,9 +132,12 @@ jobs:
       - name: Platform acceptance boundary
         if: steps.changes.outputs.full == 'true'
         run: |
-          echo 'Packaged window/menu/Quit acceptance: NOT_VERIFIED in this noninteractive CI job; run make verify-ui verify-lifecycle in a macOS desktop session.' >> "$GITHUB_STEP_SUMMARY"
+          if [ "$PACKAGE_REQUESTED" != true ]; then
+            echo 'For local no-key packaging, run make app on macOS.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo 'Packaged window, menu, and Quit acceptance: NOT_VERIFIED on this noninteractive runner. Run make verify-ui verify-lifecycle in a macOS desktop session.' >> "$GITHUB_STEP_SUMMARY"
       - name: Package and verify downloads
-        if: steps.changes.outputs.full == 'true'
+        if: env.PACKAGE_REQUESTED == 'true'
         run: packaging/darwin/package-downloads.sh
       - name: Verify requested notarization
         if: steps.signing.outputs.enabled == 'true'
@@ -140,7 +149,7 @@ jobs:
           assert info['signing'] == 'developer-id' and info['notarized'], 'Requested signing/notarization must succeed'
           PY
       - name: Upload downloads
-        if: steps.changes.outputs.full == 'true'
+        if: env.PACKAGE_REQUESTED == 'true'
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -150,7 +159,7 @@ jobs:
           retention-days: 7
           compression-level: 0
       - name: Download summary
-        if: steps.changes.outputs.full == 'true'
+        if: env.PACKAGE_REQUESTED == 'true'
         env:
           ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
           GO_CACHE_HIT: ${{ steps.go.outputs.cache-hit }}
