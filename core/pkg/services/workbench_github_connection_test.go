@@ -65,10 +65,11 @@ func TestGitHubCredentialReuseAfterReauthorization(t *testing.T) {
 	}
 }
 
-type failOnceGitHubCredentials struct {
+type failingDeleteGitHubCredentials struct {
 	*memoryGitHubCredentials
-	failMu  sync.Mutex
-	failRef string
+	failMu        sync.Mutex
+	failRef       string
+	deleteBlocked bool
 }
 
 type failGitHubScanStore struct{ *dal.Store }
@@ -99,10 +100,10 @@ func (s *failGitHubScanStore) RecordWorkbench(c common.WorkbenchConnection, atte
 	return s.Store.RecordWorkbench(c, attempts, before, after, success)
 }
 
-func (m *failOnceGitHubCredentials) Delete(ctx context.Context, ref string) error {
+func (m *failingDeleteGitHubCredentials) Delete(ctx context.Context, ref string) error {
 	m.failMu.Lock()
 	if ref == m.failRef {
-		m.failRef = ""
+		m.deleteBlocked = true
 		m.failMu.Unlock()
 		return common.Err("SOURCE_UNAVAILABLE", "Injected cleanup failure")
 	}
@@ -268,7 +269,7 @@ func TestGitHubCredentialCleanupAfterInterruptedRotation(t *testing.T) {
 	}))
 	defer server.Close()
 	dir := t.TempDir()
-	credentials := &failOnceGitHubCredentials{memoryGitHubCredentials: &memoryGitHubCredentials{values: make(map[string]string)}}
+	credentials := &failingDeleteGitHubCredentials{memoryGitHubCredentials: &memoryGitHubCredentials{values: make(map[string]string)}}
 	open := func() *Service {
 		t.Helper()
 		s, err := NewWithWorkbenchDependencies(dir, func(path string) (Store, error) { return dal.Open(path) }, BuiltinWorkbenchPluginRegistry(), ObsidianSyncOptions{MaxRetries: 3}, WorkbenchGitHubDependencies{Credentials: credentials, APIURL: server.URL, Transport: server.Client().Transport})
@@ -302,12 +303,21 @@ func TestGitHubCredentialCleanupAfterInterruptedRotation(t *testing.T) {
 	if err != nil || current.CredentialRef == old.CredentialRef {
 		t.Fatalf("rotation did not commit: %+v %v", current, err)
 	}
+	credentials.failMu.Lock()
+	blocked := credentials.deleteBlocked
+	credentials.failMu.Unlock()
+	if !blocked {
+		t.Fatal("rotation did not attempt to delete the old reference")
+	}
 	if _, err := credentials.Get(context.Background(), old.CredentialRef); err != nil {
 		t.Fatal("injected deletion failure did not leave old reference")
 	}
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	credentials.failMu.Lock()
+	credentials.failRef = ""
+	credentials.failMu.Unlock()
 	s = open()
 	defer s.Close()
 	for until := time.Now().Add(3 * time.Second); ; time.Sleep(5 * time.Millisecond) {
