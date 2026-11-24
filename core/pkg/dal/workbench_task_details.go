@@ -12,7 +12,7 @@ const detailsCurrent = `SELECT EXISTS(SELECT 1 FROM workbench_objects o
 	JOIN workbench_connections c ON c.id=o.connection_id
 	JOIN workbench_connector_connections p ON p.id=c.connector_connection_id
 	WHERE o.id=? AND o.state<>'connector_hidden' AND c.access_state='available'
-	AND p.auth_state='authorized' AND p.auth_generation=? AND c.config_revision=?
+	AND p.auth_state='authorized' AND p.auth_generation=? AND c.config_revision=? AND c.mapping_revision=?
 	AND json_extract(o.payload,'$.native_fields.source_version')=?)`
 
 func (s *Store) ReadWorkbenchTaskDetail(scope common.WorkbenchConnectorStoredScope, taskID, version, digest, segment, page string) (common.WorkbenchTaskDetail, error) {
@@ -21,7 +21,7 @@ func (s *Store) ReadWorkbenchTaskDetail(scope common.WorkbenchConnectorStoredSco
 	err := s.db.QueryRow(`SELECT payload FROM workbench_task_detail_cache
 		WHERE task_id=? AND source_version=? AND auth_generation=? AND config_revision=? AND package_digest=?
 		AND segment=? AND page_key=? AND (`+detailsCurrent+`)`,
-		taskID, version, scope.AuthGeneration, scope.ConfigRevision, digest, segment, page, taskID, scope.AuthGeneration, scope.ConfigRevision, version).Scan(&payload)
+		taskID, version, scope.AuthGeneration, scope.ConfigRevision, digest, segment, page, taskID, scope.AuthGeneration, scope.ConfigRevision, scope.MappingRevision, version).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, common.Err("NOT_FOUND", "Cached detail unavailable")
 	}
@@ -40,7 +40,7 @@ func (s *Store) SaveWorkbenchTaskDetail(scope common.WorkbenchConnectorStoredSco
 	}
 	defer tx.Rollback()
 	var current bool
-	if err := tx.QueryRow(detailsCurrent, result.TaskID, scope.AuthGeneration, scope.ConfigRevision, version).Scan(&current); err != nil {
+	if err := tx.QueryRow(detailsCurrent, result.TaskID, scope.AuthGeneration, scope.ConfigRevision, scope.MappingRevision, version).Scan(&current); err != nil {
 		return err
 	}
 	if !current {
@@ -67,7 +67,7 @@ func (s *Store) RevokeWorkbenchTaskDetail(scope common.WorkbenchConnectorStoredS
 	}
 	defer tx.Rollback()
 	var current bool
-	if err := tx.QueryRow(detailsCurrent, taskID, scope.AuthGeneration, scope.ConfigRevision, version).Scan(&current); err != nil {
+	if err := tx.QueryRow(detailsCurrent, taskID, scope.AuthGeneration, scope.ConfigRevision, scope.MappingRevision, version).Scan(&current); err != nil {
 		return err
 	}
 	if !current {

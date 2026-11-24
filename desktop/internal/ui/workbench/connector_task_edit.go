@@ -41,9 +41,9 @@ func (m *mockup) openConnectorTaskEditor(task sourceObject, action bool) {
 		return
 	}
 	p := &connectorTaskEditor{task: task, actionMode: action, loading: true, values: map[string]string{}, original: map[string]string{}, actionValues: map[string]string{}}
-	m.connectorEditor011 = p
+	m.connectorTaskEditor = p
 	connectorUIRequest(m, "workbench.task.edit-metadata", map[string]string{"id": task.ID}, func(meta protocol.EditMetadataResult, err error) {
-		if m.connectorEditor011 != p {
+		if m.connectorTaskEditor != p {
 			return
 		}
 		p.loading = false
@@ -73,7 +73,7 @@ func (m *mockup) openConnectorTaskEditor(task sourceObject, action bool) {
 				if field.ID == "description" {
 					p.loading = true
 					connectorUIRequest(m, "workbench.task.detail", map[string]string{"id": task.ID, "segment": "description"}, func(detail common.WorkbenchTaskDetail, err error) {
-						if m.connectorEditor011 != p {
+						if m.connectorTaskEditor != p {
 							return
 						}
 						p.loading = false
@@ -217,7 +217,7 @@ func (m *mockup) submitConnectorEditor(p *connectorTaskEditor) {
 			request.Fields[field.ID] = value
 		}
 		if len(request.Fields) == 0 {
-			m.connectorEditor011 = nil
+			m.connectorTaskEditor = nil
 			return
 		}
 	}
@@ -241,19 +241,19 @@ func (m *mockup) submitConnectorEditor(p *connectorTaskEditor) {
 	m.runLiveTaskWrite(request, func(receipt common.WorkbenchTaskReceipt, err error) {
 		p.saving = false
 		m.finishLiveTaskToggle(task.ID, receipt, err)
-		if m.connectorEditor011 != p {
+		if m.connectorTaskEditor != p {
 			return
 		}
 		if err != nil {
 			p.problem = common.ProtocolError(err).Message
 			return
 		}
-		m.connectorEditor011 = nil
+		m.connectorTaskEditor = nil
 	})
 }
 
 func (m *mockup) connectorTaskEditorDialog(c *ui.Context) {
-	p := m.connectorEditor011
+	p := m.connectorTaskEditor
 	if p == nil {
 		return
 	}
@@ -319,7 +319,7 @@ func (m *mockup) connectorTaskEditorDialog(c *ui.Context) {
 		})
 	})
 	if !open && !p.saving {
-		m.connectorEditor011 = nil
+		m.connectorTaskEditor = nil
 	}
 }
 

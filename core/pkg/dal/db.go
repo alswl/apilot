@@ -57,7 +57,10 @@ var workbenchTaskDetailsSchema string
 //go:embed migrations/015_workbench_sync_retry_bucket.sql
 var workbenchSyncRetryBucketSchema string
 
-var migrations = []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema, workbenchConnectorSyncSchema, workbenchTaskProjectionSchema, workbenchTaskDetailsSchema, workbenchSyncRetryBucketSchema}
+//go:embed migrations/016_workbench_connector_endpoint_config.sql
+var workbenchConnectorEndpointConfigSchema string
+
+var migrations = []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema, workbenchConnectorSyncSchema, workbenchTaskProjectionSchema, workbenchTaskDetailsSchema, workbenchSyncRetryBucketSchema, workbenchConnectorEndpointConfigSchema}
 
 type Store struct{ db *sql.DB }
 

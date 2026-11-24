@@ -17,6 +17,10 @@ import (
 )
 
 func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, error) {
+	return CallWorkbenchHTTPContext(context.Background(), socket, method, params)
+}
+
+func CallWorkbenchHTTPContext(ctx context.Context, socket, method string, params any) (json.RawMessage, error) {
 	dialer := &net.Dialer{Timeout: 500 * time.Millisecond}
 	transport := &http.Transport{
 		DisableKeepAlives: true,
@@ -45,7 +49,7 @@ func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, erro
 	if err != nil {
 		return nil, err
 	}
-	response, err := requestWorkbenchHTTP(client, method, params)
+	response, err := requestWorkbenchHTTP(ctx, client, method, params)
 	if err != nil {
 		var domain *common.Error
 		switch {
@@ -77,8 +81,7 @@ func CallWorkbenchHTTP(socket, method string, params any) (json.RawMessage, erro
 	return payload, nil
 }
 
-func requestWorkbenchHTTP(client *Client, method string, params any) (*http.Response, error) {
-	ctx := context.Background()
+func requestWorkbenchHTTP(ctx context.Context, client *Client, method string, params any) (*http.Response, error) {
 	switch method {
 	case "workbench.health":
 		return client.Health(ctx)

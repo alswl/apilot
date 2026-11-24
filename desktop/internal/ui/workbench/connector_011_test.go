@@ -127,7 +127,7 @@ func TestConnector011DesktopDetailOperationAndUsagePresentation(t *testing.T) {
 		t.Fatalf("description missing: %v", view.Texts())
 	}
 
-	m.connectorEditor011 = &connectorTaskEditor{task: task, actionMode: true, action: "resolve",
+	m.connectorTaskEditor = &connectorTaskEditor{task: task, actionMode: true, action: "resolve",
 		actions:      []protocol.StateAction{{ID: "resolve", Label: "Resolve", Required: []protocol.FieldDefinition{{ID: "resolution", Label: "Resolution", Type: protocol.FieldText}}}},
 		actionValues: map[string]string{}}
 	view = ui.NewTester(m.connectorTaskEditorDialog, 680, 580)
@@ -136,7 +136,7 @@ func TestConnector011DesktopDetailOperationAndUsagePresentation(t *testing.T) {
 		t.Fatal("missing transition input was dispatched")
 	}
 	view.Key(0, ui.KeyEscape)
-	if m.connectorEditor011 != nil {
+	if m.connectorTaskEditor != nil {
 		t.Fatal("Escape did not close the task editor")
 	}
 
@@ -210,7 +210,7 @@ func TestConnector011Evidence(t *testing.T) {
 		}},
 		{"uc14-state-action-zh", 680, 580, false, func(m *mockup) *ui.Tester {
 			m.page = tasksPage
-			m.connectorEditor011 = &connectorTaskEditor{task: m.objects[0], actionMode: true, action: "resolve",
+			m.connectorTaskEditor = &connectorTaskEditor{task: m.objects[0], actionMode: true, action: "resolve",
 				actions:      []protocol.StateAction{{ID: "resolve", Label: "Resolve", Required: []protocol.FieldDefinition{{ID: "resolution", Label: "Resolution", Type: protocol.FieldText}}}},
 				actionValues: map[string]string{"resolution": "验证完成"}}
 			return ui.NewTester(m.view, 680, 580)
@@ -318,7 +318,7 @@ func TestConnector011DesktopRetriesConflictInOriginalEditor(t *testing.T) {
 			ID: task.ConnectionID, Kind: managedGitHub, Name: "example/pay", WriteEnabled: true, AccessState: "available", Version: 1,
 		}}
 		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
-		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != task.TargetVersion || len(m.connectorConflictRefreshes) != 0 {
+		if editor := m.connectorTaskEditor; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != task.TargetVersion || len(m.connectorConflictRefreshes) != 0 {
 			t.Fatalf("retry action mode %v: %+v", actionMode, editor)
 		}
 	}
@@ -426,7 +426,7 @@ func TestConnector011DesktopAcceptSourceKeepsRecoveryUntilSyncSucceeds(t *testin
 		task.State, task.TargetVersion = "done", "closed-version"
 		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
 		if len(m.connectorConflictRefreshes) != 0 || m.connectorConflicts[task.ID].Conflict != nil ||
-			m.liveTaskProblems[task.ID] != "" || m.connectorEditor011 != nil || m.objects[0].State != "done" {
+			m.liveTaskProblems[task.ID] != "" || m.connectorTaskEditor != nil || m.objects[0].State != "done" {
 			t.Fatal("successful refresh did not settle Keep source value")
 		}
 	}

@@ -90,6 +90,11 @@ type WorkbenchConnectorAuthorization struct {
 	ErrorKind       string    `json:"error_kind,omitempty"`
 }
 
+type WorkbenchConnectorOptions struct {
+	protocol.ConfigOptions
+	ConnectedValues []string `json:"connected_values,omitempty"`
+}
+
 type WorkbenchConnectorSelection struct {
 	Config       map[string]any `json:"config"`
 	WriteEnabled bool           `json:"write_enabled,omitempty"`

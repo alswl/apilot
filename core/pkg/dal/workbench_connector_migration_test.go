@@ -112,3 +112,43 @@ func TestWorkbenchConnectorReleaseKeepsEnablement(t *testing.T) {
 		t.Fatalf("cleared release: enabled=%t cleared=%t error=%v", enabled, cleared, err)
 	}
 }
+
+func TestWorkbenchConnectorEndpointConfigMovesToParent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.db")
+	store, err := openAtSchema(path, 15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.db.Exec(`INSERT INTO workbench_connector_connections(id,connector_id,endpoint_ref,account_ref)
+		VALUES ('parent','fixture','endpoint','acct')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []string{"pay", "ops"} {
+		if _, err = store.db.Exec(`INSERT INTO workbench_connections(id,config,version,connector_connection_id,scope_ref)
+			VALUES (?,json_object('endpoint_config',json('{"site":"one"}'),'endpoint_schema_version',2,
+			'scope_config',json_object('project',?),'scope_schema_version',1),1,'parent',?)`, scope, scope, scope); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	store, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	for _, id := range []string{"pay", "ops"} {
+		scope, err := store.WorkbenchConnectorScope(id)
+		if err != nil || string(scope.Context.EndpointConfig) != `{"site":"one"}` || scope.Context.EndpointSchemaVersion != 2 ||
+			string(scope.Context.ScopeConfig) != `{"project":"`+id+`"}` {
+			t.Fatalf("migrated %s: %+v, %v", id, scope.Context, err)
+		}
+	}
+	var duplicates int
+	if err := store.db.QueryRow(`SELECT count(*) FROM workbench_connections
+		WHERE connector_connection_id='parent' AND json_type(config,'$.endpoint_config') IS NOT NULL`).Scan(&duplicates); err != nil || duplicates != 0 {
+		t.Fatalf("scope copies: %d, %v", duplicates, err)
+	}
+}

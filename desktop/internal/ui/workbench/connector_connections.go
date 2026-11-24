@@ -86,13 +86,14 @@ type connectorLoginPanel struct {
 	auth          common.WorkbenchConnectorAuthorization
 	choices       []protocol.ConfigOption
 	selected      map[string]bool
+	connected     map[string]bool
 	results       []common.WorkbenchConnectorScopeResult
 	next, problem string
 	write, busy   bool
 }
 
 func (m *mockup) openConnectorLogin(kind, parent string) {
-	m.connectorLogin = &connectorLoginPanel{kind: kind, parent: parent, selected: map[string]bool{}}
+	m.connectorLogin = &connectorLoginPanel{kind: kind, parent: parent, selected: map[string]bool{}, connected: map[string]bool{}}
 }
 
 func (m *mockup) startConnectorLogin(p *connectorLoginPanel) {
@@ -146,6 +147,7 @@ func (m *mockup) pollConnectorLogin(p *connectorLoginPanel) {
 					m.refreshLive()
 					return
 				}
+				m.connectorRecentAuthorization = auth
 				m.loadConnectorChoices(p, "")
 			default:
 				p.problem = tr("授权未完成") + " · " + connectorStatus(auth.Status)
@@ -164,16 +166,30 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 	if page != "" {
 		input["page"] = page
 	}
-	connectorUIRequest(m, "workbench.connector.options", input, func(value protocol.ConfigOptions, err error) {
+	connectorUIRequest(m, "workbench.connector.options", input, func(value common.WorkbenchConnectorOptions, err error) {
 		if m.connectorLogin != p {
 			return
 		}
 		p.busy = false
 		if err != nil {
-			p.problem = common.ProtocolError(err).Message
+			problem := common.ProtocolError(err)
+			p.problem = problem.Message
+			if problem.Code == "NOT_FOUND" || problem.Code == "CONFLICT" {
+				if m.connectorRecentAuthorization.ID == p.auth.ID {
+					m.connectorRecentAuthorization = common.WorkbenchConnectorAuthorization{}
+				}
+				p.auth = common.WorkbenchConnectorAuthorization{}
+				p.choices, p.next = nil, ""
+				clear(p.selected)
+				clear(p.connected)
+			}
 			return
 		}
 		p.next = value.NextPage
+		for _, connected := range value.ConnectedValues {
+			p.connected[connected] = true
+			delete(p.selected, connected)
+		}
 		for _, item := range value.Items {
 			if !slices.ContainsFunc(p.choices, func(old protocol.ConfigOption) bool { return old.Value == item.Value }) {
 				p.choices = append(p.choices, item)
@@ -208,6 +224,9 @@ func (m *mockup) saveConnectorChoices(p *connectorLoginPanel) {
 			return
 		}
 		p.results = value.Scopes
+		if m.connectorRecentAuthorization.ID == p.auth.ID && value.ConnectionID != "" {
+			m.connectorRecentAuthorization = common.WorkbenchConnectorAuthorization{}
+		}
 		if value.ConnectionID != "" {
 			if m.expandedConnectors == nil {
 				m.expandedConnectors = map[string]bool{}
@@ -243,6 +262,10 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 				ui.Scroll(c.Key("scopes")).FillWidth().MaxHeight(max(160, min(height-250, 310))).Children(func() {
 					ui.Column(c).FillWidth().Gap(8).Children(func() {
 						for _, choice := range p.choices {
+							if p.connected[choice.Value] {
+								components.Muted(c.Key(choice.Value), choice.Label+" · "+tr("已连接"))
+								continue
+							}
 							selected := p.selected[choice.Value]
 							if ui.Checkbox(c.Key(choice.Value), &selected, choice.Label).Disabled(p.busy || len(p.results) > 0).Changed() {
 								if selected {
@@ -283,8 +306,18 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 				if ui.Button(c.Key("cancel"), tr(closeLabel)).Clicked() {
 					open = false
 				}
-				if p.auth.Status != "waiting" && p.auth.Status != "authorized" && ui.PrimaryButton(c.Key("login"), tr("登录")).Disabled(p.busy).Clicked() {
-					m.startConnectorLogin(p)
+				if p.auth.Status != "waiting" && p.auth.Status != "authorized" {
+					recent := m.connectorRecentAuthorization
+					if p.parent == "" && recent.ConnectorID == p.kind && recent.Status == "authorized" && time.Now().Before(recent.ExpiresAt) {
+						if ui.Button(c.Key("reuse-account"), tr("使用账号")+" "+recent.DisplayName).Disabled(p.busy).Clicked() {
+							p.auth = recent
+							p.problem = ""
+							m.loadConnectorChoices(p, "")
+						}
+					}
+					if ui.PrimaryButton(c.Key("login"), tr("登录")).Disabled(p.busy).Clicked() {
+						m.startConnectorLogin(p)
+					}
 				}
 				if p.auth.Status == "authorized" && len(p.results) == 0 && ui.PrimaryButton(c.Key("save"), tr("保存所选范围")).Disabled(p.busy || len(p.selected) == 0 || len(p.selected) > 20).Clicked() {
 					m.saveConnectorChoices(p)

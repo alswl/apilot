@@ -11,27 +11,6 @@ components:
         - value
         - label
       type: object
-    ConfigOptions:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://apilot/schemas/ConfigOptions.json
-          format: uri
-          readOnly: true
-          type: string
-        items:
-          items:
-            $ref: "#/components/schemas/ConfigOption"
-          type:
-            - array
-            - "null"
-        next_page:
-          type: string
-      required:
-        - items
-      type: object
     DetailItem:
       additionalProperties: false
       properties:
@@ -567,6 +546,33 @@ components:
           type: string
       required:
         - connector_id
+      type: object
+    WorkbenchConnectorOptions:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchConnectorOptions.json
+          format: uri
+          readOnly: true
+          type: string
+        connected_values:
+          items:
+            type: string
+          type:
+            - array
+            - "null"
+        items:
+          items:
+            $ref: "#/components/schemas/ConfigOption"
+          type:
+            - array
+            - "null"
+        next_page:
+          type: string
+      required:
+        - items
       type: object
     WorkbenchConnectorOverview:
       additionalProperties: false
@@ -2987,7 +2993,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConfigOptions"
+                $ref: "#/components/schemas/WorkbenchConnectorOptions"
           description: OK
         "400":
           content:

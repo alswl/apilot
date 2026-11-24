@@ -41,7 +41,6 @@ func (c *Connector) detail(ctx context.Context, p protocol.DetailParams) (any, *
 	switch p.Segment {
 	case "fields":
 		page.Fields = githubMutationFields(issue)
-		page.Fields["state"] = protocol.Value(protocol.FieldText, issue.State)
 		page.Fields["repository_id"] = protocol.Value(protocol.FieldText, p.ScopeRef)
 	case "description":
 		page.Items = []protocol.DetailItem{{ID: "body", Label: "Body", Text: &protocol.RichText{Format: "markdown", Content: protocol.Value(protocol.FieldText, issue.Body).Value}}}

@@ -139,6 +139,7 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 	mutation := protocol.MutationParams{ScopeContext: scope.Context, OperationID: input.RequestID, Action: input.Action, ActionFields: input.ActionFields}
 	var task common.WorkbenchTask
 	var conflict *common.WorkbenchFieldConflict
+	var staleTask bool
 	if input.SourceObjectID != "" {
 		task, err = s.WorkbenchTask(input.SourceObjectID)
 		if err != nil {
@@ -156,10 +157,11 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 				mutation.Action = "close"
 			}
 		}
-		if task.TargetVersion != input.TargetVersion {
-			if mutation.Action == "" || input.TargetVersion == "" {
-				return empty, common.Err("STALE_REVISION", "Task changed before operation admission")
-			}
+		staleTask = task.TargetVersion != input.TargetVersion
+		if staleTask && input.TargetVersion == "" {
+			return empty, common.Err("STALE_REVISION", "Task changed before operation admission")
+		}
+		if staleTask && mutation.Action != "" {
 			state := task.NativeFields["state"]
 			if state == "" {
 				state = task.State
@@ -227,26 +229,31 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 			if input.SourceObjectID == "" {
 				mutation.Create = patch
 			} else {
-				if len(baseline) != len(patch) {
+				mutation.Patch = patch
+				if staleTask || len(baseline) != len(patch) {
 					page, err := callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail,
 						protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID, Segment: "fields"}, nil)
 					if err != nil {
 						return empty, publicConnectorError(err)
 					}
-					if page.Version != mutation.ExpectedVersion {
-						return empty, common.Err("STALE_REVISION", "Source changed before operation admission")
+					if page.Version == "" {
+						return empty, publicConnectorError(integrations.ErrWorkbenchConnectorProtocol)
 					}
-					for id := range patch {
-						if _, ok := baseline[id]; !ok {
-							field, ok := page.Fields[id]
-							if !ok {
-								return empty, common.Err("CONFLICT", "Field baseline is unavailable: "+id)
+					if staleTask || page.Version != mutation.ExpectedVersion {
+						conflict = connectorOperationConflict(mutation, page.Fields, nil)
+					} else {
+						for id := range patch {
+							if _, ok := baseline[id]; !ok {
+								field, ok := page.Fields[id]
+								if !ok {
+									return empty, common.Err("CONFLICT", "Field baseline is unavailable: "+id)
+								}
+								baseline[id] = field
 							}
-							baseline[id] = field
 						}
 					}
 				}
-				mutation.Patch, mutation.Baseline = patch, baseline
+				mutation.Baseline = baseline
 			}
 		}
 	}

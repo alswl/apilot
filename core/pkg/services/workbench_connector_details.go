@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/alswl/apilot/connectors/protocol"
@@ -69,8 +70,14 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 	}
 	version := task.NativeFields["source_version"]
 	digest := s.workbenchConnectorRelease.PackageDigest
+	sourceSegment := segment
+	mappedDescription := scope.Mapping["description"].Field
+	if segment == "description" && mappedDescription != "" {
+		sourceSegment = "fields"
+		digest += ":mapping:" + strconv.FormatInt(scope.MappingRevision, 10)
+	}
 	body, err := callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail,
-		protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID, Segment: segment, Page: page}, nil)
+		protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID, Segment: sourceSegment, Page: page}, nil)
 	if err != nil {
 		var problem *protocol.RPCError
 		if errors.As(err, &problem) && (problem.Data.Kind == protocol.AuthRequired || problem.Data.Kind == protocol.AccessDenied) {
@@ -98,6 +105,14 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 	}
 	if body.Version == "" || (body.NextPage != "" && body.NextPage == page) {
 		return result, publicConnectorError(integrations.ErrWorkbenchConnectorProtocol)
+	}
+	if sourceSegment != segment {
+		field, ok := body.Fields[mappedDescription]
+		if !ok || field.Type != protocol.FieldRichText || !protocol.ValidFieldValue(field) || body.NextPage != "" {
+			return result, common.Err("CONFLICT", "Mapped description is unavailable")
+		}
+		body.Fields = nil
+		body.Items = []protocol.DetailItem{{ID: mappedDescription, Label: "Description", Text: &protocol.RichText{Format: "markdown", Content: field.Value}}}
 	}
 	for i := range body.Items {
 		if body.Items[i].URL != "" {

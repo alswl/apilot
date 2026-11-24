@@ -227,16 +227,6 @@ type ConfigOption struct {
 	Value string `json:"value"`
 }
 
-// ConfigOptions defines model for ConfigOptions.
-type ConfigOptions struct {
-	// Schema A URL to the JSON Schema for this object.
-	//
-	// Examples: http://apilot/schemas/ConfigOptions.json
-	Schema   *string         `json:"$schema,omitempty"`
-	Items    *[]ConfigOption `json:"items"`
-	NextPage *string         `json:"next_page,omitempty"`
-}
-
 // DetailItem defines model for DetailItem.
 type DetailItem struct {
 	Id    string    `json:"id"`
@@ -500,6 +490,17 @@ type WorkbenchConnectorLoginInput struct {
 	Schema       *string `json:"$schema,omitempty"`
 	ConnectionId *string `json:"connection_id,omitempty"`
 	ConnectorId  string  `json:"connector_id"`
+}
+
+// WorkbenchConnectorOptions defines model for WorkbenchConnectorOptions.
+type WorkbenchConnectorOptions struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchConnectorOptions.json
+	Schema          *string         `json:"$schema,omitempty"`
+	ConnectedValues *[]string       `json:"connected_values,omitempty"`
+	Items           *[]ConfigOption `json:"items"`
+	NextPage        *string         `json:"next_page,omitempty"`
 }
 
 // WorkbenchConnectorOverview defines model for WorkbenchConnectorOverview.
@@ -7415,7 +7416,7 @@ type ListWorkbenchConnectorOptionsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *ConfigOptions
+	JSON200 *WorkbenchConnectorOptions
 	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
 	ApplicationproblemJSON400 *ErrorModel
 	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
@@ -7437,7 +7438,7 @@ type ListWorkbenchConnectorOptionsResponse struct {
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r ListWorkbenchConnectorOptionsResponse) GetJSON200() *ConfigOptions {
+func (r ListWorkbenchConnectorOptionsResponse) GetJSON200() *WorkbenchConnectorOptions {
 	return r.JSON200
 }
 
@@ -11539,7 +11540,7 @@ func ParseListWorkbenchConnectorOptionsResponse(rsp *http.Response) (*ListWorkbe
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ConfigOptions
+		var dest WorkbenchConnectorOptions
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

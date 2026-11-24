@@ -179,6 +179,11 @@ func (api uc01TestAPI) scenarios(config string) {
 			t.Fatalf("dual-scope first run: %+v", run)
 		}
 	}
+	var connected common.WorkbenchConnectorOptions
+	api.call(http.MethodGet, "/connectors/fixture/options?field=project&authorization_id="+login.ID, nil, &connected)
+	if len(connected.ConnectedValues) != 1 || connected.ConnectedValues[0] != "PAY" {
+		t.Fatalf("options should mark only the connected scope on this page: %+v", connected)
+	}
 	api.call(http.MethodDelete, "/connector-connections/"+healthy.ConnectionID, nil, nil)
 
 	writeUC01JSON(t, config, map[string]any{"fail_second_page": "OPS"})

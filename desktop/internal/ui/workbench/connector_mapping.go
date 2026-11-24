@@ -192,6 +192,13 @@ func (m *mockup) connectorMappingDialog(c *ui.Context) {
 				if p.value.Sample != nil {
 					s := p.value.Sample
 					components.Body(c.Key("preview"), s.Title+" · "+m.taskStateLabel(*s)+" · "+tr("截止日")+" "+taskDueValue(*s))
+					if s.Summary != "" {
+						excerpt := []rune(s.Summary)
+						if len(excerpt) > 120 {
+							excerpt = append(excerpt[:120], '…')
+						}
+						components.Body(c.Key("description-preview"), string(excerpt))
+					}
 				}
 				if p.value.PendingRead {
 					components.Muted(c.Key("pending"), tr("等待同步更新映射"))

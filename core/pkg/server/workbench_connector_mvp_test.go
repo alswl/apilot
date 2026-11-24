@@ -162,6 +162,54 @@ func TestWorkbenchRemainingMVPProjectionDetailsMapping(t *testing.T) {
 
 }
 
+func TestWorkbenchMappedDescriptionUsesSameSourceFieldForReadAndWrite(t *testing.T) {
+	api, _, _, scopes := prepareRemainingMVP(t)
+	scope := scopes["PAY"].ScopeID
+	task := api.scopeTasks(scope).Items[0]
+	mapping := common.WorkbenchMappingInput{TaskID: task.ID, Rules: map[string]protocol.MappingRule{
+		"description": {Field: "notes", Write: true},
+	}}
+	var preview common.WorkbenchMappingResult
+	api.call(http.MethodPost, "/connections/"+scope+"/mapping/preview", mapping, &preview)
+	if preview.Sample == nil || preview.Sample.Summary != "Alternate description" {
+		t.Fatalf("mapped preview: %+v", preview)
+	}
+	api.call(http.MethodPut, "/connections/"+scope+"/mapping", mapping, nil)
+	checkDetail := func(want string) {
+		t.Helper()
+		var detail common.WorkbenchTaskDetail
+		api.call(http.MethodGet, "/tasks/"+task.ID+"/detail?segment=description", nil, &detail)
+		if len(detail.Items) != 1 || detail.Items[0].ID != "notes" || detail.Items[0].Text == nil || string(detail.Items[0].Text.Content) != want {
+			t.Fatalf("mapped description: %+v", detail)
+		}
+	}
+	checkDetail(`"Alternate description"`)
+	task = api.task(task.ID)
+	api.submit(common.WorkbenchTaskWrite{RequestID: "mapped-description", ConnectionID: scope, ConnectionVersion: task.ConnectionVersion,
+		SourceObjectID: task.ID, TargetVersion: task.TargetVersion,
+		Fields: map[string]protocol.FieldValue{"description": protocol.Value(protocol.FieldRichText, "Changed notes")},
+	}, "confirmed")
+	checkDetail(`"Changed notes"`)
+}
+
+func TestWorkbenchStaleFieldPatchReturnsDurableConflict(t *testing.T) {
+	api, _, _, scopes := prepareRemainingMVP(t)
+	scope := scopes["PAY"].ScopeID
+	task := api.scopeTasks(scope).Items[0]
+	write := common.WorkbenchTaskWrite{RequestID: "newer-title", ConnectionID: scope, ConnectionVersion: task.ConnectionVersion,
+		SourceObjectID: task.ID, TargetVersion: task.TargetVersion,
+		Fields: map[string]protocol.FieldValue{"title": protocol.Value(protocol.FieldText, "Newer title")},
+	}
+	api.submit(write, "confirmed")
+	write.RequestID = "stale-title"
+	write.Fields["title"] = protocol.Value(protocol.FieldText, "My draft")
+	receipt := api.submit(write, "conflict")
+	if receipt.Conflict == nil || string(receipt.Conflict.Current["title"].Value) != `"Newer title"` ||
+		string(receipt.Conflict.Proposed["title"].Value) != `"My draft"` || api.task(task.ID).Title != "Newer title" {
+		t.Fatalf("stale patch changed source or lost conflict values: %+v", receipt)
+	}
+}
+
 func TestWorkbenchRemainingMVPWritesAndActions(t *testing.T) {
 	api, config, _, scopes := prepareRemainingMVP(t)
 	pay := scopes["PAY"].ScopeID

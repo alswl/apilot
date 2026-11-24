@@ -720,8 +720,8 @@ func (m *mockup) clearGitHubTaskDrafts(connectionID string) {
 		delete(m.liveTaskRequests, task.ID)
 		delete(m.liveTaskProblems, task.ID)
 		delete(m.connectorConflicts, task.ID)
-		if m.connectorEditor011 != nil && m.connectorEditor011.task.ID == task.ID {
-			m.connectorEditor011 = nil
+		if m.connectorTaskEditor != nil && m.connectorTaskEditor.task.ID == task.ID {
+			m.connectorTaskEditor = nil
 		}
 		if m.connectorMapping != nil && m.connectorMapping.scope == connectionID {
 			m.connectorMapping = nil

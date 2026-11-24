@@ -24,6 +24,7 @@ type connectorAuthorization struct {
 type workbenchManagedConnectorStore interface {
 	SaveWorkbenchConnectorConnection(common.WorkbenchConnectorConnection, []common.WorkbenchConnectorNewScope) (common.WorkbenchConnectorSaveResult, error)
 	WorkbenchConnectorConnection(string) (common.WorkbenchConnectorConnection, error)
+	WorkbenchConnectorSelectedValues(string, string, string, string) (map[string]bool, error)
 	ConfirmWorkbenchConnectorAccount(string, int64) error
 	WorkbenchConnectorScope(string) (common.WorkbenchConnectorStoredScope, error)
 	WorkbenchConnectorOverviews(string) ([]common.WorkbenchConnectorOverview, error)
@@ -221,17 +222,34 @@ func (s *Service) authorizedConnectorAccount(id, connectorID string) (*integrati
 	return process, session.account, err
 }
 
-func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizationID, field, search, page string) (protocol.ConfigOptions, error) {
+func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizationID, field, search, page string) (common.WorkbenchConnectorOptions, error) {
+	var out common.WorkbenchConnectorOptions
 	s.mu.Lock()
 	process, account, err := s.authorizedConnectorAccount(authorizationID, id)
 	s.mu.Unlock()
 	if err != nil {
-		return protocol.ConfigOptions{}, err
+		return out, err
 	}
-	result, err := callWorkbenchConnector[protocol.ConfigOptions](ctx, process, common.ID(), protocol.Options, protocol.OptionsParams{
+	out.ConfigOptions, err = callWorkbenchConnector[protocol.ConfigOptions](ctx, process, common.ID(), protocol.Options, protocol.OptionsParams{
 		AccountRef: account.AccountRef, EndpointRef: account.EndpointRef, Field: field, Search: search, Page: page,
 	}, nil)
-	return result, publicConnectorError(err)
+	if err != nil {
+		return out, publicConnectorError(err)
+	}
+	store, err := s.managedConnectorStore()
+	if err != nil {
+		return out, err
+	}
+	connected, err := store.WorkbenchConnectorSelectedValues(id, account.EndpointRef, account.AccountRef, field)
+	if err != nil {
+		return out, err
+	}
+	for _, item := range out.Items {
+		if connected[item.Value] {
+			out.ConnectedValues = append(out.ConnectedValues, item.Value)
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in common.WorkbenchConnectorSaveInput) (common.WorkbenchConnectorSaveResult, error) {

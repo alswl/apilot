@@ -7,7 +7,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/services"
 )
@@ -45,7 +44,7 @@ func registerWorkbenchConnectorHTTP(api huma.API, s *services.Service) {
 			return s.CancelWorkbenchConnectorAuthorization(in.ID)
 		})
 	registerWorkbenchContext(api, http.MethodGet, workbenchPath+"/connectors/{id}/options", "listWorkbenchConnectorOptions", "Read Connector configuration options", "Connectors", []int{400, 401, 403, 404, 409, 429, 503},
-		func(ctx context.Context, in *workbenchConnectorOptionsInput) (protocol.ConfigOptions, error) {
+		func(ctx context.Context, in *workbenchConnectorOptionsInput) (common.WorkbenchConnectorOptions, error) {
 			ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 			defer cancel()
 			return s.WorkbenchConnectorOptions(ctx, in.ID, in.AuthorizationID, in.Field, in.Search, in.Page)

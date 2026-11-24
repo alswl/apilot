@@ -355,6 +355,7 @@ func fixtureRecord(scope, id string, fields []string) protocol.SourceRecord {
 	record.Fields = map[string]protocol.FieldValue{
 		"title":       protocol.Value(protocol.FieldText, record.Title),
 		"description": protocol.Value(protocol.FieldRichText, "Fixture task **description**"),
+		"notes":       protocol.Value(protocol.FieldRichText, "Alternate description"),
 		"assignees":   protocol.Value(protocol.FieldAccounts, []protocol.Option{{ID: "alice", Label: "Alice"}}),
 		"priority":    protocol.Value(protocol.FieldNumber, 2),
 		"due_date":    protocol.Value(protocol.FieldDate, nil),

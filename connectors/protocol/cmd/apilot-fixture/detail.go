@@ -8,6 +8,7 @@ func fixtureCatalog() protocol.FieldCatalog {
 	definitions := []protocol.FieldDefinition{
 		{ID: "title", Label: "Title", Type: protocol.FieldText, Writable: true},
 		{ID: "description", Label: "Description", Type: protocol.FieldRichText, Writable: true},
+		{ID: "notes", Label: "Notes", Type: protocol.FieldRichText, Writable: true},
 		{ID: "assignees", Label: "Assignees", Type: protocol.FieldAccounts, Writable: true, Options: []protocol.Option{{ID: "alice", Label: "Alice"}, {ID: "bob", Label: "Bob"}}},
 		{ID: "priority", Label: "Priority", Type: protocol.FieldNumber, Writable: true},
 		{ID: "due_date", Label: "Due date", Type: protocol.FieldDate, Writable: true},
@@ -17,7 +18,7 @@ func fixtureCatalog() protocol.FieldCatalog {
 	}
 	result := protocol.FieldCatalog{Fields: definitions, Defaults: map[string]protocol.MappingRule{}}
 	for _, field := range definitions {
-		if field.ID != "promised" && field.ID != "status" {
+		if field.ID != "promised" && field.ID != "status" && field.ID != "notes" {
 			result.Defaults[field.ID] = protocol.MappingRule{Field: field.ID, Write: field.Writable}
 		}
 	}

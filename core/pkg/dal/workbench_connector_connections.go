@@ -13,10 +13,8 @@ import (
 type connectorScopeConfig struct {
 	Mapping map[string]protocol.MappingRule `json:"mapping,omitempty"`
 	common.WorkbenchConnection
-	EndpointConfig        json.RawMessage `json:"endpoint_config"`
-	ScopeConfig           json.RawMessage `json:"scope_config"`
-	EndpointSchemaVersion int             `json:"endpoint_schema_version"`
-	ScopeSchemaVersion    int             `json:"scope_schema_version"`
+	ScopeConfig        json.RawMessage `json:"scope_config"`
+	ScopeSchemaVersion int             `json:"scope_schema_version"`
 }
 
 func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnectorConnection, scopes []common.WorkbenchConnectorNewScope) (common.WorkbenchConnectorSaveResult, error) {
@@ -26,8 +24,13 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 		return out, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.Exec(`INSERT INTO workbench_connector_connections(id,connector_id,endpoint_ref,account_ref,auth_state)
-		VALUES(?,?,?,?,'authorized') ON CONFLICT(connector_id,endpoint_ref,account_ref) DO NOTHING`, parent.ID, parent.ConnectorID, parent.EndpointRef, parent.AccountRef); err != nil {
+	endpointConfig, endpointSchemaVersion := json.RawMessage("{}"), 1
+	if len(scopes) > 0 {
+		endpointConfig = scopes[0].Context.EndpointConfig
+		endpointSchemaVersion = scopes[0].Context.EndpointSchemaVersion
+	}
+	if _, err := tx.Exec(`INSERT INTO workbench_connector_connections(id,connector_id,endpoint_ref,account_ref,auth_state,endpoint_config,endpoint_schema_version)
+		VALUES(?,?,?,?,'authorized',?,?) ON CONFLICT(connector_id,endpoint_ref,account_ref) DO NOTHING`, parent.ID, parent.ConnectorID, parent.EndpointRef, parent.AccountRef, string(endpointConfig), endpointSchemaVersion); err != nil {
 		return out, err
 	}
 	if err := tx.QueryRow(`SELECT id FROM workbench_connector_connections WHERE connector_id=? AND endpoint_ref=? AND account_ref=?`,
@@ -50,8 +53,7 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 		} else {
 			config := connectorScopeConfig{
 				WorkbenchConnection: common.WorkbenchConnection{ID: scope.ID, Kind: parent.ConnectorID, Name: scope.Label, Mode: "sync", Version: 1, AccountLogin: scope.DisplayName, WriteEnabled: scope.WriteEnabled},
-				EndpointConfig:      scope.Context.EndpointConfig, ScopeConfig: scope.Context.ScopeConfig,
-				EndpointSchemaVersion: scope.Context.EndpointSchemaVersion, ScopeSchemaVersion: scope.Context.ScopeSchemaVersion,
+				ScopeConfig:         scope.Context.ScopeConfig, ScopeSchemaVersion: scope.Context.ScopeSchemaVersion,
 			}
 			_, err := tx.Exec(`INSERT INTO workbench_connections(id,config,version,connector_connection_id,scope_ref,config_revision)
 				VALUES(?,?,1,?,?,1)`, scope.ID, encode(config), out.ConnectionID, scope.Context.ScopeRef)
@@ -62,6 +64,35 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 		out.Scopes = append(out.Scopes, result)
 	}
 	return out, tx.Commit()
+}
+
+func (s *Store) WorkbenchConnectorSelectedValues(connectorID, endpointRef, accountRef, field string) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT c.config -> '$.scope_config'
+		FROM workbench_connections c JOIN workbench_connector_connections p ON p.id=c.connector_connection_id
+		WHERE p.connector_id=? AND p.endpoint_ref=? AND p.account_ref=?`, connectorID, endpointRef, accountRef)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	values := make(map[string]bool)
+	for rows.Next() {
+		var raw sql.NullString
+		if err := rows.Scan(&raw); err != nil {
+			return nil, err
+		}
+		if !raw.Valid {
+			continue
+		}
+		var config map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(raw.String), &config); err != nil {
+			return nil, err
+		}
+		var value string
+		if json.Unmarshal(config[field], &value) == nil && value != "" {
+			values[value] = true
+		}
+	}
+	return values, rows.Err()
 }
 
 func (s *Store) WorkbenchConnectorConnection(id string) (common.WorkbenchConnectorConnection, error) {
@@ -87,14 +118,14 @@ func (s *Store) ConfirmWorkbenchConnectorAccount(id string, generation int64) er
 }
 
 const connectorScopeColumns = `c.id,c.connector_connection_id,c.scope_ref,c.access_state,c.config_revision,c.mapping_revision,c.snapshot_version,
-	c.last_success,c.last_full_success,c.sync_checkpoint,c.config,p.connector_id,p.endpoint_ref,p.account_ref,p.auth_generation,p.auth_state`
+	c.last_success,c.last_full_success,c.sync_checkpoint,c.config,p.connector_id,p.endpoint_ref,p.account_ref,p.auth_generation,p.auth_state,p.endpoint_config,p.endpoint_schema_version`
 
 func scanConnectorScope(row interface{ Scan(...any) error }) (common.WorkbenchConnectorStoredScope, error) {
 	var scope common.WorkbenchConnectorStoredScope
 	var last, full, checkpoint sql.NullString
-	var raw string
+	var raw, endpointConfig string
 	err := row.Scan(&scope.ScopeID, &scope.ConnectionID, &scope.ScopeRef, &scope.AccessState, &scope.ConfigRevision, &scope.MappingRevision, &scope.SnapshotVersion,
-		&last, &full, &checkpoint, &raw, &scope.ConnectorID, &scope.Context.EndpointRef, &scope.Context.AccountRef, &scope.AuthGeneration, &scope.AuthState)
+		&last, &full, &checkpoint, &raw, &scope.ConnectorID, &scope.Context.EndpointRef, &scope.Context.AccountRef, &scope.AuthGeneration, &scope.AuthState, &endpointConfig, &scope.Context.EndpointSchemaVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return scope, common.Err("NOT_FOUND", "Unknown Connector scope")
 	}
@@ -123,9 +154,8 @@ func scanConnectorScope(row interface{ Scan(...any) error }) (common.WorkbenchCo
 	scope.Config = config.WorkbenchConnection
 	scope.Mapping = config.Mapping
 	scope.Context.ScopeRef = scope.ScopeRef
-	scope.Context.EndpointConfig = config.EndpointConfig
+	scope.Context.EndpointConfig = json.RawMessage(endpointConfig)
 	scope.Context.ScopeConfig = config.ScopeConfig
-	scope.Context.EndpointSchemaVersion = config.EndpointSchemaVersion
 	scope.Context.ScopeSchemaVersion = config.ScopeSchemaVersion
 	return scope, nil
 }

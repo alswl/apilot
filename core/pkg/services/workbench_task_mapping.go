@@ -59,7 +59,7 @@ func (s *Service) WorkbenchConnectorMapping(ctx context.Context, id string, inpu
 		if sample.ConnectionID != id {
 			return output, common.Err("INVALID_ARGUMENT", "Sample task belongs to another scope")
 		}
-		output.PendingRead = applyConnectorMapping(&sample, rules)
+		output.PendingRead = previewConnectorMapping(&sample, rules)
 		if output.PendingRead && len(output.Issues) == 0 {
 			page, err := callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail,
 				protocol.DetailParams{ScopeContext: scope.Context, SourceID: sample.SourceKey, Number: sample.NativeID, Segment: "fields"}, nil)
@@ -69,7 +69,7 @@ func (s *Service) WorkbenchConnectorMapping(ctx context.Context, id string, inpu
 					raw, _ := json.Marshal(value)
 					sample.NativeFields["native."+key] = string(raw)
 				}
-				output.PendingRead = applyConnectorMapping(&sample, rules)
+				output.PendingRead = previewConnectorMapping(&sample, rules)
 			}
 		}
 		output.Sample = &sample
@@ -150,6 +150,18 @@ func connectorMappingIssues(catalog protocol.FieldCatalog, rules map[string]prot
 		}
 	}
 	return issues
+}
+
+func previewConnectorMapping(task *common.WorkbenchTask, rules map[string]protocol.MappingRule) bool {
+	pending := applyConnectorMapping(task, rules)
+	rule := rules["description"]
+	if rule.Field == "" {
+		return pending
+	}
+	task.Summary = ""
+	var field protocol.FieldValue
+	return json.Unmarshal([]byte(task.NativeFields["native."+rule.Field]), &field) != nil ||
+		field.Type != protocol.FieldRichText || json.Unmarshal(field.Value, &task.Summary) != nil || pending
 }
 
 func applyConnectorMapping(task *common.WorkbenchTask, rules map[string]protocol.MappingRule) bool {
