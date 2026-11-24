@@ -564,3 +564,23 @@ func TestConnector011DesktopDetailReloadsAfterScopeMappingChange(t *testing.T) {
 		t.Fatal("PAY mapping change invalidated the independent OPS detail")
 	}
 }
+
+func TestThirdPartyConnectorProjection(t *testing.T) {
+	m := connectorUIFixture()
+	m.livePlugins = append(m.livePlugins, services.WorkbenchPlugin{ID: "external-sample", Enabled: true, Release: &common.WorkbenchConnectorRelease{ConnectorID: "external-sample"}})
+	m.applyLive([]common.WorkbenchSnapshot{{ParentConnectionID: "parent-external", ScopeRef: "scope", WorkbenchConnection: common.WorkbenchConnection{ID: "external-scope", Kind: "external-sample", Name: "External", AccessState: "available"}}}, []sourceObject{{ID: "external-task", Kind: "external-sample", ConnectionID: "external-scope", Title: "External task"}})
+	if len(m.connectionsData) != 1 || len(m.objects) != 1 || !m.isManagedConnector("external-sample") {
+		t.Fatalf("external projection: connections=%+v tasks=%+v", m.connectionsData, m.objects)
+	}
+	if m.supportsConnectorEditor(m.objects[0]) {
+		t.Fatal("external task is writable")
+	}
+
+	task := m.objects[0]
+	detail := m.taskDetailUI(task.ID)
+	detail.connectorDetail = &connectorTaskDetailState{version: task.TargetVersion, segment: "description", loaded: true, page: common.WorkbenchTaskDetail{Items: []protocol.DetailItem{{ID: "description", Text: &protocol.RichText{Content: protocol.Value(protocol.FieldRichText, "External description").Value}}}}}
+	view := ui.NewTester(func(c *ui.Context) { m.managedTaskDetail(c, &task, detail) }, 680, 580)
+	if !view.HasText("External description") {
+		t.Fatal("external description is not displayed")
+	}
+}

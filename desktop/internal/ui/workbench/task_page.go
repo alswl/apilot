@@ -134,7 +134,7 @@ func (m *mockup) taskPageTitle(c *ui.Context, o *sourceObject) {
 }
 
 func (m *mockup) taskDescription(c *ui.Context, o *sourceObject) {
-	if m.live != nil && isManagedConnector(o.Kind) {
+	if m.live != nil && m.isManagedConnector(o.Kind) {
 		m.managedTaskDetail(c, o, m.taskDetailUI(o.ID))
 		return
 	}

@@ -89,19 +89,7 @@ func (s *Store) FinishWorkbenchConnectorFailure(c common.WorkbenchConnectorSyncC
 	if err != nil {
 		return err
 	}
-	if current {
-		for key := range c.Hidden {
-			res, err := tx.Exec("UPDATE workbench_objects SET state=? WHERE connection_id=? AND source_key=? AND state<>?", connectorHidden, c.Scope.ScopeID, key, connectorHidden)
-			if err != nil {
-				return err
-			}
-			n, err := res.RowsAffected()
-			if err != nil {
-				return err
-			}
-			changed = changed || n > 0
-		}
-	}
+
 	if changed {
 		if _, err := tx.Exec("UPDATE workbench_revision SET revision=revision+1"); err != nil {
 			return err

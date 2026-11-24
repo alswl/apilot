@@ -128,12 +128,12 @@ func (m *mockup) taskSourceControls(c *ui.Context, o *sourceObject) {
 				if components.IconButton(c.Key("edit"), "pencil", tr("编辑任务"), blocked).Clicked() {
 					m.openConnectorTaskEditor(*o, false)
 				}
-				if isManagedConnector(o.Kind) && ui.Button(c.Key("transition"), tr("状态操作")).Disabled(blocked).Clicked() {
+				if m.isManagedConnector(o.Kind) && ui.Button(c.Key("transition"), tr("状态操作")).Disabled(blocked).Clicked() {
 					m.openConnectorTaskEditor(*o, true)
 				}
 			})
 		}
-		if !isManagedConnector(o.Kind) && (m.canToggleSourceTask(*o) || m.sourceWritePending(o.ID)) {
+		if !m.isManagedConnector(o.Kind) && (m.canToggleSourceTask(*o) || m.sourceWritePending(o.ID)) {
 			m.taskStatusCheckbox(c.Key("toggle"), *o)
 		}
 		return
@@ -179,7 +179,7 @@ func (m *mockup) sourceToggleLabel(o sourceObject) string {
 }
 
 func (m *mockup) canToggleSourceTask(o sourceObject) bool {
-	if m.live != nil && isManagedConnector(o.Kind) {
+	if m.live != nil && m.isManagedConnector(o.Kind) {
 		return m.supportsConnectorEditor(o) && o.TargetVersion != ""
 	}
 	if m.live != nil {
@@ -193,7 +193,7 @@ func (m *mockup) canToggleSourceTask(o sourceObject) bool {
 }
 
 func (m *mockup) toggleSourceTask(o sourceObject) {
-	if m.live != nil && isManagedConnector(o.Kind) {
+	if m.live != nil && m.isManagedConnector(o.Kind) {
 		m.openConnectorTaskEditor(o, true)
 		return
 	}

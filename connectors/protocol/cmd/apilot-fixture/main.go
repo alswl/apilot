@@ -8,6 +8,8 @@ import (
 	"github.com/alswl/apilot/connectors/protocol"
 )
 
+var fixtureConnectorID = "fixture"
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "browser" {
 		if err := fixtureBrowser(os.Args[2:]); err != nil {
@@ -17,7 +19,7 @@ func main() {
 		return
 	}
 	description := protocol.Description{
-		ConnectorID:          "fixture",
+		ConnectorID:          fixtureConnectorID,
 		ReleaseVersion:       "0.1.0",
 		ProtocolVersions:     []int{protocol.Version},
 		Capabilities:         []string{"auth.login", "config.options", "tasks.sync.full", "tasks.sync.delta", "fields.describe", "tasks.detail", "tasks.edit_metadata", "tasks.mutate", "tasks.reconcile"},
@@ -33,6 +35,10 @@ func main() {
 				"project": {Title: "Fixture project", Control: "select"},
 			},
 		},
+	}
+	if fixtureConnectorID != "fixture" {
+		description.Capabilities = []string{"auth.login", "config.options", "tasks.sync.full", "fields.describe", "tasks.detail"}
+		description.SyncRateLimitBuckets = map[string][]string{"full": {"fixture-read"}}
 	}
 	ctx, cancel := protocol.RequestContext(os.Getenv("APILOT_CONNECTOR_DEADLINE"))
 	defer cancel()

@@ -44,6 +44,17 @@ func fixtureHandler(ctx context.Context, req protocol.Request, notify protocol.N
 	if (err == nil && json.Unmarshal(data, &config) != nil) || (err != nil && !errors.Is(err, os.ErrNotExist)) {
 		return nil, protocol.Problem(protocol.InvalidConfig, "", "Invalid local fixture configuration")
 	}
+	if fixtureConnectorID != "fixture" {
+		file, err := os.OpenFile(filepath.Join(os.Getenv("APILOT_CONNECTOR_DATA_DIR"), "requests.jsonl"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			return nil, protocol.Problem(protocol.Temporary, "", "Fixture request log unavailable")
+		}
+		err = json.NewEncoder(file).Encode(req)
+		closeErr := file.Close()
+		if err != nil || closeErr != nil {
+			return nil, protocol.Problem(protocol.Temporary, "", "Fixture request log unavailable")
+		}
+	}
 	switch req.Method {
 	case protocol.Login:
 		var p protocol.LoginParams
@@ -273,7 +284,7 @@ func (c fixtureConfig) sync(p protocol.SyncParams) (any, *protocol.RPCError) {
 	if p.ScopeRef == c.TemporaryScope {
 		return nil, protocol.Problem(protocol.Temporary, "account", "Fixture OAuth temporarily unavailable")
 	}
-	if p.ScopeRef == c.FullOnlyScope && p.Mode == "delta" {
+	if (fixtureConnectorID != "fixture" || p.ScopeRef == c.FullOnlyScope) && p.Mode == "delta" {
 		return nil, protocol.Problem(protocol.Unsupported, "scope", "Fixture supports only full sync")
 	}
 	if p.ScopeRef == c.RateLimitedScope {

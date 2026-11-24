@@ -53,8 +53,20 @@ func (m *mockup) visibleConnectorKind(kind string) bool {
 	case managedFixture:
 		return m.fixtureConnector
 	default:
-		return false
+		return m.isManagedConnector(kind)
 	}
+}
+
+func (m *mockup) isManagedConnector(kind string) bool {
+	if isManagedConnector(kind) || m.connectorRelease(kind) != nil {
+		return true
+	}
+	for _, parent := range m.connectorParents {
+		if parent.Connection.ConnectorID == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func isManagedConnector(kind string) bool { return kind == managedGitHub || kind == managedFixture }

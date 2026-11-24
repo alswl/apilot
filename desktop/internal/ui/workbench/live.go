@@ -186,7 +186,7 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 					break
 				}
 				connections[i].PendingWrites = snapshot.PendingWrites
-				if isManagedConnector(connections[i].Kind) {
+				if connections[i].ParentConnectionID != "" {
 					connections[i].Attempts = snapshot.Attempts
 				}
 				if connections[i].ID == syncID {
@@ -200,7 +200,7 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 			result, err = connectorCall[connectorItems[common.WorkbenchConnectorOverview]](remote, "workbench.connector.connection.list", nil)
 			if err == nil {
 				parents = slices.DeleteFunc(result.Items, func(parent common.WorkbenchConnectorOverview) bool {
-					return parent.Connection.ConnectorID != managedGitHub && !(fixtureEnabled && parent.Connection.ConnectorID == managedFixture)
+					return parent.Connection.ConnectorID == managedFixture && !fixtureEnabled
 				})
 			}
 		}
@@ -413,7 +413,7 @@ func changedGitHubVisibility(before, after []common.WorkbenchSnapshot) map[strin
 	states := func(snapshots []common.WorkbenchSnapshot) map[string]visibility {
 		result := make(map[string]visibility)
 		for _, snapshot := range snapshots {
-			if snapshot.Kind == common.WorkbenchGitHubRepository || isManagedConnector(snapshot.Kind) {
+			if snapshot.Kind == common.WorkbenchGitHubRepository || snapshot.ParentConnectionID != "" {
 				result[snapshot.ID] = visibility{snapshot.Version, snapshot.AccessState, snapshot.AccountLogin}
 			}
 		}
@@ -498,7 +498,7 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 	sourceName, sourceID := m.taskViewSource()
 	visibleGitHub := make(map[string]bool)
 	for _, snapshot := range snapshots {
-		if snapshot.Kind != common.WorkbenchGitHubRepository && !isManagedConnector(snapshot.Kind) {
+		if snapshot.Kind != common.WorkbenchGitHubRepository && !m.isManagedConnector(snapshot.Kind) {
 			continue
 		}
 		previous := m.connectionByID(snapshot.ID)
@@ -508,14 +508,14 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 		}
 	}
 	for _, previous := range m.connectionsData {
-		if previous.SourceKind == common.WorkbenchGitHubRepository || isManagedConnector(previous.SourceKind) {
+		if previous.SourceKind == common.WorkbenchGitHubRepository || m.isManagedConnector(previous.SourceKind) {
 			if _, present := visibleGitHub[previous.ID]; !present {
 				m.clearGitHubTaskDrafts(previous.ID)
 			}
 		}
 	}
 	tasks = slices.DeleteFunc(tasks, func(task sourceObject) bool {
-		return (task.Kind == common.WorkbenchGitHubRepository || isManagedConnector(task.Kind)) && !visibleGitHub[task.ConnectionID]
+		return (task.Kind == common.WorkbenchGitHubRepository || m.isManagedConnector(task.Kind)) && !visibleGitHub[task.ConnectionID]
 	})
 	m.serverTaskOperations = make(map[string]common.WorkbenchTaskReceipt)
 	for _, snapshot := range snapshots {
@@ -535,7 +535,7 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 			visibleTasks[task.ID] = true
 		}
 		for _, task := range m.objects {
-			if m.pendingTaskEdits[task.ID] && ((task.Kind != common.WorkbenchGitHubRepository && !isManagedConnector(task.Kind)) || visibleTasks[task.ID]) {
+			if m.pendingTaskEdits[task.ID] && ((task.Kind != common.WorkbenchGitHubRepository && !m.isManagedConnector(task.Kind)) || visibleTasks[task.ID]) {
 				current[task.ID] = task
 			}
 		}
@@ -557,6 +557,18 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 		services.WorkbenchConnector{Kind: managedGitHub, Name: connectorLabel(managedGitHub), SearchAliases: []string{"github", "issues", "repo"}},
 		services.WorkbenchConnector{Kind: managedFixture, Name: connectorLabel(managedFixture)},
 	)
+	for _, plugin := range m.livePlugins {
+		if plugin.Release != nil && !slices.ContainsFunc(kinds, func(kind services.WorkbenchConnector) bool { return kind.Kind == plugin.Release.ConnectorID }) {
+			id := plugin.Release.ConnectorID
+			kinds = append(kinds, services.WorkbenchConnector{Kind: id, Name: connectorLabel(id)})
+		}
+	}
+	for _, parent := range m.connectorParents {
+		id := parent.Connection.ConnectorID
+		if !slices.ContainsFunc(kinds, func(kind services.WorkbenchConnector) bool { return kind.Kind == id }) {
+			kinds = append(kinds, services.WorkbenchConnector{Kind: id, Name: connectorLabel(id)})
+		}
+	}
 	for _, snapshot := range snapshots {
 		for _, kind := range kinds {
 			if kind.Kind != snapshot.Kind {
@@ -583,7 +595,7 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 					draft.Capabilities = "只读 · 回写被拒绝"
 				}
 			}
-			if isManagedConnector(snapshot.Kind) {
+			if m.isManagedConnector(snapshot.Kind) {
 				draft.Scope, draft.Repository, draft.Identity = snapshot.ScopeRef, snapshot.Name, snapshot.AccountLogin
 				draft.Writable = snapshot.Capabilities.Create
 				if snapshot.WriteEnabled {
@@ -633,7 +645,7 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 					draft.Status = "授权不可用"
 				}
 			}
-			if isManagedConnector(snapshot.Kind) {
+			if m.isManagedConnector(snapshot.Kind) {
 				switch snapshot.AccessState {
 				case "available":
 					if len(snapshot.Attempts) == 0 || snapshot.Attempts[0].State == "success" {

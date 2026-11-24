@@ -112,3 +112,47 @@ func saveConnectorRunForTest(store *Store, run common.WorkbenchSyncRun) error {
 	}
 	return tx.Commit()
 }
+
+func TestWorkbenchConnectorFailedSyncDoesNotPublishHidden(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	parent := common.WorkbenchConnectorConnection{ID: "parent", ConnectorID: "fixture", EndpointRef: "endpoint", AccountRef: "account"}
+	_, err = store.SaveWorkbenchConnectorConnection(parent, []common.WorkbenchConnectorNewScope{{ID: "scope", Label: "scope", Context: protocol.ScopeContext{ScopeRef: "scope", EndpointConfig: []byte("{}"), ScopeConfig: []byte("{}"), EndpointSchemaVersion: 1, ScopeSchemaVersion: 1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := common.WorkbenchConnectorRelease{ConnectorID: "fixture", ReleaseVersion: "0.1.0", ProtocolVersion: 1, PackageDigest: "hash"}
+	if err := store.RegisterWorkbenchPluginRelease("fixture", &release); err != nil {
+		t.Fatal(err)
+	}
+	scope, err := store.WorkbenchConnectorScope("scope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := store.RecordWorkbenchIfVersion(scope.Config, nil, nil, []common.WorkbenchTask{{ID: "task", ConnectionID: "scope", SourceKey: "1", Title: "Retained", State: "open"}}, &now, scope.SnapshotVersion); err != nil {
+		t.Fatal(err)
+	}
+	scope, err = store.WorkbenchConnectorScope("scope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := common.WorkbenchSyncRun{ID: "failed", ScopeID: "scope", Trigger: "manual", Mode: "full", Status: "running", StartedAt: now}
+	if _, err := store.StartWorkbenchConnectorRun(run); err != nil {
+		t.Fatal(err)
+	}
+	run.Status = "failed"
+	run.ErrorKind = "temporary"
+	run.FinishedAt = &now
+	commit := common.WorkbenchConnectorSyncCommit{Scope: scope, Run: run, Release: release, PluginID: "fixture", Hidden: map[string]bool{"1": true}}
+	if err := store.FinishWorkbenchConnectorFailure(commit); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := store.WorkbenchConnectorMembers("scope")
+	if err != nil || len(tasks) != 1 || tasks[0].Title != "Retained" {
+		t.Fatalf("tasks: %+v %v", tasks, err)
+	}
+}
