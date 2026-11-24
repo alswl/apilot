@@ -388,7 +388,8 @@ func (m *mockup) connectorConflictView(c *ui.Context, task sourceObject) {
 	}
 	components.Muted(c.Key("status"), tr("来源已变化，请重新核对任务"))
 	ui.Row(c.Key("actions")).FillWidth().Wrap().Gap(8).Children(func() {
-		working := m.pendingSync[task.ConnectionID]
+		refresh := m.connectorConflictRefresh
+		working := m.pendingSync[task.ConnectionID] || (refresh != nil && refresh.scopeID == task.ConnectionID)
 		if ui.Button(c.Key("keep"), tr("接受来源值")).Disabled(working).Clicked() {
 			m.resolveConnectorConflict(task, false)
 		}
@@ -438,10 +439,10 @@ func connectorRequiredFieldLabel(field protocol.FieldDefinition) string {
 	return field.Label
 }
 
-type connectorConflictRetry struct {
-	taskID, scopeID string
-	attemptID       int64
-	actionMode      bool
+type connectorConflictRefresh struct {
+	taskID, scopeID  string
+	attemptID        int64
+	edit, actionMode bool
 }
 
 func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
@@ -461,12 +462,14 @@ func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
 			m.liveTaskProblems[task.ID] = common.ProtocolError(err).Message
 			return
 		}
-		delete(m.liveTaskProblems, task.ID)
-		if edit {
-			m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, attemptID: result.AttemptID, actionMode: actionMode}
-		} else {
-			delete(m.connectorConflicts, task.ID)
-		}
+		m.trackConnectorConflictRefresh(task, result.AttemptID, edit, actionMode)
 		m.refreshLive()
 	})
+}
+
+func (m *mockup) trackConnectorConflictRefresh(task sourceObject, attemptID int64, edit, actionMode bool) {
+	delete(m.liveTaskProblems, task.ID)
+	m.connectorConflictRefresh = &connectorConflictRefresh{
+		taskID: task.ID, scopeID: task.ConnectionID, attemptID: attemptID, edit: edit, actionMode: actionMode,
+	}
 }

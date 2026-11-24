@@ -309,7 +309,7 @@ func TestConnector011DesktopRetriesConflictInOriginalEditor(t *testing.T) {
 		task := m.objects[0]
 		m.page, m.taskSelection = tasksPage, task.ID
 		started := time.Now()
-		m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, attemptID: 10, actionMode: actionMode}
+		m.connectorConflictRefresh = &connectorConflictRefresh{taskID: task.ID, scopeID: task.ConnectionID, attemptID: 10, edit: true, actionMode: actionMode}
 		if !actionMode {
 			task.TargetVersion = "refreshed"
 		}
@@ -318,7 +318,7 @@ func TestConnector011DesktopRetriesConflictInOriginalEditor(t *testing.T) {
 			ID: task.ConnectionID, Kind: managedGitHub, Name: "example/pay", WriteEnabled: true, AccessState: "available", Version: 1,
 		}}
 		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
-		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != task.TargetVersion || m.retryConnectorEdit != nil {
+		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != task.TargetVersion || m.connectorConflictRefresh != nil {
 			t.Fatalf("retry action mode %v: %+v", actionMode, editor)
 		}
 	}
@@ -368,6 +368,66 @@ func TestConnector011DesktopConflictButtonsVisibleInDefaultSplit(t *testing.T) {
 				t.Fatal("re-edit did not request a scope refresh")
 			}
 			englishUI.Store(old)
+		}
+	}
+}
+
+func TestConnector011DesktopAcceptSourceKeepsRecoveryUntilSyncSucceeds(t *testing.T) {
+	old := englishUI.Swap(false)
+	t.Cleanup(func() { englishUI.Store(old) })
+	for _, failFirst := range []bool{false, true} {
+		m := connectorUIFixture()
+		m.liveTaskProblems = map[string]string{}
+		task := m.objects[0]
+		m.page, m.taskSelection = tasksPage, task.ID
+		m.connectorConflicts = map[string]common.WorkbenchTaskReceipt{task.ID: {
+			Conflict: &common.WorkbenchFieldConflict{Action: "close", Current: map[string]protocol.FieldValue{
+				"state": protocol.Value(protocol.FieldText, "closed"),
+			}},
+		}}
+		snapshot := common.WorkbenchSnapshot{ParentConnectionID: "parent", WorkbenchConnection: common.WorkbenchConnection{
+			ID: task.ConnectionID, Kind: managedGitHub, Name: "example/pay", WriteEnabled: true, AccessState: "available", Version: 1,
+		}}
+		view := ui.NewTester(m.view, 680, 580)
+		click(t, view, "接受来源值")
+		if !m.pendingSync[task.ConnectionID] {
+			t.Fatal("accept source did not request a refresh")
+		}
+		started := time.Now()
+		finished := started.Add(time.Second)
+		attempt := common.WorkbenchAttempt{ID: 10, Started: started, State: "running"}
+		m.trackConnectorConflictRefresh(task, attempt.ID, false, true)
+		snapshot.Attempts = []common.WorkbenchAttempt{attempt}
+		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+		if m.connectorConflicts[task.ID].Conflict == nil {
+			t.Fatal("accepted refresh prematurely cleared conflict")
+		}
+		if failFirst {
+			attempt.State, attempt.Finished, attempt.Error = "failed", &finished, "temporary"
+			snapshot.Attempts[0] = attempt
+			m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+			if m.connectorConflictRefresh != nil || m.connectorConflicts[task.ID].Conflict == nil ||
+				m.liveTaskProblems[task.ID] != "同步失败" || m.objects[0].State != "open" {
+				t.Fatal("failed refresh lost recovery or changed confirmed state")
+			}
+			view = ui.NewTester(m.view, 680, 580)
+			if !view.HasText("同步失败") || !view.HasText("重新编辑") {
+				t.Fatalf("failed refresh omitted recovery feedback: %v", view.Texts())
+			}
+			click(t, view, "接受来源值")
+			if !m.pendingSync[task.ConnectionID] {
+				t.Fatal("the same button did not retry the refresh")
+			}
+			attempt.ID++
+			m.trackConnectorConflictRefresh(task, attempt.ID, false, true)
+		}
+		attempt.State, attempt.Finished, attempt.Error = "success", &finished, ""
+		snapshot.Attempts[0] = attempt
+		task.State, task.TargetVersion = "done", "closed-version"
+		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
+		if m.connectorConflictRefresh != nil || m.connectorConflicts[task.ID].Conflict != nil ||
+			m.liveTaskProblems[task.ID] != "" || m.connectorEditor011 != nil || m.objects[0].State != "done" {
+			t.Fatal("successful refresh did not settle Keep source value")
 		}
 	}
 }

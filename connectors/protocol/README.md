@@ -296,3 +296,22 @@ go -C desktop test ./internal/ui/workbench -count=1 -run '^TestConnector011Deskt
 make check-openapi check-workbench check-format
 make app
 ```
+
+### Retry Keep source value after a failed refresh
+
+In the local GitHub fixture, change the source state while the Workbench
+still has the old version and submit the old action to show a conflict.
+Make the next read return HTTP 503 and click **Keep source value**. After
+the sync reaches `failed / temporary`, the last confirmed task value,
+conflict and both recovery buttons remain visible. Restore the source
+and click **Keep source value** again. The successful refresh displays
+the source value and dismisses the conflict. Neither click writes upstream.
+
+The focused headless check exercises accepted, running, failed and
+successful refresh snapshots in the default split:
+
+```sh
+go -C desktop test ./internal/ui/workbench -count=1 -run '^TestConnector011Desktop(AcceptSourceKeepsRecoveryUntilSyncSucceeds|RetriesConflictInOriginalEditor|ConflictButtonsVisibleInDefaultSplit)$'
+make check-workbench check-format
+make app
+```
