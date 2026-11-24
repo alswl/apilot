@@ -64,9 +64,11 @@ func (m *mockup) connections(c *ui.Context) {
 						m.openConnectorLogin(id, "")
 					}
 				}
-				return
 			}
 			for _, connector := range services.WorkbenchConnectors() {
+				if m.connectorDesktop() && connector.Kind != common.WorkbenchObsidianTasks {
+					continue
+				}
 				if connector.UserConfigurable && menu.Item(connector.Name).Chosen() {
 					m.addConnector(connector.Kind)
 				}
