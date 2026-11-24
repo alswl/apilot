@@ -47,7 +47,14 @@ func (m *mockup) visibleConnectorKind(kind string) bool {
 	if !m.connectorDesktop() {
 		return true
 	}
-	return kind == managedGitHub || kind == common.WorkbenchLocal || kind == common.WorkbenchGitHubRepository || (kind == managedFixture && m.fixtureConnector)
+	switch kind {
+	case managedGitHub, common.WorkbenchLocal, common.WorkbenchGitHubRepository, common.WorkbenchObsidianTasks:
+		return true
+	case managedFixture:
+		return m.fixtureConnector
+	default:
+		return false
+	}
 }
 
 func isManagedConnector(kind string) bool { return kind == managedGitHub || kind == managedFixture }
@@ -522,6 +529,8 @@ func connectorLabel(id string) string {
 		return tr("本地测试来源")
 	case common.WorkbenchLocal:
 		return "Local Tasks"
+	case common.WorkbenchObsidianTasks:
+		return "Obsidian Tasks"
 	default:
 		return id
 	}

@@ -34,13 +34,13 @@ func connectorUIFixture() *mockup {
 		{WorkbenchConnection: common.WorkbenchConnection{ID: "local", Kind: common.WorkbenchLocal, Name: "Local Tasks"}, Capabilities: common.WorkbenchCapabilities{Create: true}},
 		{ParentConnectionID: "parent", ScopeRef: "123", WorkbenchConnection: common.WorkbenchConnection{ID: "pay", Kind: managedGitHub, Name: "example/pay", WriteEnabled: true, AccountLogin: "alex", AccessState: "available", Version: 1}, Capabilities: common.WorkbenchCapabilities{Create: true}},
 		{ParentConnectionID: "parent", ScopeRef: "456", WorkbenchConnection: common.WorkbenchConnection{ID: "ops", Kind: managedGitHub, Name: "example/ops", AccountLogin: "alex", AccessState: "available", Version: 1}},
-		{WorkbenchConnection: common.WorkbenchConnection{ID: "obsidian", Kind: common.WorkbenchObsidianTasks, Name: "Hidden vault"}},
+		{WorkbenchConnection: common.WorkbenchConnection{ID: "obsidian", Kind: common.WorkbenchObsidianTasks, Name: "Work vault"}},
 		{ParentConnectionID: "fixture-parent", WorkbenchConnection: common.WorkbenchConnection{ID: "fixture", Kind: managedFixture, Name: "Hidden fixture", AccessState: "available"}},
 	}, []sourceObject{
 		{ID: "pay1", Kind: managedGitHub, ConnectionID: "pay", NativeID: "42", Title: "Confirm payment exports", State: "open", DueDate: "2026-12-15", Priority: &priority, Assignees: []string{"Alice"}, TargetVersion: "v1"},
 		{ID: "ops1", Kind: managedGitHub, ConnectionID: "ops", NativeID: "42", Title: "Check deployment window", State: "open", TargetVersion: "v1"},
 		{ID: "local1", Kind: common.WorkbenchLocal, ConnectionID: "local", Title: "Prepare review", State: "open", TargetVersion: "v1"},
-		{ID: "hidden1", Kind: common.WorkbenchObsidianTasks, ConnectionID: "obsidian", Title: "Hidden vault task"},
+		{ID: "vault1", Kind: common.WorkbenchObsidianTasks, ConnectionID: "obsidian", Title: "Review vault task"},
 		{ID: "hidden2", Kind: managedFixture, ConnectionID: "fixture", Title: "Hidden fixture task"},
 	})
 	return m
@@ -50,9 +50,14 @@ func TestConnector011DesktopScopeNavigationAndVisibility(t *testing.T) {
 	previous := englishUI.Swap(false)
 	t.Cleanup(func() { englishUI.Store(previous) })
 	m := connectorUIFixture()
-	if len(m.connectionsData) != 3 || len(m.objects) != 3 {
+	if len(m.connectionsData) != 4 || len(m.objects) != 4 {
 		t.Fatalf("production sources: %d / %d", len(m.connectionsData), len(m.objects))
 	}
+	m.search = "source:obsidian"
+	if rows := m.taskRows(); len(rows) != 1 || m.objects[rows[0]].ID != "vault1" {
+		t.Fatalf("Obsidian task filter: %v", rows)
+	}
+	m.search = ""
 	if allowLocalConnectorFixture("/tmp/Apilot.app/Contents/MacOS/Apilot", "/tmp/fixture.json") ||
 		!allowLocalConnectorFixture("/tmp/apilot-app", "/tmp/fixture.json") ||
 		allowLocalConnectorFixture("/tmp/apilot-app", "") {
@@ -63,7 +68,7 @@ func TestConnector011DesktopScopeNavigationAndVisibility(t *testing.T) {
 	}
 	m.page = connectionsPage
 	view := ui.NewTester(m.view, 1190, 730)
-	if !view.HasText("alex") || !view.HasText("example/pay") || !view.HasText("example/ops") || view.HasText("Hidden fixture") {
+	if !view.HasText("alex") || !view.HasText("example/pay") || !view.HasText("example/ops") || !view.HasText("Work vault") || view.HasText("Hidden fixture") {
 		t.Fatalf("scope list: %v", view.Texts())
 	}
 	click(t, view, "查看任务")
@@ -73,6 +78,28 @@ func TestConnector011DesktopScopeNavigationAndVisibility(t *testing.T) {
 	m.search = "assignee:Alice"
 	if len(m.taskRows()) != 1 {
 		t.Fatal("projected assignee filter lost the task")
+	}
+}
+
+func TestConnector011DesktopAddsObsidianConnection(t *testing.T) {
+	previous := englishUI.Load()
+	t.Cleanup(func() { englishUI.Store(previous) })
+	for _, en := range []bool{false, true} {
+		englishUI.Store(en)
+		m := connectorUIFixture()
+		m.page = connectionsPage
+		view := ui.NewTester(m.view, 680, 580)
+		click(t, view, tr("添加连接"))
+		if err := view.ChooseMenuItem("Obsidian Tasks"); err != nil {
+			t.Fatalf("Obsidian Tasks missing from add menu: %v", view.Menu())
+		}
+		if !view.HasText(tr("Vault 路径")) || m.connectorEditor == nil || m.connectorEditor.SourceKind != common.WorkbenchObsidianTasks {
+			t.Fatal("the Obsidian connection should open the vault settings")
+		}
+		view.Key(0, ui.KeyEscape)
+		if m.connectorEditor != nil || m.page != connectionsPage {
+			t.Fatal("Escape should return to connections")
+		}
 	}
 }
 
