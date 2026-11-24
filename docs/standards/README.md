@@ -15,7 +15,8 @@ The copies preserve upstream wording and attribution. Links to editions or demos
 | Business rules | Commands call services; server adapters call the Application Service. Services depend on a constructor-injected storage interface; DAL owns SQL. Files are grouped by entity within each layer. |
 | UI | MyGo rendering and platform callbacks stay in UI; drafts/state projections must not depend on MyGo. |
 | Desktop layout | Keep UI and `mygo.json` under the `desktop/` Go module, and service/CLI packages under the `core/` Go module; use MyGo `resources/<goos>-<goarch>/` overlays for target executables. Brand masters live in `design/`, platform distribution in `packaging/<goos>/`. OS syscalls stay in platform adapters, outside business rules. |
-| Storage/configuration | Existing SQLite migrations, macOS data paths and environment patches; no ORM, HTTP server or Viper migration. |
+| HTTP API paths | Versioned business routes use `/v{version}/{module}/{resource}`. The module segment follows business ownership, for example `/v1/workbench/tasks`. |
+| Storage/configuration | Existing SQLite migrations, macOS data paths and environment patches; no ORM, HTTP server or Viper migration. Use the [Apilot database standard](database.md) for table naming and schema ownership. |
 | Tests/checks | Standard Go tests, race, formatting and vet. No additional assertion/lint dependency is required. |
 | Version | `pkg/common.Version` and `mygo.json` must agree; packaging verifies actual binaries. |
 | Automation | Existing noninteractive CLI contract takes precedence over generic confirmation examples. |
