@@ -59,12 +59,12 @@ func showWorkbench(method string, params any) error {
 	}
 }
 
-func workbenchJSONFile(cmd *cobra.Command, method, path string) error {
+func readWorkbenchJSON(cmd *cobra.Command, path string) (json.RawMessage, error) {
 	reader := cmd.InOrStdin()
 	if path != "-" {
 		file, err := os.Open(path)
 		if err != nil {
-			return common.Err("INVALID_ARGUMENT", "Could not open JSON input")
+			return nil, common.Err("INVALID_ARGUMENT", "Could not open JSON input")
 		}
 		defer file.Close()
 		reader = file
@@ -72,7 +72,15 @@ func workbenchJSONFile(cmd *cobra.Command, method, path string) error {
 	const maxInput = 1024*1024 - 4096
 	data, err := io.ReadAll(io.LimitReader(reader, maxInput+1))
 	if err != nil || len(data) > maxInput || !json.Valid(data) {
-		return common.Err("INVALID_ARGUMENT", "Expected valid JSON below the IPC request limit")
+		return nil, common.Err("INVALID_ARGUMENT", "Expected valid JSON below the IPC request limit")
 	}
-	return showWorkbench(method, json.RawMessage(data))
+	return json.RawMessage(data), nil
+}
+
+func workbenchJSONFile(cmd *cobra.Command, method, path string) error {
+	data, err := readWorkbenchJSON(cmd, path)
+	if err != nil {
+		return err
+	}
+	return showWorkbench(method, data)
 }

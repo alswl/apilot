@@ -57,8 +57,8 @@ c['macos'].setdefault('infoPlist', {}).update({
 })
 p.write_text(json.dumps(c, indent=2) + '\n')
 PY
-# MyGo signs nested executables, enables hardened runtime/timestamps, builds
-# the DMG, submits it once, and staples the DMG and original App bundle.
+# MyGo builds the signed App. The packaging step signs the Connector and
+# seals the manifest into the App before building and submitting the DMG.
 make app MYGO_BUILD_FLAGS=
 xcrun stapler validate build/darwin-arm64/Apilot.app
 version=$(python3 -c 'import json; print(json.load(open("desktop/mygo.json"))["version"])')

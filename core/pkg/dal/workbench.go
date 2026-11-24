@@ -11,7 +11,7 @@ import (
 func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 	// Read GitHub authorization with the same SQLite snapshot as its configuration and attempts.
 	rows, err := s.db.Query(`SELECT c.config,c.last_success,c.attempts,c.snapshot_version,
-		g.account_id,g.account_login,g.access_state,g.write_denied
+		g.account_id,g.account_login,g.access_state,g.write_denied,c.connector_connection_id,c.scope_ref,c.access_state
 		FROM workbench_connections c LEFT JOIN workbench_github_connections g ON g.connection_id=c.id
 		ORDER BY c.id`)
 	if err != nil {
@@ -21,15 +21,19 @@ func (s *Store) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 	out := []common.WorkbenchSnapshot{}
 	for rows.Next() {
 		var config, attempts string
-		var success, accountLogin, accessState sql.NullString
+		var success, accountLogin, accessState, parentID, scopeRef sql.NullString
+		var scopeAccess string
 		var accountID sql.NullInt64
 		var writeDenied sql.NullBool
 		var snapshot common.WorkbenchSnapshot
-		if err := rows.Scan(&config, &success, &attempts, &snapshot.SnapshotVersion, &accountID, &accountLogin, &accessState, &writeDenied); err != nil {
+		if err := rows.Scan(&config, &success, &attempts, &snapshot.SnapshotVersion, &accountID, &accountLogin, &accessState, &writeDenied, &parentID, &scopeRef, &scopeAccess); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal([]byte(config), &snapshot.WorkbenchConnection); err != nil {
 			return nil, err
+		}
+		if parentID.Valid {
+			snapshot.ParentConnectionID, snapshot.ScopeRef, snapshot.AccessState = parentID.String, scopeRef.String, scopeAccess
 		}
 		if snapshot.Kind == common.WorkbenchGitHubRepository {
 			if !accountID.Valid {
@@ -238,6 +242,12 @@ func formatWorkbenchTime(t *time.Time) any {
 	return t.Format(time.RFC3339Nano)
 }
 
+const workbenchObjectVisible = `NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=workbench_objects.connection_id AND g.access_state<>'available')
+ AND state<>'connector_hidden'
+ AND NOT EXISTS (SELECT 1 FROM workbench_connections c
+ JOIN workbench_connector_connections p ON p.id=c.connector_connection_id
+ WHERE c.id=workbench_objects.connection_id AND (c.access_state<>'available' OR p.auth_state<>'authorized'))`
+
 func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, error) {
 	tx, err := s.db.Begin()
 	page := common.WorkbenchPage{Items: []common.WorkbenchTask{}}
@@ -251,12 +261,36 @@ func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, er
 	if q.Revision != 0 && page.Revision != q.Revision {
 		return page, common.Err("STALE_REVISION", "Task list changed")
 	}
-	filter := " WHERE NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=workbench_objects.connection_id AND g.access_state<>'available') AND (?='' OR connection_id=?) AND (?='' OR state=?) AND (?='' OR EXISTS (SELECT 1 FROM workbench_task_labels WHERE task_id=workbench_objects.id AND label_id=?))"
-	args := []any{q.Connection, q.Connection, q.State, q.State, q.LabelID, q.LabelID}
+	scope := q.Connection
+	if q.ScopeID != "" {
+		scope = q.ScopeID
+	}
+	filter := ` WHERE ` + workbenchObjectVisible + ` AND (?='' OR connection_id=?) AND (?='' OR state=?)
+		AND (?='' OR source_kind=?) AND (? IS NULL OR priority=?)
+		AND (?='' OR due_date>=?) AND (?='' OR due_date<=?)
+		AND (?='' OR EXISTS(SELECT 1 FROM json_each(payload,'$.assignees') a WHERE a.value=? COLLATE NOCASE))
+		AND (?='' OR EXISTS (SELECT 1 FROM workbench_task_labels WHERE task_id=workbench_objects.id AND label_id=?))`
+	args := []any{scope, scope, q.State, q.State, q.Source, q.Source, q.Priority, q.Priority,
+		q.DueAfter, q.DueAfter, q.DueBefore, q.DueBefore, q.Assignee, q.Assignee, q.LabelID, q.LabelID}
 	if err := tx.QueryRow("SELECT COUNT(*) FROM workbench_objects"+filter, args...).Scan(&page.Total); err != nil {
 		return page, err
 	}
-	rows, err := tx.Query("SELECT source_key,payload FROM workbench_objects"+filter+" ORDER BY title COLLATE NOCASE,id LIMIT ? OFFSET ?", append(args, q.Limit, q.Offset)...)
+	column := "title COLLATE NOCASE"
+	switch q.Sort {
+	case "priority":
+		column = "priority"
+	case "due_date":
+		column = "due_date"
+	case "state":
+		column = "state"
+	case "assignee":
+		column = "json_extract(payload,'$.assignees[0]') COLLATE NOCASE"
+	}
+	direction := " ASC"
+	if q.Descending {
+		direction = " DESC"
+	}
+	rows, err := tx.Query("SELECT source_key,payload FROM workbench_objects"+filter+" ORDER BY ("+column+") IS NULL,"+column+direction+",id LIMIT ? OFFSET ?", append(args, q.Limit, q.Offset)...)
 	if err != nil {
 		return page, err
 	}
@@ -289,7 +323,7 @@ func (s *Store) WorkbenchPage(q common.WorkbenchQuery) (common.WorkbenchPage, er
 }
 
 func (s *Store) WorkbenchObject(id string) (common.WorkbenchTask, error) {
-	task, err := scanWorkbench(s.db.QueryRow("SELECT source_key,payload FROM workbench_objects WHERE id=? AND NOT EXISTS (SELECT 1 FROM workbench_github_connections g WHERE g.connection_id=workbench_objects.connection_id AND g.access_state<>'available')", id))
+	task, err := scanWorkbench(s.db.QueryRow("SELECT source_key,payload FROM workbench_objects WHERE id=? AND "+workbenchObjectVisible, id))
 	if err == sql.ErrNoRows {
 		return task, common.Err("NOT_FOUND", "Unknown workbench task")
 	}

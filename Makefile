@@ -2,7 +2,7 @@ include hack/project.mk
 .DEFAULT_GOAL := build
 include hack/makefile-go/general.mk
 
-.PHONY: generate-openapi build cli download clean check check-format fmt vet check-version check-architecture check-docs check-workbench check-openapi check-portable check-app-platform lint test test-core race race-core race-ui app icons verify-ui verify-lifecycle verify verify-app-path
+.PHONY: test-connectors generate-openapi build cli download clean check check-format fmt vet check-version check-architecture check-docs check-workbench check-openapi check-portable check-app-platform lint test test-core race race-core race-ui app icons verify-ui verify-lifecycle verify verify-app-path
 .NOTPARALLEL: verify race
 
 ##@ Checks
@@ -46,6 +46,10 @@ TEST_FLAGS ?=
 test: ## Run all Go tests
 	go -C core test $(TEST_FLAGS) ./...
 	go -C desktop test $(TEST_FLAGS) ./...
+test-connectors: ## Test independent Connector modules
+	go -C connectors/protocol test $(TEST_FLAGS) ./...
+	go -C connectors/github-issues test $(TEST_FLAGS) ./...
+
 test-core: ## Run logic and real-resource integration tests without MyGo
 	go -C core test $(TEST_FLAGS) ./...
 race-core: ## Run logic tests with race detection
@@ -74,9 +78,11 @@ clean: ## Remove generated binaries only
 MYGO_BUILD_FLAGS ?= -skip-notarize
 check-app-platform:
 	@test "$(GOOS)" = darwin && test "$$(go env GOHOSTOS)" = darwin && test "$(GOARCH)" = "$$(go env GOHOSTARCH)" || { echo 'App packaging currently requires native macOS; other platforms need runtime adapters and acceptance.' >&2; exit 1; }
-app: check-app-platform cli ## Build ad-hoc native macOS App and DMG
+app: check-app-platform cli ## Build native macOS App and DMG
+	go -C connectors/github-issues build -tags= -o ../../bin/apilot-github-issues ./cmd/apilot-github-issues
 	python3 scripts/prepare-resources.py --os $(GOOS) --arch $(GOARCH)
-	cd desktop && go tool mygo build -platform $(GOOS)/$(GOARCH) $(MYGO_BUILD_FLAGS)
+	cd desktop && go tool mygo build -platform $(GOOS)/$(GOARCH) -skip-dmg -skip-notarize $(filter-out -skip-dmg -skip-notarize,$(MYGO_BUILD_FLAGS))
+	python3 packaging/darwin/finalize-connectors.py build/$(GOOS)-$(GOARCH)/Apilot.app --arch $(GOARCH) $(addprefix -,$(filter -skip-dmg -skip-notarize,$(MYGO_BUILD_FLAGS)))
 	python3 scripts/verify-built-app.py --record
 icons: ## Render committed brand masters
 	mkdir -p tmp

@@ -393,7 +393,9 @@ func (s *Service) scheduleWorkbenchOperation(requestID string) {
 				return
 			}
 			var err error
-			if connection.Kind == common.WorkbenchGitHubRepository {
+			if op.Binding != nil && op.Binding.Connector != nil {
+				_, err = s.runConnectorOperation(ctx, op, false)
+			} else if connection.Kind == common.WorkbenchGitHubRepository {
 				_, err = s.executeGitHubTaskOperation(ctx, requestID)
 			} else {
 				_, err = s.executeObsidianTaskOperation(ctx, requestID)

@@ -165,7 +165,7 @@ func (m *mockup) createTask(title string) {
 		}
 		if m.live != nil || m.devTask != nil {
 			request := common.WorkbenchTaskWrite{Title: title, ConnectionID: conn.ID, ConnectionVersion: conn.Version}
-			if conn.SourceKind == common.WorkbenchGitHubRepository {
+			if conn.SourceKind == common.WorkbenchGitHubRepository || conn.SourceKind == managedGitHub {
 				request.Body = m.newTaskBody
 			}
 			if conn.SourceKind == obsidianTasks {
@@ -281,7 +281,7 @@ func (m *mockup) newTaskDestinationFields(c *ui.Context) bool {
 			m.loadNewTaskNotes(d)
 		}
 	}
-	if connection.SourceKind == common.WorkbenchGitHubRepository {
+	if connection.SourceKind == common.WorkbenchGitHubRepository || connection.SourceKind == managedGitHub {
 		ui.Field(c.Key("body-field"), tr("描述"), func() {
 			ui.TextInput(c.Key("body"), &m.newTaskBody).Label(tr("描述")).FillWidth()
 		})

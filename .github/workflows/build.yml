@@ -107,6 +107,7 @@ jobs:
         if: steps.changes.outputs.full == 'true'
         run: |
           make race
+          make test-connectors TEST_FLAGS=-race
           go -C desktop test -tags apilot_mockup ./cmd/apilot-mockup
       - name: Build development App and DMG
         if: steps.changes.outputs.full == 'true' && steps.signing.outputs.enabled != 'true'

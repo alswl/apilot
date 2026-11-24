@@ -34,6 +34,10 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/workbench/task-operations" {
+			fmt.Fprint(w, `{"request_id":"item","sync_state":"conflict","conflict":{"action":"close","current":{"state":{"type":"text","value":"closed"}}}}`)
+			return
+		}
 		fmt.Fprint(w, `{}`)
 	})}
 	go func() { _ = fixture.Serve(listener) }()
@@ -53,6 +57,25 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 		{"runWorkbenchSync", "POST", "/v1/workbench/connections/item/sync", "sync run item", ``},
 		{"cancelWorkbenchSync", "POST", "/v1/workbench/connections/item/sync/1/cancel", "sync cancel item 1", ``},
 		{"listWorkbenchConnectors", "GET", "/v1/workbench/connectors", "connector list", ``},
+		{"startWorkbenchConnectorAuthorization", "POST", "/v1/workbench/connector-authorizations", "connector login fixture", ``},
+		{"getWorkbenchConnectorAuthorization", "GET", "/v1/workbench/connector-authorizations/item", "connector auth-status item", ``},
+		{"cancelWorkbenchConnectorAuthorization", "DELETE", "/v1/workbench/connector-authorizations/item", "connector cancel-login item", ``},
+		{"listWorkbenchConnectorOptions", "GET", "/v1/workbench/connectors/fixture/options", "connector options fixture --authorization item --field project", ``},
+		{"listWorkbenchConnectorConnections", "GET", "/v1/workbench/connector-connections", "connector connection list", ``},
+		{"saveWorkbenchConnectorConnection", "PUT", "/v1/workbench/connector-connections", "connector connection save -", `{"authorization_id":"item","endpoint_schema_version":1,"scope_schema_version":1,"scopes":[{"config":{"project":"PAY"}}]}`},
+		{"getWorkbenchConnectorConnection", "GET", "/v1/workbench/connector-connections/item", "connector connection show item", ``},
+		{"removeWorkbenchConnectorConnection", "DELETE", "/v1/workbench/connector-connections/item", "connector connection remove item", ``},
+		{"syncWorkbenchConnectorConnection", "POST", "/v1/workbench/connector-connections/item/sync", "connector connection sync item --full", ``},
+		{"getWorkbenchTaskDetail", "GET", "/v1/workbench/tasks/item/detail", "task detail item", ``},
+		{"getWorkbenchTaskEditMetadata", "GET", "/v1/workbench/tasks/item/edit-metadata", "task edit-metadata item", ``},
+		{"getWorkbenchScopeEditMetadata", "GET", "/v1/workbench/connections/item/edit-metadata", "connection edit-metadata item", ``},
+		{"getWorkbenchScopeFields", "GET", "/v1/workbench/connections/item/fields", "connection fields item", ``},
+		{"getWorkbenchScopeMapping", "GET", "/v1/workbench/connections/item/mapping", "connection mapping show item", ``},
+		{"previewWorkbenchScopeMapping", "POST", "/v1/workbench/connections/item/mapping/preview", "connection mapping preview item -", `{"revision":0}`},
+		{"saveWorkbenchScopeMapping", "PUT", "/v1/workbench/connections/item/mapping", "connection mapping save item -", `{"revision":0}`},
+		{"listWorkbenchSyncRuns", "GET", "/v1/workbench/sync-runs", "sync list --scope item", ``},
+		{"getWorkbenchSyncRun", "GET", "/v1/workbench/sync-runs/item", "sync inspect item", ``},
+		{"listWorkbenchSyncUsage", "GET", "/v1/workbench/sync-usage", "sync usage --scope item", ``},
 		{"watchWorkbenchEvents", "GET", "/v1/workbench/events", "watch --once", ``},
 		{"startGitHubAuthorization", "POST", "/v1/workbench/github-authorizations", "github authorization start", ``},
 		{"cancelGitHubAuthorization", "DELETE", "/v1/workbench/github-authorizations/item", "github authorization cancel item", ``},
@@ -91,6 +114,13 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 			args := append([]string{"--json", "workbench"}, strings.Fields(tc.command)...)
 			if code := execute(args, &out, &errs); code != 0 || !bytes.Contains(out.Bytes(), []byte(`"data"`)) {
 				t.Fatalf("success: exit=%d out=%s err=%s", code, &out, &errs)
+			}
+			if tc.operation == "submitWorkbenchTaskOperation" {
+				for _, field := range []string{`"sync_state":"conflict"`, `"action":"close"`, `"value":"closed"`} {
+					if !bytes.Contains(out.Bytes(), []byte(field)) {
+						t.Fatalf("CLI omitted conflict field %s: %s", field, &out)
+					}
+				}
 			}
 			select {
 			case got := <-requests:

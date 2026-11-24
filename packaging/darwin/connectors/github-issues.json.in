@@ -1,0 +1,10 @@
+{
+  "manifest_version": 1,
+  "connector_id": "github-issues",
+  "release_version": "0.1.0",
+  "protocol_versions": [1],
+  "os": "darwin",
+  "arch": "@ARCH@",
+  "entrypoint": "apilot-github-issues",
+  "entrypoint_sha256": "@ENTRYPOINT_SHA256@"
+}

@@ -12,11 +12,12 @@ fi
 test -d "$app_path"
 test -x bin/apilot
 codesign --verify --deep --strict "$app_path"
+python3 scripts/verify-bundled-connectors.py "$app_path" --arch arm64
 lipo "$app_path/Contents/Resources/bin/apilot" -verify_arch arm64
 "$app_path/Contents/Resources/bin/apilot" version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("desktop/mygo.json").read_text())["version"], "Bundled CLI version must match App"'
 ./bin/apilot version --json | python3 -c 'import json,sys; from pathlib import Path; assert json.load(sys.stdin)["data"]["app_version"] == json.loads(Path("desktop/mygo.json").read_text())["version"], "CLI and App versions must match"'
 mkdir -p "$output_dir"
-# MyGo builds the drag-to-Applications image together with the App.
+# Package the image generated from the sealed App.
 version=$(python3 -c 'import json; print(json.load(open("desktop/mygo.json"))["version"])')
 dmg_path="build/darwin-arm64/apilot-$version-arm64.dmg"
 hdiutil verify "$dmg_path"
@@ -56,6 +57,7 @@ verify_dir=$(mktemp -d)
 trap 'rm -rf "$verify_dir"' EXIT HUP INT TERM
 ditto -x -k "$output_dir/apilot-macos-arm64.zip" "$verify_dir"
 codesign --verify --deep --strict "$verify_dir/Apilot.app"
+python3 scripts/verify-bundled-connectors.py "$verify_dir/Apilot.app" --arch arm64
 tar -xzf "$output_dir/apilot-cli-macos-arm64.tar.gz" -C "$verify_dir"
 test -x "$verify_dir/apilot"
 "$verify_dir/apilot" version --json > /dev/null

@@ -45,6 +45,23 @@ var workbenchGitHubPollSchema string
 //go:embed migrations/011_workbench_github_rate.sql
 var workbenchGitHubRateSchema string
 
+//go:embed migrations/012_workbench_connector_sync.sql
+var workbenchConnectorSyncSchema string
+
+//go:embed migrations/013_workbench_task_projection.sql
+var workbenchTaskProjectionSchema string
+
+//go:embed migrations/014_workbench_task_detail_cache.sql
+var workbenchTaskDetailsSchema string
+
+//go:embed migrations/015_workbench_sync_retry_bucket.sql
+var workbenchSyncRetryBucketSchema string
+
+//go:embed migrations/016_workbench_connector_endpoint_config.sql
+var workbenchConnectorEndpointConfigSchema string
+
+var migrations = []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema, workbenchConnectorSyncSchema, workbenchTaskProjectionSchema, workbenchTaskDetailsSchema, workbenchSyncRetryBucketSchema, workbenchConnectorEndpointConfigSchema}
+
 type Store struct{ db *sql.DB }
 
 func sqliteURL(path, query string) string {
@@ -53,6 +70,10 @@ func sqliteURL(path, query string) string {
 }
 
 func Open(path string) (*Store, error) {
+	return openAtSchema(path, len(migrations))
+}
+
+func openAtSchema(path string, latest int) (*Store, error) {
 	if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
 		return nil, e
 	}
@@ -72,11 +93,11 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, e
 	}
-	if version > 11 {
+	if version > latest {
 		db.Close()
-		return nil, fmt.Errorf("database schema %d is newer than supported 11", version)
+		return nil, fmt.Errorf("database schema %d is newer than supported %d", version, latest)
 	}
-	for index, migration := range []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema} {
+	for index, migration := range migrations[:latest] {
 		next := index + 1
 		if next <= version {
 			continue

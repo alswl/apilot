@@ -69,16 +69,19 @@ no credentials in Go caches.
 The existing standard macOS job does the signing, with a 15-minute step limit;
 there is no second native build or per-PR notarization.
 
-`packaging/darwin/sign-release.sh` creates a temporary keychain, imports the certificate,
-stores notarytool credentials there, and invokes MyGo's existing signing and
-notarization support. MyGo signs nested CLI code and the App with hardened runtime
-and timestamps, signs the DMG, submits it once to Apple, and staples the DMG and
-the original App. The standalone CLI archive uses that same signed CLI, which
-Apple scanned inside the submitted DMG; standalone executables cannot have a
-stapled ticket. App ZIP comes from the stapled original bundle. The DMG's embedded
-App is covered by the notarized, stapled image. The script validates both tickets
-and the App's Gatekeeper assessment before packaging. It restores the keychain
-search list and packaging config and removes temporary credentials on exit.
+`packaging/darwin/sign-release.sh` imports the certificate and stores notarytool
+credentials in a temporary keychain. MyGo builds the App and signs its bundled
+CLI. The packaging step signs the GitHub Issues helper in
+`Contents/Helpers/connectors`, writes its manifest in
+`Contents/Resources/connectors` using the signed helper's SHA-256, and seals the
+App. The bundle inventory permits only GitHub Issues in those directories.
+
+The packaging step builds and signs the DMG, submits it once to Apple, and
+staples the image and original App. The standalone CLI archive uses the signed
+CLI inside that image. The App ZIP uses the stapled original bundle. Verification
+checks the bundle and helper signatures, the Connector manifest and the image.
+The release script restores the keychain search list and packaging config on
+exit.
 
 Published downloads are Developer ID signed and notarized when their
 `build-info.json` reports `signing: developer-id` and `notarized: true`.

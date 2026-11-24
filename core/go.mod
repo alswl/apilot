@@ -3,6 +3,7 @@ module github.com/alswl/apilot/core
 go 1.27.3
 
 require (
+	github.com/alswl/apilot/connectors/protocol v0.0.0
 	github.com/danielgtaylor/huma/v2 v2.41.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.5.0
@@ -38,3 +39,5 @@ require (
 )
 
 tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
+
+replace github.com/alswl/apilot/connectors/protocol => ../connectors/protocol

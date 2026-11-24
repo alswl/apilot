@@ -16,10 +16,14 @@ type Remote struct{ socket string }
 func NewRemote(socket string) *Remote { return &Remote{socket: socket} }
 func (r *Remote) Call(method string, params any) (json.RawMessage, error) {
 	if strings.HasPrefix(method, "workbench.") {
-		socket := filepath.Join(filepath.Dir(r.socket), "http.sock")
-		return integrations.CallWorkbenchHTTP(socket, method, params)
+		return r.CallWorkbench(context.Background(), method, params)
 	}
 	return integrations.Call(r.socket, method, params)
+}
+
+func (r *Remote) CallWorkbench(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	socket := filepath.Join(filepath.Dir(r.socket), "http.sock")
+	return integrations.CallWorkbenchHTTPContext(ctx, socket, method, params)
 }
 
 func (r *Remote) WatchWorkbenchEvents(ctx context.Context, receive func(common.WorkbenchEvent) error) error {

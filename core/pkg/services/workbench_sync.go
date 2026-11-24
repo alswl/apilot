@@ -45,6 +45,12 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 		return nil, err
 	}
 	for i := range connections {
+		if connections[i].ParentConnectionID != "" {
+			_, err := s.managedConnector(connections[i].Kind)
+			connections[i].PluginDisabled = err != nil
+			connections[i].Capabilities = s.workbenchConnectionCapabilities(connections[i])
+			continue
+		}
 		enabled, err := s.workbenchPluginEnabled(connections[i].Kind)
 		if err != nil {
 			return nil, err
@@ -93,7 +99,7 @@ func (s *Service) WorkbenchTasks(q common.WorkbenchQuery) (common.WorkbenchPage,
 	if q.Limit == 0 {
 		q.Limit = 50
 	}
-	if q.Limit < 0 || q.Limit > 100 || q.Offset < 0 || q.Revision < 0 || (q.State != "" && !validWorkbenchState(q.State)) {
+	if !validWorkbenchProjectionQuery(q) || q.Limit < 0 || q.Limit > 100 || q.Offset < 0 || q.Revision < 0 || (q.State != "" && !validWorkbenchState(q.State)) {
 		return common.WorkbenchPage{}, common.Err("INVALID_ARGUMENT", "Invalid workbench query")
 	}
 	st, err := s.workbenchStore()
@@ -299,10 +305,25 @@ func (s *Service) RunWorkbenchSync(id string) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	snapshot, err := s.WorkbenchSnapshot(id)
+	if err != nil {
+		return 0, err
+	}
+	if snapshot.ParentConnectionID != "" {
+		store, err := s.managedConnectorStore()
+		if err != nil {
+			return 0, err
+		}
+		attempt, err := s.startWorkbenchConnectorRunLocked(store, id, "manual", false)
+		if attempt == 0 && err != nil && connectorErrorKind(err) == "rate_limited" {
+			return 0, publicConnectorError(err)
+		}
+		return attempt, err
+	}
 	if err := s.startWorkbenchLocked(st, id, "manual"); err != nil {
 		return 0, err
 	}
-	snapshot, err := s.WorkbenchSnapshot(id)
+	snapshot, err = s.WorkbenchSnapshot(id)
 	if err != nil {
 		return 0, err
 	}
@@ -335,6 +356,14 @@ func (s *Service) startWorkbenchPathsLocked(st workbenchStore, id, trigger strin
 	}
 	snapshot, err := s.WorkbenchSnapshot(id)
 	if err != nil {
+		return err
+	}
+	if snapshot.ParentConnectionID != "" {
+		store, err := s.managedConnectorStore()
+		if err != nil {
+			return err
+		}
+		_, err = s.startWorkbenchConnectorRunLocked(store, id, trigger, false)
 		return err
 	}
 	if snapshot.LastSuccess == nil || snapshot.Kind != common.WorkbenchObsidianTasks {
@@ -746,6 +775,12 @@ func (s *Service) startScheduledWorkbenchMatching(st workbenchStore, trigger str
 		return
 	}
 	for _, c := range connections {
+		if c.ParentConnectionID != "" {
+			if matches(c.Kind) && !c.Paused {
+				s.scheduleWorkbenchConnectorScope(c, trigger)
+			}
+			continue
+		}
 		if !matches(c.Kind) || !s.workbenchPlugins[c.Kind].capabilities.Refresh {
 			continue
 		}
@@ -822,4 +857,21 @@ func countWorkbenchChanges(attempt *common.WorkbenchAttempt, before, tasks []com
 		delete(old, task.ID)
 	}
 	attempt.Removed = len(old)
+}
+
+func validWorkbenchProjectionQuery(q common.WorkbenchQuery) bool {
+	switch q.Sort {
+	case "", "title", "priority", "due_date", "state", "assignee":
+	default:
+		return false
+	}
+	for _, date := range []string{q.DueAfter, q.DueBefore} {
+		if date != "" {
+			if _, err := time.Parse(time.DateOnly, date); err != nil {
+				return false
+			}
+		}
+	}
+	return (q.ScopeID == "" || q.Connection == "" || q.ScopeID == q.Connection) &&
+		(q.DueAfter == "" || q.DueBefore == "" || q.DueAfter <= q.DueBefore)
 }

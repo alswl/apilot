@@ -162,7 +162,7 @@ func TestWorkbenchOperationAdmissionAndRecovery(t *testing.T) {
 
 func TestWorkbenchOperationMigrationPreservesLegacyReceipt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
-	store, err := Open(path)
+	store, err := openAtSchema(path, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -278,7 +278,7 @@ func TestWorkbenchOperationClaimRejectsDisabledPlugin(t *testing.T) {
 
 func TestWorkbenchSyncMigrationRollsBackBeforeRetry(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
-	store, err := Open(path)
+	store, err := openAtSchema(path, 11)
 	if err != nil {
 		t.Fatal(err)
 	}

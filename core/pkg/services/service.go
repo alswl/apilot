@@ -73,6 +73,11 @@ type Service struct {
 	settings              common.Settings
 	stopping              bool
 	lastError             string
+
+	workbenchConnectorAuth        map[string]*connectorAuthorization
+	workbenchConnectorRelease     *common.WorkbenchConnectorRelease
+	workbenchConnectorProcess     *integrations.WorkbenchConnectorProcess
+	workbenchConnectorSyncBuckets map[string][]string
 }
 
 func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
@@ -126,7 +131,16 @@ func NewWithWorkbenchDependencies(dir string, openStore func(string) (Store, err
 	s.githubRate = integrations.NewWorkbenchGitHubRate(4)
 	s.obsidianSync = options
 	s.lastError = options.Diagnostic
-	fail := func(e error) (*Service, error) { cancel(); db.Close(); lock.Close(); return nil, e }
+	fail := func(e error) (*Service, error) {
+		cancel()
+		s.closeWorkbenchConnector()
+		db.Close()
+		lock.Close()
+		return nil, e
+	}
+	if err := s.registerBundledWorkbenchConnector(); err != nil {
+		return fail(err)
+	}
 	if rates, ok := db.(interface {
 		WorkbenchGitHubAccountBackoffs() (map[int64]time.Time, error)
 		RecordWorkbenchGitHubAccountBackoff(int64, time.Time) error
@@ -220,6 +234,9 @@ func (s *Service) StopAdmission() {
 	}
 	s.stopping = true
 	s.cancel()
+	if s.workbenchConnectorProcess != nil {
+		s.workbenchConnectorProcess.Stop()
+	}
 	if s.githubAuthorization != nil {
 		s.githubAuthorization.close()
 	}
@@ -233,6 +250,7 @@ func (s *Service) StopAdmission() {
 func (s *Service) Close() error {
 	s.StopAdmission()
 	s.closeOnce.Do(func() {
+		s.closeWorkbenchConnector()
 		s.wg.Wait()
 		s.mu.Lock()
 		defer s.mu.Unlock()

@@ -30,7 +30,7 @@ func parseConnectorLogo(mark []byte) *ui.SVG {
 
 func connectorLogo(c *ui.Context, kind string, size float32) {
 	color := ui.Hex("#7C3AED")
-	if kind == githubIssues || kind == common.WorkbenchGitHubRepository {
+	if kind == managedGitHub || kind == githubIssues || kind == common.WorkbenchGitHubRepository {
 		color = c.Theme().Text
 	}
 	if kind == common.WorkbenchLocal {
@@ -43,7 +43,7 @@ func connectorMark(c *ui.Context, kind string, size float32, color ui.Color) {
 	switch kind {
 	case common.WorkbenchLocal:
 		ui.Box(c).Size(size, size).Shrink(0).Children(func() { components.Symbol(c, "internaldrive", color) })
-	case githubIssues, common.WorkbenchGitHubRepository:
+	case managedGitHub, githubIssues, common.WorkbenchGitHubRepository:
 		ui.Icon(c, githubLogo).Size(size, size).TextColor(color).Shrink(0)
 	case obsidianTasks:
 		ui.Icon(c, obsidianLogo).Size(size, size).TextColor(color).Shrink(0)

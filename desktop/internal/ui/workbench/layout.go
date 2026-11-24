@@ -205,8 +205,9 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 			}
 			ui.Text(c, caption).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine().Ellipsis("…").MinWidth(0).Grow(1)
 			m.taskWatchButton(c.Key("watch"), object)
-			m.taskSourceActions(c.Key("edit"), object)
+			m.taskSourceControls(c.Key("edit"), object)
 		})
+		m.taskSourceFeedback(c.Key("write-feedback"), object)
 		ui.Divider(c)
 		thread := m.assistantThreadFor(index)
 		detail := m.taskDetailUI(object.ID)

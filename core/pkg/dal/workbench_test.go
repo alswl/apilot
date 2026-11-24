@@ -85,7 +85,7 @@ PRAGMA foreign_keys=ON;`)
 
 func TestWorkbenchMigratesV2(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
-	s, err := Open(path)
+	s, err := openAtSchema(path, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestWorkbenchMigratesV2(t *testing.T) {
 
 func TestWorkbenchMigratesImportedConnection(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
-	s, err := Open(path)
+	s, err := openAtSchema(path, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestWorkbenchMigratesImportedConnection(t *testing.T) {
 
 func TestWorkbenchMigratesV4PluginAndTaskIdentity(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "data.db")
-	s, err := Open(path)
+	s, err := openAtSchema(path, 11)
 	if err != nil {
 		t.Fatal(err)
 	}

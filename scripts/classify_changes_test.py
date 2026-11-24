@@ -10,7 +10,7 @@ class ClassificationTest(unittest.TestCase):
     def test_documentation(self):
         self.assertFalse(module.requires_full(['README.md', 'docs/architecture.md', 'docs/standards/guides/a.md'], 'pull_request', True))
     def test_code_configuration_and_unknown(self):
-        for path in ['internal/ui/forms.go', 'pkg/services/task.go', 'Makefile', 'hack/project.mk', 'scripts/check-docs.py', '.github/workflows/build.yml', '.golangci.yml', 'new directory/file.md', 'docs/run.sh']:
+        for path in ['internal/ui/forms.go', 'pkg/services/task.go', 'Makefile', 'hack/project.mk', 'scripts/check-docs.py', '.github/workflows/build.yml', '.golangci.yml', 'new directory/file.md', 'docs/run.sh', 'connectors/github-issues/internal/connector/edit.go', 'connectors/protocol/go.mod']:
             with self.subTest(path=path):
                 self.assertTrue(module.requires_full([path], 'pull_request', True))
     def test_tag_dispatch_and_missing_base(self):
