@@ -51,7 +51,7 @@ The installer creates `~/.local/bin/apilot` as a link to the App's bundled CLI. 
 export PATH="$HOME/.local/bin:$PATH"
 ```
 
-Development downloads are under [Actions](https://github.com/alswl/apilot/actions/workflows/build.yml): choose a successful run and download its artifact. These require GitHub sign-in and expire after seven days. Downloads also include an App ZIP, standalone CLI archive and `SHA256SUMS`; verify downloaded files with `shasum -a 256 --check SHA256SUMS`.
+For a development build, run `make app` locally on Apple Silicon. Version tags and manually requested notarized builds also produce [Actions artifacts](https://github.com/alswl/apilot/actions/workflows/build.yml). These require GitHub sign-in and expire after seven days. Downloads include an App ZIP, standalone CLI archive and `SHA256SUMS`. Verify downloaded files with `shasum -a 256 --check SHA256SUMS`.
 
 ## Quick start
 
@@ -141,7 +141,7 @@ Use `--env-file PATH` for explicit `KEY=VALUE` environment definitions. Values a
 
 ## Build from source
 
-Requires macOS, Xcode Command Line Tools and Go. The project pins **Go 1.27.3** through `go.mod` and the Makefile; toolchain and dependency downloads need network access.
+Requires macOS, Xcode Command Line Tools, Python 3 and Go. The project pins **Go 1.27.3** through `go.mod` and the Makefile. Toolchain and dependency downloads need network access.
 
 ```sh
 git clone https://github.com/alswl/apilot.git
@@ -162,7 +162,7 @@ make verify-ui          # Packaged native UI probe
 make verify-lifecycle   # Process cleanup and restart checks
 ```
 
-Verification commands use disposable data. The [contributor guide](CONTRIBUTING.md) links the pinned Go/UI standards and project exceptions.
+Verification commands use disposable data. See [delivery and verification](docs/dev/delivery.md) for the Issue and PR workflow and [engineering standards](docs/standards/README.md) for Go/UI conventions and project exceptions.
 
 The Go core is separate from MyGo UI: `core/pkg/services` owns application behavior, `core/pkg/dal` owns SQLite, `core/pkg/integrations` executes commands, and `core/pkg/server` serves the CLI over a private Unix Socket.
 

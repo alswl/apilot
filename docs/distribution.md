@@ -3,6 +3,8 @@
 `make app` builds the App, bundles the standalone CLI, signs ad hoc, and creates
 `build/darwin-arm64/apilot-VERSION-arm64.dmg` using MyGo's native disk-image builder.
 The image contains apilot and an Applications shortcut with a Finder drag layout.
+Use this local build for development verification. Ad-hoc signing requires no
+Apple signing credentials.
 `packaging/darwin/package-downloads.sh` verifies signatures and the image checksum, then
 exports DMG, App ZIP, CLI archive, provenance and SHA256SUMS into `dist/`.
 
@@ -64,10 +66,8 @@ Pushed `v*` tags use signing/notarization when enabled; the tag must match
 `desktop/mygo.json`. To build a signed temporary package without a tag or Release, run
 the workflow on the desired branch with `notarize=true`. Its verified files are
 available as an Actions artifact for seven days. PRs, regular pushes and manual
-runs without that option never receive signing secrets. No `pull_request_target`,
-no credentials in Go caches.
-The existing standard macOS job does the signing, with a 15-minute step limit;
-there is no second native build or per-PR notarization.
+runs without that option run checks. Use `make app` locally for their development
+packages. The macOS packaging job has a 15-minute signing step limit.
 
 `packaging/darwin/sign-release.sh` imports the certificate and stores notarytool
 credentials in a temporary keychain. MyGo builds the App and signs its bundled
@@ -85,7 +85,7 @@ exit.
 
 Published downloads are Developer ID signed and notarized when their
 `build-info.json` reports `signing: developer-id` and `notarized: true`.
-Unsigned development runs remain ad hoc. Prerelease labels remain visible in the
+Local development builds use ad-hoc signing. Prerelease labels remain visible in the
 App and CLI; signed bundles use the numeric base version in Apple's version keys.
 Check each download's metadata and
 `SHA256SUMS`; do not infer signing from its filename.
