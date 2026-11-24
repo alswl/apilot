@@ -308,14 +308,66 @@ func TestConnector011DesktopRetriesConflictInOriginalEditor(t *testing.T) {
 		m := connectorUIFixture()
 		task := m.objects[0]
 		m.page, m.taskSelection = tasksPage, task.ID
-		m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, version: task.TargetVersion, actionMode: actionMode}
-		task.TargetVersion = "refreshed"
-		snapshot := common.WorkbenchSnapshot{ParentConnectionID: "parent", WorkbenchConnection: common.WorkbenchConnection{
+		started := time.Now()
+		m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, attemptID: 10, actionMode: actionMode}
+		if !actionMode {
+			task.TargetVersion = "refreshed"
+		}
+		finished := started.Add(time.Second)
+		snapshot := common.WorkbenchSnapshot{ParentConnectionID: "parent", Attempts: []common.WorkbenchAttempt{{ID: 10, Started: started, Finished: &finished, State: "success"}}, WorkbenchConnection: common.WorkbenchConnection{
 			ID: task.ConnectionID, Kind: managedGitHub, Name: "example/pay", WriteEnabled: true, AccessState: "available", Version: 1,
 		}}
 		m.applyLive([]common.WorkbenchSnapshot{snapshot}, []sourceObject{task})
-		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != "refreshed" || m.retryConnectorEdit != nil {
+		if editor := m.connectorEditor011; editor == nil || editor.actionMode != actionMode || editor.task.TargetVersion != task.TargetVersion || m.retryConnectorEdit != nil {
 			t.Fatalf("retry action mode %v: %+v", actionMode, editor)
+		}
+	}
+}
+
+func TestConnector011DesktopConflictButtonsVisibleInDefaultSplit(t *testing.T) {
+	for _, size := range [][2]int{{680, 580}, {1190, 730}} {
+		for _, english := range []bool{false, true} {
+			old := englishUI.Swap(english)
+			m := connectorUIFixture()
+			task := m.objects[0]
+			m.page, m.taskSelection = tasksPage, task.ID
+			previous := protocol.Value(protocol.FieldText, "open")
+			m.connectorConflicts = map[string]common.WorkbenchTaskReceipt{task.ID: {
+				Reason: "Source changed since the operation was prepared",
+				Conflict: &common.WorkbenchFieldConflict{
+					Action: "close", PreviousState: &previous,
+					Current: map[string]protocol.FieldValue{"state": protocol.Value(protocol.FieldText, "closed"), "state_reason": protocol.Value(protocol.FieldText, "completed")},
+				},
+			}}
+			view := ui.NewTester(m.view, size[0], size[1])
+			for _, label := range []string{tr("接受来源值"), tr("重新编辑")} {
+				box, visible := view.Find(label)
+				if !visible || box.W <= 0 || box.H <= 0 || box.X < 0 || box.Y < 0 ||
+					box.X+box.W > float32(size[0]) || box.Y+box.H > float32(size[1])-20 {
+					t.Errorf("%v english=%v %s bounds %+v, visible=%v", size, english, label, box, visible)
+				}
+			}
+			if dir := os.Getenv("APILOT_TEST_UI_EVIDENCE_DIR"); dir != "" && size[0] == 680 {
+				language := "zh"
+				if english {
+					language = "en"
+				}
+				if err := os.MkdirAll(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				file, err := os.Create(filepath.Join(dir, "conflict-default-split-"+language+".png"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err, closeErr := png.Encode(file, view.Image()), file.Close(); err != nil || closeErr != nil {
+					t.Fatalf("write conflict screenshot: %v, %v", err, closeErr)
+				}
+			}
+			click(t, view, tr("重新编辑"))
+			if !m.pendingSync[task.ConnectionID] {
+				t.Fatal("re-edit did not request a scope refresh")
+			}
+			englishUI.Store(old)
 		}
 	}
 }

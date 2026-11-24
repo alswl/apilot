@@ -387,6 +387,15 @@ func (m *mockup) connectorConflictView(c *ui.Context, task sourceObject) {
 		return
 	}
 	components.Muted(c.Key("status"), tr("来源已变化，请重新核对任务"))
+	ui.Row(c.Key("actions")).FillWidth().Wrap().Gap(8).Children(func() {
+		working := m.pendingSync[task.ConnectionID]
+		if ui.Button(c.Key("keep"), tr("接受来源值")).Disabled(working).Clicked() {
+			m.resolveConnectorConflict(task, false)
+		}
+		if ui.Button(c.Key("edit"), tr("重新编辑")).Disabled(working).Clicked() {
+			m.resolveConnectorConflict(task, true)
+		}
+	})
 	if action := receipt.Conflict.Action; action != "" {
 		components.Body(c.Key("proposed-action"), tr("状态操作")+" · "+connectorActionLabel(protocol.StateAction{ID: action, Label: action}))
 		if previous := receipt.Conflict.PreviousState; previous != nil {
@@ -401,15 +410,6 @@ func (m *mockup) connectorConflictView(c *ui.Context, task sourceObject) {
 	for _, key := range sortedConnectorKeys(receipt.Conflict.Proposed) {
 		components.Body(c.Key(key), fieldCaption(key)+" · "+tr("来源值")+" "+detailValue(receipt.Conflict.Current[key])+" · "+tr("拟写值")+" "+detailValue(receipt.Conflict.Proposed[key]))
 	}
-	ui.Row(c.Key("actions")).FillWidth().Wrap().Gap(8).Children(func() {
-		working := m.pendingSync[task.ConnectionID]
-		if ui.Button(c.Key("keep"), tr("接受来源值")).Disabled(working).Clicked() {
-			m.resolveConnectorConflict(task, false)
-		}
-		if ui.Button(c.Key("edit"), tr("重新编辑")).Disabled(working).Clicked() {
-			m.resolveConnectorConflict(task, true)
-		}
-	})
 }
 
 func connectorActionLabel(action protocol.StateAction) string {
@@ -439,8 +439,9 @@ func connectorRequiredFieldLabel(field protocol.FieldDefinition) string {
 }
 
 type connectorConflictRetry struct {
-	taskID, scopeID, version string
-	actionMode               bool
+	taskID, scopeID string
+	attemptID       int64
+	actionMode      bool
 }
 
 func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
@@ -451,16 +452,20 @@ func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
 		return
 	}
 	m.pendingSync[task.ConnectionID] = true
-	connectorUIRequest[map[string]any](m, "workbench.sync.run", map[string]string{"id": task.ConnectionID}, func(_ map[string]any, err error) {
+	type syncResult struct {
+		AttemptID int64 `json:"attempt_id"`
+	}
+	connectorUIRequest(m, "workbench.sync.run", map[string]string{"id": task.ConnectionID}, func(result syncResult, err error) {
 		if err != nil {
 			delete(m.pendingSync, task.ConnectionID)
 			m.liveTaskProblems[task.ID] = common.ProtocolError(err).Message
 			return
 		}
-		delete(m.connectorConflicts, task.ID)
 		delete(m.liveTaskProblems, task.ID)
 		if edit {
-			m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, version: task.TargetVersion, actionMode: actionMode}
+			m.retryConnectorEdit = &connectorConflictRetry{taskID: task.ID, scopeID: task.ConnectionID, attemptID: result.AttemptID, actionMode: actionMode}
+		} else {
+			delete(m.connectorConflicts, task.ID)
 		}
 		m.refreshLive()
 	})

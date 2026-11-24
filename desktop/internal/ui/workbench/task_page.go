@@ -89,8 +89,9 @@ func (m *mockup) taskPage(c *ui.Context) {
 			ui.Text(c, tr("任务")+" / "+displayTaskID(*o)).FontSize(12).TextColor(c.Theme().TextMuted).SingleLine()
 			ui.Spacer(c).Grow(1)
 			m.taskWatchButton(c.Key("watch"), o)
-			m.taskSourceActions(c.Key("source-actions"), o)
+			m.taskSourceControls(c.Key("source-actions"), o)
 		})
+		m.taskSourceFeedback(c.Key("write-feedback"), o)
 		ui.Divider(c)
 		if width < 1080 {
 			ui.Scroll(c.Key(o.ID)).Grow(1).FillWidth().Children(func() {

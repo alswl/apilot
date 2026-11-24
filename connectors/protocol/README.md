@@ -272,3 +272,27 @@ submission under the same request ID. The Connector test supplies a local
 HTTP 503 response for repository labels. The headless desktop cases reopen
 the matching editor mode and select labels that match the menu caption or
 contain commas, with existing labels named after control keys.
+
+### Conflict after background sync and narrow split
+
+With a writable Connector task, keep its open-state `target_version`.
+Change the source to closed in the local fixture and complete another
+sync. Submit the original close action with the old `target_version`.
+The CLI returns a `conflict` receipt with the synced source state and
+requested action. Submitting the same request ID again or inspecting
+it returns that receipt. Core does not dispatch the stale write. The
+prior state is omitted when only the old opaque version is available.
+
+For the desktop case, use the default task split at 680 × 580 pt. In the
+selected task's conflict feedback, both recovery buttons are visible
+without expanding the detail. Edit again refreshes the scope, then
+reopens the original editor with the available actions, including after
+a successful sync that leaves the target version unchanged.
+
+```sh
+go -C core test ./pkg/server -count=1 -run 'TestWorkbench(StaleActionAfterSyncReturnsDurableConflict|UnavailableStaleActionReturnsDurableConflict|RemainingMVPWritesAndActions)$'
+go -C core test ./cmd/apilot -count=1 -run '^TestWorkbenchCLIOperationRoutes$/^submitWorkbenchTaskOperation$'
+go -C desktop test ./internal/ui/workbench -count=1 -run '^TestConnector011Desktop(ConflictButtonsVisibleInDefaultSplit|RetriesConflictInOriginalEditor)$'
+make check-openapi check-workbench check-format
+make app
+```

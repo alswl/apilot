@@ -34,6 +34,10 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/workbench/task-operations" {
+			fmt.Fprint(w, `{"request_id":"item","sync_state":"conflict","conflict":{"action":"close","current":{"state":{"type":"text","value":"closed"}}}}`)
+			return
+		}
 		fmt.Fprint(w, `{}`)
 	})}
 	go func() { _ = fixture.Serve(listener) }()
@@ -110,6 +114,13 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 			args := append([]string{"--json", "workbench"}, strings.Fields(tc.command)...)
 			if code := execute(args, &out, &errs); code != 0 || !bytes.Contains(out.Bytes(), []byte(`"data"`)) {
 				t.Fatalf("success: exit=%d out=%s err=%s", code, &out, &errs)
+			}
+			if tc.operation == "submitWorkbenchTaskOperation" {
+				for _, field := range []string{`"sync_state":"conflict"`, `"action":"close"`, `"value":"closed"`} {
+					if !bytes.Contains(out.Bytes(), []byte(field)) {
+						t.Fatalf("CLI omitted conflict field %s: %s", field, &out)
+					}
+				}
 			}
 			select {
 			case got := <-requests:

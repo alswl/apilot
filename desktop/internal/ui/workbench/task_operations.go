@@ -92,6 +92,35 @@ func (m *mockup) openSourceEdit(o sourceObject) {
 }
 
 func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
+	m.taskSourceControls(c.Key("controls"), o)
+	m.taskSourceFeedback(c.Key("feedback"), o)
+}
+
+func (m *mockup) taskSourceFeedback(c *ui.Context, o *sourceObject) {
+	conflict := m.connectorConflicts[o.ID]
+	pending, problem := m.sourceWritePending(o.ID), m.liveTaskProblems[o.ID]
+	review := m.serverTaskOperations[o.ID]
+	if m.live == nil || (!pending && problem == "" && conflict.Conflict == nil && review.SyncState != common.WorkbenchOperationNeedsReview) {
+		return
+	}
+	ui.Column(c).FillWidth().MinWidth(0).Gap(6).Children(func() {
+		if pending {
+			components.Muted(c.Key("pending"), tr("等待来源确认"))
+		}
+		if problem != "" && (conflict.Conflict == nil || problem != conflict.Reason) {
+			components.Muted(c.Key("write-problem"), tr(problem))
+		}
+		m.connectorConflictView(c.Key("conflict"), *o)
+		if review.SyncState == common.WorkbenchOperationNeedsReview && !pending {
+			components.Muted(c.Key("review-status"), tr("来源尚未确认"))
+			if ui.Button(c.Key("reconcile"), tr("核对操作")).Clicked() {
+				m.reconcileLiveTask(o.ID, review.RequestID)
+			}
+		}
+	})
+}
+
+func (m *mockup) taskSourceControls(c *ui.Context, o *sourceObject) {
 	if m.live != nil {
 		if m.supportsConnectorEditor(*o) {
 			ui.Row(c.Key("edit-toolbar")).FillWidth().Wrap().Gap(8).Children(func() {
@@ -106,19 +135,6 @@ func (m *mockup) taskSourceActions(c *ui.Context, o *sourceObject) {
 		}
 		if !isManagedConnector(o.Kind) && (m.canToggleSourceTask(*o) || m.sourceWritePending(o.ID)) {
 			m.taskStatusCheckbox(c.Key("toggle"), *o)
-		}
-		if m.sourceWritePending(o.ID) {
-			components.Muted(c.Key("pending"), tr("等待来源确认"))
-		}
-		if problem := m.liveTaskProblems[o.ID]; problem != "" {
-			components.Muted(c.Key("write-problem"), tr(problem))
-		}
-		m.connectorConflictView(c.Key("conflict"), *o)
-		if receipt := m.serverTaskOperations[o.ID]; receipt.SyncState == common.WorkbenchOperationNeedsReview && !m.sourceWritePending(o.ID) {
-			components.Muted(c.Key("review-status"), tr("来源尚未确认"))
-			if ui.Button(c.Key("reconcile"), tr("核对操作")).Clicked() {
-				m.reconcileLiveTask(o.ID, receipt.RequestID)
-			}
 		}
 		return
 	}

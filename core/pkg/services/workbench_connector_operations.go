@@ -138,6 +138,7 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 	defer cancel()
 	mutation := protocol.MutationParams{ScopeContext: scope.Context, OperationID: input.RequestID, Action: input.Action, ActionFields: input.ActionFields}
 	var task common.WorkbenchTask
+	var conflict *common.WorkbenchFieldConflict
 	if input.SourceObjectID != "" {
 		task, err = s.WorkbenchTask(input.SourceObjectID)
 		if err != nil {
@@ -145,9 +146,6 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 		}
 		if task.ConnectionID != connection.ID {
 			return empty, common.Err("INVALID_ARGUMENT", "Task belongs to another scope")
-		}
-		if task.TargetVersion != input.TargetVersion {
-			return empty, common.Err("STALE_REVISION", "Task changed before operation admission")
 		}
 		mutation.SourceID, mutation.Number, mutation.ExpectedVersion = task.SourceKey, task.NativeID, task.NativeFields["source_version"]
 		if mutation.Action == "" && input.State != "" && scope.ConnectorID == "github-issues" {
@@ -158,9 +156,26 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 				mutation.Action = "close"
 			}
 		}
+		if task.TargetVersion != input.TargetVersion {
+			if mutation.Action == "" || input.TargetVersion == "" {
+				return empty, common.Err("STALE_REVISION", "Task changed before operation admission")
+			}
+			state := task.NativeFields["state"]
+			if state == "" {
+				state = task.State
+			}
+			current := map[string]protocol.FieldValue{"state": protocol.Value(protocol.FieldText, state)}
+			var reason protocol.FieldValue
+			if json.Unmarshal([]byte(task.NativeFields["native.state_reason"]), &reason) == nil && protocol.ValidFieldValue(reason) {
+				current["state_reason"] = reason
+			}
+			conflict = connectorOperationConflict(mutation, current, nil)
+		}
 	}
-	var conflict *common.WorkbenchFieldConflict
-	if mutation.Action != "" || len(input.Fields) > 0 || input.SourceObjectID == "" {
+	if conflict == nil {
+		if mutation.Action == "" && len(input.Fields) == 0 && input.SourceObjectID != "" {
+			return empty, common.Err("INVALID_ARGUMENT", "Provide fields or a supported action")
+		}
 		meta, metaErr := s.workbenchEditMetadata(ctx, input.SourceObjectID, connection.ID)
 		if metaErr != nil {
 			return empty, metaErr
@@ -234,8 +249,6 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 				mutation.Patch, mutation.Baseline = patch, baseline
 			}
 		}
-	} else {
-		return empty, common.Err("INVALID_ARGUMENT", "Provide fields or a supported action")
 	}
 
 	s.mu.Lock()

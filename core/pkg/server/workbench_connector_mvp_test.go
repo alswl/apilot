@@ -3,7 +3,9 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -392,5 +394,44 @@ func TestWorkbenchUnavailableStaleActionReturnsDurableConflict(t *testing.T) {
 		if replay.Conflict == nil || replay.Conflict.Action != "resolve" || api.task(task.ID).State != "open" {
 			t.Fatalf("persisted conflict was redispatched: %+v", replay)
 		}
+	}
+}
+
+func TestWorkbenchStaleActionAfterSyncReturnsDurableConflict(t *testing.T) {
+	api, config, connection, scopes := prepareRemainingMVP(t)
+	pay := scopes["PAY"]
+	old := api.scopeTasks(pay.ScopeID).Items[0]
+	writeUC01JSON(t, filepath.Join(filepath.Dir(config), "task-"+old.NativeID+".json"), protocol.SourceRecord{
+		SourceID: strings.TrimPrefix(old.NativeID, "PAY-"), Number: old.NativeID, SourceVersion: "externally-closed",
+		Title: old.Title, State: "done", StateID: "closed", StateLabel: "Closed", UpdatedAt: time.Now().UTC(),
+		Fields: map[string]protocol.FieldValue{"status": protocol.Value(protocol.FieldText, "closed")},
+	})
+	api.call(http.MethodPost, "/connector-connections/"+connection+"/sync", nil, nil)
+	api.done(connection, func(items map[string]common.WorkbenchConnectorScopeOverview) bool {
+		run := items["PAY"].LastRun
+		return run.ID != pay.LastRun.ID && run.Status == "success"
+	})
+	synced := api.task(old.ID)
+	if synced.State != "done" || synced.TargetVersion == old.TargetVersion {
+		t.Fatalf("source change not projected: %+v", synced)
+	}
+	stale := common.WorkbenchTaskWrite{
+		RequestID: "stale-after-sync", SourceObjectID: old.ID, ConnectionVersion: old.ConnectionVersion,
+		TargetVersion: old.TargetVersion, Action: "resolve",
+		ActionFields: map[string]protocol.FieldValue{"resolution": protocol.Value(protocol.FieldText, "completed")},
+	}
+	for range 2 {
+		var receipt common.WorkbenchTaskReceipt
+		api.call(http.MethodPost, "/task-operations", stale, &receipt)
+		if receipt.SyncState != "conflict" || receipt.Conflict == nil || receipt.Conflict.Action != "resolve" ||
+			string(receipt.Conflict.Current["state"].Value) != `"closed"` ||
+			string(receipt.Conflict.Proposed["resolution"].Value) != `"completed"` || receipt.Conflict.PreviousState != nil {
+			t.Fatalf("stale action: %+v", receipt.Conflict)
+		}
+	}
+	var stored common.WorkbenchTaskReceipt
+	api.call(http.MethodGet, "/task-operations/"+stale.RequestID, nil, &stored)
+	if stored.SyncState != "conflict" || stored.Conflict == nil || api.task(old.ID).TargetVersion != synced.TargetVersion {
+		t.Fatalf("terminal conflict was not preserved: %+v", stored)
 	}
 }

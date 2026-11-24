@@ -685,15 +685,30 @@ func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceO
 	m.connectionsData = connections
 	m.sourceFilter = m.resolveTaskViewSource(sourceName, sourceID)
 	m.replaceLiveTasks(tasks)
-	if retry := m.retryConnectorEdit; retry != nil && !m.pendingSync[retry.scopeID] {
-		for _, task := range m.objects {
-			if task.ID == retry.taskID && task.TargetVersion != retry.version {
-				m.retryConnectorEdit = nil
-				if m.page == tasksPage && m.taskSelection == task.ID {
-					m.openConnectorTaskEditor(task, retry.actionMode)
-				}
+	if retry := m.retryConnectorEdit; retry != nil {
+		for _, snapshot := range snapshots {
+			if snapshot.ID != retry.scopeID || len(snapshot.Attempts) == 0 {
+				continue
+			}
+			attempt := snapshot.Attempts[0]
+			if attempt.ID < retry.attemptID || attempt.Finished == nil {
 				break
 			}
+			m.retryConnectorEdit = nil
+			if attempt.State != "success" {
+				m.liveTaskProblems[retry.taskID] = "同步失败"
+				break
+			}
+			for _, task := range m.objects {
+				if task.ID == retry.taskID {
+					delete(m.connectorConflicts, task.ID)
+					if m.page == tasksPage && m.taskSelection == task.ID {
+						m.openConnectorTaskEditor(task, retry.actionMode)
+					}
+					break
+				}
+			}
+			break
 		}
 	}
 }
