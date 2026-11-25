@@ -3,10 +3,13 @@ package workbench
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/alswl/apilot/core/pkg/config"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -86,7 +89,7 @@ func TestInvalidReloadKeepsEffectiveBindings(t *testing.T) {
 	}
 	write(`{"bindings":{"command.palette":["Cmd+Shift+P"],"shortcuts.help":[]}}`)
 	k.reload()
-	if k.loadError != "" || k.display("command.palette") != "Cmd+Shift+P" || k.display("shortcuts.help") != "" {
+	if k.loadError != "" || k.display("command.palette") != configuredPaletteLabel() || k.display("shortcuts.help") != "" {
 		t.Fatalf("valid overrides and unbinding should apply, got %q", k.loadError)
 	}
 	before := slices.Clone(k.bindings)
@@ -124,12 +127,77 @@ func TestKeyboardHelpUsesEffectiveBindings(t *testing.T) {
 	}
 	p := ui.NewTester(m.view, 860, 580)
 	p.Key(ui.Cmd, ui.KeySlash)
-	if !m.keyboard.help || !slices.Contains(p.Texts(), "Cmd+Shift+P") {
+	if !m.keyboard.help || !slices.Contains(p.Texts(), configuredPaletteLabel()) {
 		t.Fatal("shortcut help should render the effective configuration")
+	}
+	item := m.paletteMenuItem("command.palette", false)
+	if !strings.HasSuffix(item.Label, "  "+configuredPaletteLabel()) {
+		t.Fatalf("Commands menu should show the same binding as help, got %q", item.Label)
 	}
 	p.Key(0, ui.KeyEscape)
 	if m.keyboard.palette {
 		t.Fatal("escape should dismiss shortcut help")
+	}
+}
+
+func configuredPaletteLabel() string {
+	if runtime.GOOS == "darwin" {
+		return "⇧⌘P"
+	}
+	return "Cmd+Shift+P"
+}
+
+func TestShortcutLabelsUseParsedBindings(t *testing.T) {
+	labels := map[string]string{
+		"Cmd+Shift+Alt+Ctrl+p": "⌃⌥⇧⌘P",
+		"Cmd+/":                "⌘/",
+		"Alt+v":                "⌥V",
+		"g   t":                "g t",
+		"?":                    "?",
+	}
+	bindings, err := compileBindings(config.Keybindings{
+		EnableSingleKeys: true,
+		Bindings: map[string][]string{
+			"command.palette":  {"Cmd+Shift+Alt+Ctrl+p", "Alt+v"},
+			"view.save":        {},
+			"navigation.tasks": {"g   t"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range bindings {
+		if want, ok := labels[item.label]; ok {
+			if got := item.displayLabel("darwin"); got != want {
+				t.Errorf("macOS display for %q = %q, want %q", item.label, got, want)
+			}
+			if got := item.displayLabel("linux"); got != item.label {
+				t.Errorf("Linux display for %q = %q", item.label, got)
+			}
+			delete(labels, item.label)
+		}
+	}
+	if len(labels) != 0 {
+		t.Fatalf("missing bindings: %v", labels)
+	}
+}
+
+func TestMacWindowMenuUsesNativeRolesAndAccelerators(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS application menu")
+	}
+	menu := mygo.NewMenu([]*mygo.MenuItem{newMockup().windowMenu()}).Items()[0]
+	if menu.Role != mygo.RoleWindowMenu || len(menu.Submenu) < 2 {
+		t.Fatalf("missing native Window menu items: %+v", menu)
+	}
+	for index, want := range []struct {
+		role mygo.MenuRole
+		acc  string
+	}{{mygo.RoleMinimize, "CmdOrCtrl+M"}, {mygo.RoleClose, "CmdOrCtrl+W"}} {
+		item := menu.Submenu[index]
+		if item.Role != want.role || item.Accelerator != want.acc || item.Click != nil {
+			t.Errorf("expected native role %s and accelerator %s, got %+v", want.role, want.acc, item)
+		}
 	}
 }
 

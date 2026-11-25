@@ -161,6 +161,9 @@ func (m *mockup) keyboardSettings(c *ui.Context) {
 			}
 			if ui.Button(c.Key("reload-bindings"), tr("重新加载")).Clicked() {
 				m.keyboard.reload()
+				if m.keyboard.loadError == "" {
+					m.setMenu()
+				}
 				if m.win != nil {
 					m.win.Invalidate()
 				}

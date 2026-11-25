@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -259,10 +260,24 @@ func (m *mockup) setMenu() {
 			m.paletteMenuItem("command.palette", false),
 			m.paletteMenuItem("shortcuts.help", true),
 		}},
-		{Label: tr("窗口"), Submenu: []*mygo.MenuItem{
-			{Label: tr("问助理"), Click: func(*mygo.MenuItem, *mygo.Window) { m.openAssistant() }},
-		}},
+		m.windowMenu(),
 	}))
+}
+
+func (m *mockup) windowMenu() *mygo.MenuItem {
+	menu := &mygo.MenuItem{Label: tr("窗口")}
+	if runtime.GOOS == "darwin" {
+		menu.Role = mygo.RoleWindowMenu
+		menu.Submenu = []*mygo.MenuItem{
+			{Role: mygo.RoleMinimize},
+			{Role: mygo.RoleClose},
+			mygo.Separator(),
+		}
+	}
+	menu.Submenu = append(menu.Submenu, &mygo.MenuItem{
+		Label: tr("问助理"), Click: func(*mygo.MenuItem, *mygo.Window) { m.openAssistant() },
+	})
+	return menu
 }
 
 func (m *mockup) paletteMenuItem(id string, help bool) *mygo.MenuItem {
