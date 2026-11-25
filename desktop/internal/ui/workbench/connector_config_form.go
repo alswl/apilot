@@ -3,6 +3,7 @@ package workbench
 import (
 	"encoding/json"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -202,21 +203,24 @@ func (m *mockup) connectorDraftFields(c *ui.Context, p *connectorLoginPanel) {
 			if len(values) == 0 {
 				values = []any{true, false}
 			}
-			labels := []string{tr("请选择")}
-			selected := labels[0]
-			for _, choice := range values {
-				label := configFieldText(choice)
-				labels = append(labels, label)
-				if configFieldText(value) == label {
-					selected = label
-				}
-			}
+			selected := slices.IndexFunc(values, func(choice any) bool { return reflect.DeepEqual(value, choice) })
+			previous := selected
 			components.Muted(key.Key("label"), field.meta.Title)
-			changed = ui.Select(key.Key("value"), &selected, labels).Disabled(disabled).Changed()
+			ui.RadioGroup(key.Key("value"), func() {
+				ui.Row(key.Key("choices")).Wrap().Gap(8).Children(func() {
+					for index, choice := range values {
+						ui.Radio(key.Key(index), &selected, index, configFieldText(choice)).Disabled(disabled)
+					}
+					if !field.required {
+						ui.Radio(key.Key("unset"), &selected, -1, tr("请选择")).Disabled(disabled)
+					}
+				})
+			})
+			changed = selected != previous
 			if changed {
 				value = nil
-				if index := slices.Index(labels, selected); index > 0 {
-					value = values[index-1]
+				if selected >= 0 {
+					value = values[selected]
 				}
 			}
 		default:

@@ -148,6 +148,11 @@ func TestSignedScopedConnector(t *testing.T) {
 	if len(draftOptions.Items) != 1 || draftOptions.Items[0].Value != "east" {
 		t.Fatalf("endpoint options: %+v", draftOptions)
 	}
+	api.call(http.MethodGet, multiOptions+"&field=region&config_level=endpoint&search=west&endpoint_config="+url.QueryEscape(`{"cluster":"demo"}`), nil, &draftOptions)
+	if len(draftOptions.Items) != 0 {
+		t.Fatalf("endpoint search ignored: %+v", draftOptions)
+	}
+
 	api.call(http.MethodGet, multiOptions+"&field=target&config_level=scope&scope_type=project&endpoint_config="+url.QueryEscape(`{"cluster":"demo","region":"east"}`)+"&scope_config="+url.QueryEscape(`{"board":"delivery"}`), nil, &draftOptions)
 	if len(draftOptions.Items) != 1 || draftOptions.Items[0].Value != "alpha" {
 		t.Fatalf("scope options: %+v", draftOptions)

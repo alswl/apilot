@@ -30,7 +30,7 @@ func scopedFixtureDescription(description *protocol.Description) {
 		description.ScopeConfig.Version = 2
 	}
 	if scopedMultiFixture() {
-		description.EndpointConfig.Schema = json.RawMessage(`{"type":"object","required":["cluster","region"],"properties":{"cluster":{"type":"string","enum":["demo"]},"region":{"type":"string"}},"additionalProperties":false}`)
+		description.EndpointConfig.Schema = json.RawMessage(`{"type":"object","required":["cluster","region"],"properties":{"cluster":{"title":"Cluster","type":"string","enum":["demo"]},"region":{"type":"string"}},"additionalProperties":false}`)
 		description.EndpointConfig.Fields = map[string]protocol.ConfigField{
 			"region": {Title: "Region", Control: "select", DynamicOptions: true, DependsOn: []string{"cluster"}},
 		}
@@ -79,13 +79,24 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 			return nil, badScope
 		}
 		if scopedMultiFixture() {
-			var endpoint, scope map[string]string
-			_ = json.Unmarshal(p.EndpointConfig, &endpoint)
-			_ = json.Unmarshal(p.ScopeConfig, &scope)
-			if p.ConfigLevel == "endpoint" && p.Field == "region" && endpoint["cluster"] == "demo" && p.Page == "" {
-				return protocol.ConfigOptions{Items: []protocol.ConfigOption{{Value: "east", Label: "East"}}}, nil
+			var endpoint struct {
+				Cluster string `json:"cluster"`
+				Region  string `json:"region"`
 			}
-			if p.ConfigLevel != "scope" || endpoint["cluster"] != "demo" || endpoint["region"] != "east" || scope["board"] != "delivery" {
+			var scope struct {
+				Board string `json:"board"`
+			}
+			if json.Unmarshal(p.EndpointConfig, &endpoint) != nil || endpoint.Cluster != "demo" {
+				return nil, badScope
+			}
+			if p.ConfigLevel == "endpoint" && p.Field == "region" && p.Page == "" {
+				options := []protocol.ConfigOption{}
+				if strings.Contains("east", strings.ToLower(p.Search)) {
+					options = append(options, protocol.ConfigOption{Value: "east", Label: "East"})
+				}
+				return protocol.ConfigOptions{Items: options}, nil
+			}
+			if p.ConfigLevel != "scope" || endpoint.Region != "east" || json.Unmarshal(p.ScopeConfig, &scope) != nil || scope.Board != "delivery" {
 				return nil, badScope
 			}
 		}

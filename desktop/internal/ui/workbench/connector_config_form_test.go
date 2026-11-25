@@ -8,6 +8,7 @@ import (
 	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/services"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestConnectorConfigFormDependenciesAndSelection(t *testing.T) {
@@ -113,5 +114,22 @@ func TestConnectorConfigJSONRejectsDeclaredCredentials(t *testing.T) {
 	}
 	if _, _, ok := d.objects(); ok {
 		t.Fatal("declared credential could be submitted")
+	}
+}
+
+func TestConnectorConfigEnumInLoginModal(t *testing.T) {
+	panel := &connectorLoginPanel{
+		auth:     common.WorkbenchConnectorAuthorization{Status: "authorized"},
+		selected: map[string]bool{}, connected: map[string]bool{},
+		form: &connectorConfigForm{endpoint: map[string]any{}, scope: map[string]any{}, fields: []connectorConfigField{
+			{key: "cluster", kind: "string", level: "endpoint", required: true, choices: []any{"demo"}, meta: protocol.ConfigField{Title: "Cluster"}},
+			{key: "region", kind: "string", level: "endpoint", required: true, meta: protocol.ConfigField{Title: "Region", DynamicOptions: true, DependsOn: []string{"cluster"}}},
+		}},
+	}
+	m := &mockup{connectorLogin: panel}
+	view := ui.NewTester(m.connectorLoginDialog, 640, 480)
+	click(t, view, "demo")
+	if panel.form.endpoint["cluster"] != "demo" || !panel.form.ready(panel.form.fields[1]) {
+		t.Fatal("clicking the visible option did not enable Region")
 	}
 }
