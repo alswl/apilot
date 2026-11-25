@@ -57,7 +57,11 @@ func prepareNamedConnectorTestAPI(t *testing.T, connectorID string) (uc01TestAPI
 		}
 	})
 	router, _ := workbenchRouter(s)
-	path := filepath.Join(dir, "connectors", connectorID, "fixture.json")
+	namespace := "development-connectors"
+	if connectorID == "fixture" {
+		namespace = "connectors"
+	}
+	path := filepath.Join(dir, namespace, connectorID, "fixture.json")
 	api := uc01TestAPI{t: t, handler: router}
 
 	return api, path

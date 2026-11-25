@@ -33,6 +33,9 @@ func (s *Service) workbenchEditMetadata(ctx context.Context, taskID, scopeID str
 		if err != nil {
 			return result, err
 		}
+		if scopeID != "" && scopeID != task.ConnectionID {
+			return result, common.Err("FORBIDDEN", "Task belongs to a different scope")
+		}
 		scopeID = task.ConnectionID
 	}
 	connection, err := s.WorkbenchSnapshot(scopeID)
@@ -125,7 +128,7 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 	if err != nil {
 		return empty, err
 	}
-	if scope.ConnectorID != "github-issues" && scope.ConnectorID != "fixture" {
+	if !s.registeredConnector(scope.ConnectorID).supportsWrite() {
 		return empty, common.Err("FORBIDDEN", "Connector is read-only")
 	}
 	if !scope.Config.WriteEnabled || scope.Config.Paused || scope.Config.Version != input.ConnectionVersion ||
@@ -266,18 +269,18 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 		s.mu.Unlock()
 		return empty, common.Err("CONFLICT", "App is stopping")
 	}
-	current, _, err := s.readableConnectorScope(connection.ID)
+	current, currentProcess, err := s.readableConnectorScope(connection.ID)
 	if err != nil {
 		s.mu.Unlock()
 		return empty, err
 	}
-	if current.SnapshotVersion != scope.SnapshotVersion || current.AuthGeneration != scope.AuthGeneration || current.ConfigRevision != scope.ConfigRevision || current.MappingRevision != scope.MappingRevision {
+	if currentProcess != process || current.SnapshotVersion != scope.SnapshotVersion || current.AuthGeneration != scope.AuthGeneration || current.ConfigRevision != scope.ConfigRevision || current.MappingRevision != scope.MappingRevision {
 		s.mu.Unlock()
 		return empty, common.Err("STALE_REVISION", "Scope changed before operation admission")
 	}
 	op, inserted, err := ops.AdmitWorkbenchConnectorOperation(input, connection.ID, workbenchFingerprint(input), common.WorkbenchConnectorOperationBinding{
 		Mutation: mutation, ConfigRevision: scope.ConfigRevision, MappingRevision: scope.MappingRevision, AuthGeneration: scope.AuthGeneration,
-		PackageDigest: s.workbenchConnectorRelease.PackageDigest,
+		PackageDigest: s.registeredConnector(scope.ConnectorID).release.PackageDigest,
 	}, conflict)
 	if err == nil && inserted && conflict != nil {
 		s.volatileRevision.Add(1)
@@ -337,8 +340,8 @@ func (s *Service) runConnectorOperation(ctx context.Context, op common.Workbench
 	s.mu.Lock()
 	scope, process, err := s.readableConnectorScope(receipt.ConnectionID)
 	valid := err == nil && scope.ConfigRevision == binding.ConfigRevision && scope.MappingRevision == binding.MappingRevision &&
-		scope.AuthGeneration == binding.AuthGeneration && s.workbenchConnectorRelease.PackageDigest == binding.PackageDigest
-	if !valid || (!reconcile && (!scope.Config.WriteEnabled || scope.Config.Paused || s.stopping || (scope.ConnectorID != "github-issues" && scope.ConnectorID != "fixture"))) {
+		scope.AuthGeneration == binding.AuthGeneration && s.registeredConnector(scope.ConnectorID).release.PackageDigest == binding.PackageDigest
+	if !valid || (!reconcile && (!scope.Config.WriteEnabled || scope.Config.Paused || s.stopping || !s.registeredConnector(scope.ConnectorID).supportsWrite())) {
 		if !reconcile {
 			receipt.SyncState, receipt.Reason = common.WorkbenchOperationNotExecuted, "Scope access or mapping changed before dispatch"
 			err = ops.AdvanceWorkbenchTaskOperation(receipt.RequestID, from, receipt.SyncState, receipt)
@@ -359,7 +362,7 @@ func (s *Service) runConnectorOperation(ctx context.Context, op common.Workbench
 		from = common.WorkbenchOperationDispatching
 		scope.SnapshotVersion++
 	}
-	release := *s.workbenchConnectorRelease
+	release := s.registeredConnector(scope.ConnectorID).release
 	s.mu.Unlock()
 	request := binding.Mutation
 	if reconcile && receipt.Evidence != nil {
@@ -388,6 +391,9 @@ func (s *Service) runConnectorOperation(ctx context.Context, op common.Workbench
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if current, currentErr := s.managedConnector(scope.ConnectorID); currentErr != nil || current != process {
+		err = context.Canceled
+	}
 	if err == nil && result.Status == "confirmed" && result.Record != nil {
 		match := request.SourceID == result.Record.SourceID
 		if request.SourceID == "" && receipt.Evidence != nil {

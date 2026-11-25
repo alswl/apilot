@@ -100,6 +100,9 @@ func (s *Service) WorkbenchConnectorMapping(ctx context.Context, id string, inpu
 	if s.stopping {
 		return output, common.Err("CONFLICT", "App is stopping")
 	}
+	if _, current, err := s.readableConnectorScope(id); err != nil || current != process {
+		return output, common.Err("STALE_REVISION", "Connector changed during mapping validation")
+	}
 	if err := writer.SaveWorkbenchConnectorMapping(scope, rules, tasks); err != nil {
 		return output, err
 	}

@@ -104,10 +104,11 @@ func (s *Service) startWorkbenchConnectorRunLocked(store workbenchManagedConnect
 	}
 	now := time.Now().UTC()
 	mode := "delta"
-	if !s.workbenchConnectorSupportsDelta || full || scope.Checkpoint == "" || scope.AccessState != "available" || scope.LastFullSuccess == nil || now.Sub(*scope.LastFullSuccess) >= connectorFullInterval {
+	connector := s.registeredConnector(scope.ConnectorID)
+	if !slices.Contains(connector.description.Capabilities, "tasks.sync.delta") || full || scope.Checkpoint == "" || scope.AccessState != "available" || scope.LastFullSuccess == nil || now.Sub(*scope.LastFullSuccess) >= connectorFullInterval {
 		mode = "full"
 	}
-	if until, err := store.WorkbenchConnectorBackoff(scope.ConnectionID, scope.ScopeID, s.workbenchConnectorSyncBuckets[mode]); err != nil {
+	if until, err := store.WorkbenchConnectorBackoff(scope.ConnectionID, scope.ScopeID, connector.description.SyncRateLimitBuckets[mode]); err != nil {
 		return 0, err
 	} else if until != nil && now.Before(*until) {
 		return 0, protocol.Problem(protocol.RateLimited, "account", "Connector backoff is active")
@@ -119,7 +120,7 @@ func (s *Service) startWorkbenchConnectorRunLocked(store workbenchManagedConnect
 	}
 	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Minute)
 	s.workbenchActive[id] = cancel
-	commit := common.WorkbenchConnectorSyncCommit{Scope: scope, Run: run, PluginID: s.managedPluginID(scope.ConnectorID), Release: *s.workbenchConnectorRelease,
+	commit := common.WorkbenchConnectorSyncCommit{Scope: scope, Run: run, PluginID: s.managedPluginID(scope.ConnectorID), Release: connector.release,
 		Records: make(map[string]common.WorkbenchTask), Removed: make(map[string]bool), Hidden: make(map[string]bool)}
 	s.volatileRevision.Add(1)
 	s.wg.Add(1)

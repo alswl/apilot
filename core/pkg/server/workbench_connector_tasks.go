@@ -15,6 +15,7 @@ type workbenchTaskDetailsInput struct {
 	ID      string `path:"id" minLength:"1"`
 	Segment string `query:"segment" enum:"fields,description,comments,attachments,links,history" default:"fields"`
 	Page    string `query:"page" maxLength:"2048"`
+	ScopeID string `query:"scope_id"`
 }
 
 type workbenchMappingRequest struct {
@@ -26,7 +27,7 @@ func registerWorkbenchConnectorTasksHTTP(api huma.API, s *services.Service) {
 	errors := []int{400, 403, 404, 409, 503}
 	registerWorkbenchContext(api, http.MethodGet, workbenchPath+"/tasks/{id}/detail", "getWorkbenchTaskDetail", "Read a task detail segment", "Tasks", errors,
 		func(ctx context.Context, in *workbenchTaskDetailsInput) (common.WorkbenchTaskDetail, error) {
-			return s.WorkbenchConnectorTaskDetail(ctx, in.ID, in.Segment, in.Page)
+			return s.WorkbenchConnectorTaskDetail(ctx, in.ID, in.Segment, in.Page, in.ScopeID)
 		})
 	registerWorkbenchContext(api, http.MethodGet, workbenchPath+"/tasks/{id}/edit-metadata", "getWorkbenchTaskEditMetadata", "Read editable fields and state actions", "Tasks", errors,
 		func(ctx context.Context, in *workbenchID) (protocol.EditMetadataResult, error) {

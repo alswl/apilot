@@ -1,8 +1,11 @@
 package common
 
 import (
-	"github.com/alswl/apilot/connectors/protocol"
+	"bytes"
+	"encoding/json"
 	"time"
+
+	"github.com/alswl/apilot/connectors/protocol"
 )
 
 // WorkbenchConnectorConnection is the account-level parent of one or more scopes.
@@ -19,6 +22,7 @@ type WorkbenchScopeState struct {
 	ScopeID         string     `json:"scope_id"`
 	ConnectionID    string     `json:"connection_id"`
 	ScopeRef        string     `json:"scope_ref"`
+	ScopeType       string     `json:"scope_type,omitempty"`
 	AccessState     string     `json:"access_state"`
 	ConfigRevision  int64      `json:"config_revision"`
 	MappingRevision int64      `json:"mapping_revision"`
@@ -79,15 +83,16 @@ type WorkbenchConnectorLoginInput struct {
 }
 
 type WorkbenchConnectorAuthorization struct {
-	ID              string    `json:"id"`
-	ConnectorID     string    `json:"connector_id"`
-	Status          string    `json:"status"`
-	DisplayName     string    `json:"display_name,omitempty"`
-	EndpointRef     string    `json:"endpoint_ref,omitempty"`
-	VerificationURL string    `json:"verification_url,omitempty"`
-	UserCode        string    `json:"user_code,omitempty"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	ErrorKind       string    `json:"error_kind,omitempty"`
+	SavedEndpointSchemaVersion int       `json:"saved_endpoint_schema_version,omitempty"`
+	ID                         string    `json:"id"`
+	ConnectorID                string    `json:"connector_id"`
+	Status                     string    `json:"status"`
+	DisplayName                string    `json:"display_name,omitempty"`
+	EndpointRef                string    `json:"endpoint_ref,omitempty"`
+	VerificationURL            string    `json:"verification_url,omitempty"`
+	UserCode                   string    `json:"user_code,omitempty"`
+	ExpiresAt                  time.Time `json:"expires_at"`
+	ErrorKind                  string    `json:"error_kind,omitempty"`
 }
 
 type WorkbenchConnectorOptions struct {
@@ -96,16 +101,26 @@ type WorkbenchConnectorOptions struct {
 }
 
 type WorkbenchConnectorSelection struct {
+	ScopeType    string         `json:"scope_type,omitempty"`
 	Config       map[string]any `json:"config"`
 	WriteEnabled bool           `json:"write_enabled,omitempty"`
 }
 
 type WorkbenchConnectorSaveInput struct {
+	ReuseSavedEndpoint    bool                          `json:"reuse_saved_endpoint,omitempty"`
 	AuthorizationID       string                        `json:"authorization_id"`
 	EndpointConfig        map[string]any                `json:"endpoint_config,omitempty"`
 	EndpointSchemaVersion int                           `json:"endpoint_schema_version" minimum:"1"`
 	ScopeSchemaVersion    int                           `json:"scope_schema_version" minimum:"1"`
 	Scopes                []WorkbenchConnectorSelection `json:"scopes" minItems:"1" maxItems:"20"`
+}
+
+// UnmarshalJSON preserves opaque configuration numbers before forwarding them.
+func (in *WorkbenchConnectorSaveInput) UnmarshalJSON(data []byte) error {
+	type wire WorkbenchConnectorSaveInput
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode((*wire)(in))
 }
 
 type WorkbenchConnectorScopeResult struct {

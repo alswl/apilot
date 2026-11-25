@@ -27,14 +27,14 @@ func (s *Service) readableConnectorScope(id string) (common.WorkbenchConnectorSt
 	if err != nil {
 		return scope, nil, err
 	}
-	if scope.AuthState != "authorized" || scope.AccessState != "available" {
+	if scope.Config.Paused || scope.AuthState != "authorized" || scope.AccessState != "available" {
 		return scope, nil, common.Err("FORBIDDEN", "Connector scope is unavailable")
 	}
 	process, err := s.managedConnector(scope.ConnectorID)
 	return scope, process, err
 }
 
-func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment, page string) (common.WorkbenchTaskDetail, error) {
+func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment, page string, expectedScope ...string) (common.WorkbenchTaskDetail, error) {
 	result := common.WorkbenchTaskDetail{TaskID: id, Segment: segment}
 	switch segment {
 	case "fields", "description", "comments", "attachments", "links", "history":
@@ -44,6 +44,9 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 	task, err := s.WorkbenchTask(id)
 	if err != nil {
 		return result, err
+	}
+	if len(expectedScope) != 0 && expectedScope[0] != "" && expectedScope[0] != task.ConnectionID {
+		return result, common.Err("FORBIDDEN", "Task belongs to a different scope")
 	}
 	result.ScopeID = task.ConnectionID
 	if task.Kind == common.WorkbenchLocal || task.Kind == common.WorkbenchObsidianTasks || task.Kind == common.WorkbenchGitHubRepository || task.Kind == common.WorkbenchGitHubIssues {
@@ -69,7 +72,11 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 		return result, common.Err("INTERNAL", "Task detail storage unavailable")
 	}
 	version := task.NativeFields["source_version"]
-	digest := s.workbenchConnectorRelease.PackageDigest
+	connector := s.registeredConnector(scope.ConnectorID)
+	if connector.process != process {
+		return result, common.Err("CONFLICT", "Connector release changed")
+	}
+	digest := connector.release.PackageDigest
 	sourceSegment := segment
 	mappedDescription := scope.Mapping["description"].Field
 	if segment == "description" && mappedDescription != "" {
@@ -79,6 +86,9 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 	body, err := callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail,
 		protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID, Segment: sourceSegment, Page: page}, nil)
 	if err != nil {
+		if current, currentErr := s.managedConnector(scope.ConnectorID); currentErr != nil || current != process {
+			return result, common.Err("CONFLICT", "Connector availability changed")
+		}
 		var problem *protocol.RPCError
 		if errors.As(err, &problem) && (problem.Data.Kind == protocol.AuthRequired || problem.Data.Kind == protocol.AccessDenied) {
 			level := problem.Data.AffectedLevel
@@ -124,6 +134,11 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 	}
 	result.Version, result.Fields, result.Items, result.NextPage = body.Version, body.Fields, body.Items, body.NextPage
 	result.CapturedAt = time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, currentErr := s.managedConnector(scope.ConnectorID); currentErr != nil || current != process {
+		return result, common.Err("CONFLICT", "Connector availability changed")
+	}
 	if err := store.SaveWorkbenchTaskDetail(scope, version, digest, page, result); err != nil {
 		return common.WorkbenchTaskDetail{}, err
 	}

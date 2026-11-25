@@ -13,6 +13,7 @@ import (
 
 type connectorTaskDetailState struct {
 	version         string
+	scopeID         string
 	mappingRevision int64
 	segment         string
 	loading, loaded bool
@@ -26,6 +27,9 @@ func (m *mockup) loadConnectorTaskSegment(taskID string, state *connectorTaskDet
 	}
 	state.loading = true
 	input := map[string]string{"id": taskID, "segment": state.segment}
+	if state.scopeID != "" {
+		input["scope_id"] = state.scopeID
+	}
 	if page != "" {
 		input["page"] = page
 	}
@@ -87,7 +91,7 @@ func (m *mockup) managedTaskDetail(c *ui.Context, task *sourceObject, detail *ta
 		if state != nil {
 			segment = state.segment
 		}
-		state = &connectorTaskDetailState{version: task.TargetVersion, mappingRevision: mappingRevision, segment: segment}
+		state = &connectorTaskDetailState{version: task.TargetVersion, scopeID: task.ConnectionID, mappingRevision: mappingRevision, segment: segment}
 		detail.connectorDetail = state
 	}
 	segments := map[string]string{"来源字段": "fields", "描述": "description"}
@@ -107,7 +111,7 @@ func (m *mockup) managedTaskDetail(c *ui.Context, task *sourceObject, detail *ta
 	ui.Column(c).FillWidth().Gap(8).Children(func() {
 		ui.Row(c.Key("actions")).FillWidth().Wrap().Gap(8).Children(func() {
 			if usageChoice(c.Key("section"), &selected, segments, "描述", 130) && state.segment != segments[selected] {
-				state = &connectorTaskDetailState{version: task.TargetVersion, mappingRevision: mappingRevision, segment: segments[selected]}
+				state = &connectorTaskDetailState{version: task.TargetVersion, scopeID: task.ConnectionID, mappingRevision: mappingRevision, segment: segments[selected]}
 				detail.connectorDetail = state
 			}
 			openURLButton(c.Key("open"), tr("打开原任务"), task.Locator)

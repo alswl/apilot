@@ -74,11 +74,9 @@ type Service struct {
 	stopping              bool
 	lastError             string
 
-	workbenchConnectorAuth          map[string]*connectorAuthorization
-	workbenchConnectorRelease       *common.WorkbenchConnectorRelease
-	workbenchConnectorProcess       *integrations.WorkbenchConnectorProcess
-	workbenchConnectorSyncBuckets   map[string][]string
-	workbenchConnectorSupportsDelta bool
+	workbenchConnectorAuth map[string]*connectorAuthorization
+	managedConnectors      sync.Map
+	workbenchPluginMu      sync.Mutex
 }
 
 func New(dir string, openStore func(string) (Store, error)) (*Service, error) {
@@ -235,8 +233,8 @@ func (s *Service) StopAdmission() {
 	}
 	s.stopping = true
 	s.cancel()
-	if s.workbenchConnectorProcess != nil {
-		s.workbenchConnectorProcess.Stop()
+	for _, connector := range s.registeredConnectors() {
+		connector.process.Stop()
 	}
 	if s.githubAuthorization != nil {
 		s.githubAuthorization.close()

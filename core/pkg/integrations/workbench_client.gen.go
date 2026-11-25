@@ -101,6 +101,24 @@ func (e SyncWorkbenchConnectorConnectionParamsMode) Valid() bool {
 	}
 }
 
+// Defines values for ListWorkbenchConnectorOptionsParamsConfigLevel.
+const (
+	Endpoint ListWorkbenchConnectorOptionsParamsConfigLevel = "endpoint"
+	Scope    ListWorkbenchConnectorOptionsParamsConfigLevel = "scope"
+)
+
+// Valid indicates whether the value is a known member of the ListWorkbenchConnectorOptionsParamsConfigLevel enum.
+func (e ListWorkbenchConnectorOptionsParamsConfigLevel) Valid() bool {
+	switch e {
+	case Endpoint:
+		return true
+	case Scope:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListWorkbenchSyncRunsParamsMode.
 const (
 	ListWorkbenchSyncRunsParamsModeDelta ListWorkbenchSyncRunsParamsMode = "delta"
@@ -221,10 +239,26 @@ func (e GetWorkbenchTaskDetailParamsSegment) Valid() bool {
 	}
 }
 
+// ConfigField defines model for ConfigField.
+type ConfigField struct {
+	Control        string    `json:"control"`
+	DependsOn      *[]string `json:"depends_on,omitempty"`
+	DynamicOptions *bool     `json:"dynamic_options,omitempty"`
+	Title          string    `json:"title"`
+}
+
 // ConfigOption defines model for ConfigOption.
 type ConfigOption struct {
 	Label string `json:"label"`
 	Value string `json:"value"`
+}
+
+// ConfigSchema defines model for ConfigSchema.
+type ConfigSchema struct {
+	Fields  *map[string]ConfigField `json:"fields,omitempty"`
+	Schema  interface{}             `json:"schema"`
+	Types   *[]string               `json:"types,omitempty"`
+	Version int64                   `json:"version"`
 }
 
 // DetailItem defines model for DetailItem.
@@ -462,16 +496,17 @@ type WorkbenchConnectorAuthorization struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchConnectorAuthorization.json
-	Schema          *string   `json:"$schema,omitempty"`
-	ConnectorId     string    `json:"connector_id"`
-	DisplayName     *string   `json:"display_name,omitempty"`
-	EndpointRef     *string   `json:"endpoint_ref,omitempty"`
-	ErrorKind       *string   `json:"error_kind,omitempty"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	Id              string    `json:"id"`
-	Status          string    `json:"status"`
-	UserCode        *string   `json:"user_code,omitempty"`
-	VerificationUrl *string   `json:"verification_url,omitempty"`
+	Schema                     *string   `json:"$schema,omitempty"`
+	ConnectorId                string    `json:"connector_id"`
+	DisplayName                *string   `json:"display_name,omitempty"`
+	EndpointRef                *string   `json:"endpoint_ref,omitempty"`
+	ErrorKind                  *string   `json:"error_kind,omitempty"`
+	ExpiresAt                  time.Time `json:"expires_at"`
+	Id                         string    `json:"id"`
+	SavedEndpointSchemaVersion *int64    `json:"saved_endpoint_schema_version,omitempty"`
+	Status                     string    `json:"status"`
+	UserCode                   *string   `json:"user_code,omitempty"`
+	VerificationUrl            *string   `json:"verification_url,omitempty"`
 }
 
 // WorkbenchConnectorConnection defines model for WorkbenchConnectorConnection.
@@ -530,6 +565,7 @@ type WorkbenchConnectorSaveInput struct {
 	AuthorizationId       string                         `json:"authorization_id"`
 	EndpointConfig        *map[string]interface{}        `json:"endpoint_config,omitempty"`
 	EndpointSchemaVersion int64                          `json:"endpoint_schema_version"`
+	ReuseSavedEndpoint    *bool                          `json:"reuse_saved_endpoint,omitempty"`
 	ScopeSchemaVersion    int64                          `json:"scope_schema_version"`
 	Scopes                *[]WorkbenchConnectorSelection `json:"scopes"`
 }
@@ -556,6 +592,7 @@ type WorkbenchConnectorScopeOverview struct {
 	MappingRevision int64             `json:"mapping_revision"`
 	ScopeId         string            `json:"scope_id"`
 	ScopeRef        string            `json:"scope_ref"`
+	ScopeType       *string           `json:"scope_type,omitempty"`
 	SnapshotVersion int64             `json:"snapshot_version"`
 }
 
@@ -571,6 +608,7 @@ type WorkbenchConnectorScopeResult struct {
 // WorkbenchConnectorSelection defines model for WorkbenchConnectorSelection.
 type WorkbenchConnectorSelection struct {
 	Config       map[string]interface{} `json:"config"`
+	ScopeType    *string                `json:"scope_type,omitempty"`
 	WriteEnabled *bool                  `json:"write_enabled,omitempty"`
 }
 
@@ -797,11 +835,25 @@ type WorkbenchPlugin struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchPlugin.json
-	Schema    *string                    `json:"$schema,omitempty"`
-	Connector string                     `json:"connector"`
-	Enabled   bool                       `json:"enabled"`
-	Id        string                     `json:"id"`
-	Release   *WorkbenchConnectorRelease `json:"release,omitempty"`
+	Schema                *string                    `json:"$schema,omitempty"`
+	Connector             string                     `json:"connector"`
+	Enabled               bool                       `json:"enabled"`
+	EndpointConfig        *ConfigSchema              `json:"endpoint_config,omitempty"`
+	EndpointSchemaVersion *int64                     `json:"endpoint_schema_version,omitempty"`
+	Id                    string                     `json:"id"`
+	Imported              *bool                      `json:"imported,omitempty"`
+	Release               *WorkbenchConnectorRelease `json:"release,omitempty"`
+	ScopeConfig           *ConfigSchema              `json:"scope_config,omitempty"`
+	Writable              *bool                      `json:"writable,omitempty"`
+}
+
+// WorkbenchPluginImportInput defines model for WorkbenchPluginImportInput.
+type WorkbenchPluginImportInput struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchPluginImportInput.json
+	Schema *string `json:"$schema,omitempty"`
+	Path   string  `json:"path"`
 }
 
 // WorkbenchPluginInputBody defines model for WorkbenchPluginInputBody.
@@ -1029,11 +1081,19 @@ type SyncWorkbenchConnectorConnectionParamsMode string
 
 // ListWorkbenchConnectorOptionsParams defines parameters for ListWorkbenchConnectorOptions.
 type ListWorkbenchConnectorOptionsParams struct {
-	AuthorizationId string  `form:"authorization_id" json:"authorization_id"`
-	Field           string  `form:"field" json:"field"`
-	Search          *string `form:"search,omitempty" json:"search,omitempty"`
-	Page            *string `form:"page,omitempty" json:"page,omitempty"`
+	ReuseSavedEndpoint *bool                                           `form:"reuse_saved_endpoint,omitempty" json:"reuse_saved_endpoint,omitempty"`
+	ScopeType          *string                                         `form:"scope_type,omitempty" json:"scope_type,omitempty"`
+	ConfigLevel        *ListWorkbenchConnectorOptionsParamsConfigLevel `form:"config_level,omitempty" json:"config_level,omitempty"`
+	EndpointConfig     *string                                         `form:"endpoint_config,omitempty" json:"endpoint_config,omitempty"`
+	ScopeConfig        *string                                         `form:"scope_config,omitempty" json:"scope_config,omitempty"`
+	AuthorizationId    string                                          `form:"authorization_id" json:"authorization_id"`
+	Field              string                                          `form:"field" json:"field"`
+	Search             *string                                         `form:"search,omitempty" json:"search,omitempty"`
+	Page               *string                                         `form:"page,omitempty" json:"page,omitempty"`
 }
+
+// ListWorkbenchConnectorOptionsParamsConfigLevel defines parameters for ListWorkbenchConnectorOptions.
+type ListWorkbenchConnectorOptionsParamsConfigLevel string
 
 // ListGitHubRepositoriesParams defines parameters for ListGitHubRepositories.
 type ListGitHubRepositoriesParams struct {
@@ -1100,6 +1160,7 @@ type ListWorkbenchTasksParamsState string
 type GetWorkbenchTaskDetailParams struct {
 	Segment *GetWorkbenchTaskDetailParamsSegment `form:"segment,omitempty" json:"segment,omitempty"`
 	Page    *string                              `form:"page,omitempty" json:"page,omitempty"`
+	ScopeId *string                              `form:"scope_id,omitempty" json:"scope_id,omitempty"`
 }
 
 // GetWorkbenchTaskDetailParamsSegment defines parameters for GetWorkbenchTaskDetail.
@@ -1122,6 +1183,9 @@ type StartWorkbenchConnectorAuthorizationJSONRequestBody = WorkbenchConnectorLog
 
 // SaveWorkbenchConnectorConnectionJSONRequestBody defines body for SaveWorkbenchConnectorConnection for application/json ContentType.
 type SaveWorkbenchConnectorConnectionJSONRequestBody = WorkbenchConnectorSaveInput
+
+// ImportWorkbenchConnectorJSONRequestBody defines body for ImportWorkbenchConnector for application/json ContentType.
+type ImportWorkbenchConnectorJSONRequestBody = WorkbenchPluginImportInput
 
 // SetWorkbenchPluginEnabledJSONRequestBody defines body for SetWorkbenchPluginEnabled for application/json ContentType.
 type SetWorkbenchPluginEnabledJSONRequestBody = WorkbenchPluginInputBody
@@ -1441,6 +1505,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/workbench/plugins (the `ListWorkbenchPlugins` operationId).
 	ListWorkbenchPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ImportWorkbenchConnectorWithBody Install or upgrade a signed local Connector package
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+	ImportWorkbenchConnectorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ImportWorkbenchConnector Install or upgrade a signed local Connector package
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+	ImportWorkbenchConnector(ctx context.Context, body ImportWorkbenchConnectorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SetWorkbenchPluginEnabledWithBody Set plugin enabled state
 	//
@@ -2210,6 +2288,40 @@ func (c *Client) ListWorkbenchLabels(ctx context.Context, reqEditors ...RequestE
 // Corresponds with GET /v1/workbench/plugins (the `ListWorkbenchPlugins` operationId).
 func (c *Client) ListWorkbenchPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListWorkbenchPluginsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ImportWorkbenchConnectorWithBody Install or upgrade a signed local Connector package
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+func (c *Client) ImportWorkbenchConnectorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewImportWorkbenchConnectorRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ImportWorkbenchConnector Install or upgrade a signed local Connector package
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+func (c *Client) ImportWorkbenchConnector(ctx context.Context, body ImportWorkbenchConnectorJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewImportWorkbenchConnectorRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3621,6 +3733,66 @@ func NewListWorkbenchConnectorOptionsRequest(server string, id string, params *L
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
 
+		if params.ReuseSavedEndpoint != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "reuse_saved_endpoint", *params.ReuseSavedEndpoint, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ScopeType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_type", *params.ScopeType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ConfigLevel != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "config_level", *params.ConfigLevel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.EndpointConfig != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "endpoint_config", *params.EndpointConfig, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ScopeConfig != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_config", *params.ScopeConfig, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "authorization_id", params.AuthorizationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 			return nil, err
 		} else {
@@ -3901,6 +4073,46 @@ func NewListWorkbenchPluginsRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewImportWorkbenchConnectorRequest calls the generic ImportWorkbenchConnector builder with application/json body
+func NewImportWorkbenchConnectorRequest(server string, body ImportWorkbenchConnectorJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewImportWorkbenchConnectorRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewImportWorkbenchConnectorRequestWithBody constructs an http.Request for the ImportWorkbenchConnector method, with any body, and a specified content type
+func NewImportWorkbenchConnectorRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/plugins/import")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -4906,6 +5118,18 @@ func NewGetWorkbenchTaskDetailRequest(server string, id string, params *GetWorkb
 
 		}
 
+		if params.ScopeId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_id", *params.ScopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -5371,6 +5595,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/workbench/plugins (the `ListWorkbenchPlugins` operationId).
 	ListWorkbenchPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListWorkbenchPluginsResponse, error)
+
+	// ImportWorkbenchConnectorWithBodyWithResponse Install or upgrade a signed local Connector package
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+	ImportWorkbenchConnectorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportWorkbenchConnectorResponse, error)
+
+	// ImportWorkbenchConnectorWithResponse Install or upgrade a signed local Connector package
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+	ImportWorkbenchConnectorWithResponse(ctx context.Context, body ImportWorkbenchConnectorJSONRequestBody, reqEditors ...RequestEditorFn) (*ImportWorkbenchConnectorResponse, error)
 
 	// SetWorkbenchPluginEnabledWithBodyWithResponse Set plugin enabled state
 	//
@@ -7943,6 +8181,75 @@ func (r ListWorkbenchPluginsResponse) ContentType() string {
 	return ""
 }
 
+type ImportWorkbenchConnectorResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchPlugin
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ImportWorkbenchConnectorResponse) GetJSON200() *WorkbenchPlugin {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ImportWorkbenchConnectorResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r ImportWorkbenchConnectorResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r ImportWorkbenchConnectorResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r ImportWorkbenchConnectorResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r ImportWorkbenchConnectorResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ImportWorkbenchConnectorResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ImportWorkbenchConnectorResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ImportWorkbenchConnectorResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type SetWorkbenchPluginEnabledResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -9724,6 +10031,32 @@ func (c *ClientWithResponses) ListWorkbenchPluginsWithResponse(ctx context.Conte
 		return nil, err
 	}
 	return ParseListWorkbenchPluginsResponse(rsp)
+}
+
+// ImportWorkbenchConnectorWithBodyWithResponse Install or upgrade a signed local Connector package
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+func (c *ClientWithResponses) ImportWorkbenchConnectorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ImportWorkbenchConnectorResponse, error) {
+	rsp, err := c.ImportWorkbenchConnectorWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseImportWorkbenchConnectorResponse(rsp)
+}
+
+// ImportWorkbenchConnectorWithResponse Install or upgrade a signed local Connector package
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/plugins/import (the `ImportWorkbenchConnector` operationId).
+func (c *ClientWithResponses) ImportWorkbenchConnectorWithResponse(ctx context.Context, body ImportWorkbenchConnectorJSONRequestBody, reqEditors ...RequestEditorFn) (*ImportWorkbenchConnectorResponse, error) {
+	rsp, err := c.ImportWorkbenchConnector(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseImportWorkbenchConnectorResponse(rsp)
 }
 
 // SetWorkbenchPluginEnabledWithBodyWithResponse Set plugin enabled state
@@ -11920,6 +12253,60 @@ func ParseListWorkbenchPluginsResponse(rsp *http.Response) (*ListWorkbenchPlugin
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseImportWorkbenchConnectorResponse parses an HTTP response from a ImportWorkbenchConnectorWithResponse call
+func ParseImportWorkbenchConnectorResponse(rsp *http.Response) (*ImportWorkbenchConnectorResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ImportWorkbenchConnectorResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchPlugin
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest ErrorModel

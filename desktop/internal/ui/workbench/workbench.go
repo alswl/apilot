@@ -41,6 +41,8 @@ type mockup struct {
 	connectorUsage                                            connectorUsageState
 	connectorTaskEditor                                       *connectorTaskEditor
 	connectorProblem                                          string
+	connectorImportBusy                                       bool
+	connectorImportStatus                                     string
 	devTask                                                   *devTaskScenario
 	hosted                                                    bool
 	hostPanels                                                HostPanels

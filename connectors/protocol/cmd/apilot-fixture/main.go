@@ -20,7 +20,7 @@ func main() {
 	}
 	description := protocol.Description{
 		ConnectorID:          fixtureConnectorID,
-		ReleaseVersion:       "0.1.0",
+		ReleaseVersion:       fixtureReleaseVersion,
 		ProtocolVersions:     []int{protocol.Version},
 		Capabilities:         []string{"auth.login", "config.options", "tasks.sync.full", "tasks.sync.delta", "fields.describe", "tasks.detail", "tasks.edit_metadata", "tasks.mutate", "tasks.reconcile"},
 		SyncRateLimitBuckets: map[string][]string{"full": {"fixture-read"}, "delta": {"fixture-read"}},
@@ -36,13 +36,17 @@ func main() {
 			},
 		},
 	}
-	if fixtureConnectorID != "fixture" {
+	handler := fixtureHandler
+	if fixtureScopeMode != "" {
+		scopedFixtureDescription(&description)
+		handler = scopedFixture
+	} else if fixtureConnectorID != "fixture" {
 		description.Capabilities = []string{"auth.login", "config.options", "tasks.sync.full", "fields.describe", "tasks.detail"}
 		description.SyncRateLimitBuckets = map[string][]string{"full": {"fixture-read"}}
 	}
 	ctx, cancel := protocol.RequestContext(os.Getenv("APILOT_CONNECTOR_DEADLINE"))
 	defer cancel()
-	if err := protocol.Serve(ctx, os.Args[1:], os.Stdin, os.Stdout, description, fixtureHandler); err != nil {
+	if err := protocol.Serve(ctx, os.Args[1:], os.Stdin, os.Stdout, description, handler); err != nil {
 		fmt.Fprintln(os.Stderr, "Apilot fixture:", err)
 		os.Exit(1)
 	}

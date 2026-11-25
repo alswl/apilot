@@ -22,16 +22,47 @@ type workbenchPlugin struct {
 	capabilities common.WorkbenchCapabilities
 }
 
+type managedConnectorRelease struct {
+	process     *integrations.WorkbenchConnectorProcess
+	release     common.WorkbenchConnectorRelease
+	description protocol.Description
+	trusted     bool
+	publisher   []byte
+}
+
+func (s *Service) registeredConnector(id string) *managedConnectorRelease {
+	value, _ := s.managedConnectors.Load(id)
+	connector, _ := value.(*managedConnectorRelease)
+	return connector
+}
+
+func (s *Service) registeredConnectors() []*managedConnectorRelease {
+	var connectors []*managedConnectorRelease
+	s.managedConnectors.Range(func(_, value any) bool {
+		connectors = append(connectors, value.(*managedConnectorRelease))
+		return true
+	})
+	slices.SortFunc(connectors, func(a, b *managedConnectorRelease) int {
+		return strings.Compare(a.release.ConnectorID, b.release.ConnectorID)
+	})
+	return connectors
+}
+
 type workbenchPluginStore interface {
 	WorkbenchPluginEnabled(string) (bool, error)
 	SetWorkbenchPluginEnabled(string, bool) error
 }
 
 type WorkbenchPlugin struct {
-	ID        string                            `json:"id"`
-	Enabled   bool                              `json:"enabled"`
-	Connector string                            `json:"connector"`
-	Release   *common.WorkbenchConnectorRelease `json:"release,omitempty"`
+	ID                    string                            `json:"id"`
+	Enabled               bool                              `json:"enabled"`
+	Connector             string                            `json:"connector"`
+	Release               *common.WorkbenchConnectorRelease `json:"release,omitempty"`
+	EndpointConfig        *protocol.ConfigSchema            `json:"endpoint_config,omitempty"`
+	ScopeConfig           *protocol.ConfigSchema            `json:"scope_config,omitempty"`
+	EndpointSchemaVersion int                               `json:"endpoint_schema_version,omitempty"`
+	Writable              bool                              `json:"writable,omitempty"`
+	Imported              bool                              `json:"imported,omitempty"`
 }
 
 type WorkbenchPluginRegistry struct {
@@ -65,9 +96,13 @@ func (s *Service) readWorkbench(ctx context.Context, c common.WorkbenchConnectio
 }
 
 func (s *Service) workbenchPluginEnabled(kind string) (bool, error) {
-	if _, ok := s.workbenchPlugins[kind]; !ok && (s.workbenchConnectorRelease == nil || s.workbenchConnectorRelease.ConnectorID != kind) {
+	if _, ok := s.workbenchPlugins[kind]; !ok && s.registeredConnector(kind) == nil {
 		return false, common.Err("INVALID_ARGUMENT", "Unknown connector type")
 	}
+	return s.workbenchPluginPreference(kind)
+}
+
+func (s *Service) workbenchPluginPreference(kind string) (bool, error) {
 	if store, ok := s.store.(workbenchPluginStore); ok {
 		return store.WorkbenchPluginEnabled(kind)
 	}
@@ -94,8 +129,11 @@ func (s *Service) WorkbenchPlugins() ([]WorkbenchPlugin, error) {
 		}
 		plugins = append(plugins, s.workbenchPluginInfo(connector.Kind, enabled))
 	}
-	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID != "github-issues" {
-		id := s.workbenchConnectorRelease.ConnectorID
+	for _, connector := range s.registeredConnectors() {
+		id := connector.release.ConnectorID
+		if id == "github-issues" {
+			continue
+		}
 		enabled, err := s.workbenchPluginEnabled(id)
 		if err != nil {
 			return nil, err
@@ -106,9 +144,9 @@ func (s *Service) WorkbenchPlugins() ([]WorkbenchPlugin, error) {
 }
 
 func (s *Service) SetWorkbenchPluginEnabled(id string, enabled bool) (WorkbenchPlugin, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.stopping {
+	s.workbenchPluginMu.Lock()
+	defer s.workbenchPluginMu.Unlock()
+	if s.ctx.Err() != nil {
 		return WorkbenchPlugin{}, common.Err("CONFLICT", "App is stopping")
 	}
 	previous, err := s.workbenchPluginEnabled(id)
@@ -119,25 +157,56 @@ func (s *Service) SetWorkbenchPluginEnabled(id string, enabled bool) (WorkbenchP
 	if !ok {
 		return WorkbenchPlugin{}, common.Err("INTERNAL", "Plugin settings unavailable")
 	}
-	result := s.workbenchPluginInfo(id, enabled)
 	if previous == enabled {
-		return result, nil
+		return s.workbenchPluginInfo(id, enabled), nil
 	}
-	connections, err := s.WorkbenchConnections()
-	if err != nil {
-		return WorkbenchPlugin{}, err
+	connectorID := id
+	if id == common.WorkbenchGitHubRepository {
+		connectorID = "github-issues"
 	}
-	if err := store.SetWorkbenchPluginEnabled(id, enabled); err != nil {
-		return WorkbenchPlugin{}, err
-	}
-	if !enabled {
-		for _, connection := range connections {
-			if cancel := s.workbenchActive[connection.ID]; (connection.Kind == id || (connection.ParentConnectionID != "" && s.managedPluginID(connection.Kind) == id)) && cancel != nil {
-				cancel()
+	connector := s.registeredConnector(connectorID)
+	if enabled && connector != nil {
+		if connector.trusted {
+			if err := s.verifyInstalledConnector(connectorID, connector.release.PackageDigest, connector.publisher); err != nil {
+				return WorkbenchPlugin{}, err
 			}
 		}
+		fresh := *connector
+		fresh.process = connector.process.Fresh()
+		fresh.description, err = fresh.process.Describe(s.ctx)
+		if err != nil {
+			fresh.process.Close()
+			return WorkbenchPlugin{}, publicConnectorError(err)
+		}
+		connector = &fresh
 	}
-	return result, nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.stopping {
+		if enabled && connector != nil {
+			connector.process.Close()
+		}
+		return WorkbenchPlugin{}, common.Err("CONFLICT", "App is stopping")
+	}
+	if err := store.SetWorkbenchPluginEnabled(id, enabled); err != nil {
+		if enabled && connector != nil {
+			connector.process.Close()
+		}
+		return WorkbenchPlugin{}, err
+	}
+	if connector != nil {
+		if enabled {
+			s.managedConnectors.Store(connectorID, connector)
+		} else {
+			s.cancelConnectorAuthorizations(connectorID)
+			connector.process.Stop()
+		}
+	}
+	if !enabled {
+		s.cancelConnectorSyncs(id)
+	}
+	s.volatileRevision.Add(1)
+	return s.workbenchPluginInfo(id, enabled), nil
 }
 
 func (s *Service) WorkbenchConnectors() ([]WorkbenchConnector, error) {
@@ -159,13 +228,16 @@ func (s *Service) WorkbenchConnectors() ([]WorkbenchConnector, error) {
 		descriptor.Capabilities = plugin.capabilities
 		result = append(result, descriptor)
 	}
-	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID != "github-issues" {
-		id := s.workbenchConnectorRelease.ConnectorID
+	for _, connector := range s.registeredConnectors() {
+		id := connector.release.ConnectorID
+		if id == "github-issues" {
+			continue
+		}
 		enabled, err := s.workbenchPluginEnabled(id)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, WorkbenchConnector{Kind: id, Name: id, PluginID: id, Release: s.workbenchPluginInfo(id, enabled).Release, Capabilities: common.WorkbenchCapabilities{Read: enabled, Refresh: enabled}})
+		result = append(result, WorkbenchConnector{Kind: id, Name: id, PluginID: id, UserConfigurable: enabled && connector.trusted, Release: s.workbenchPluginInfo(id, enabled).Release, Capabilities: common.WorkbenchCapabilities{Read: enabled, Refresh: enabled}})
 	}
 	return result, nil
 }
@@ -175,7 +247,7 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 		return common.WorkbenchCapabilities{}
 	}
 	if c.ParentConnectionID != "" {
-		writable := c.WriteEnabled && c.AccessState == "available" && (c.Kind == "github-issues" || c.Kind == "fixture")
+		writable := c.WriteEnabled && c.AccessState == "available" && s.registeredConnector(c.Kind).supportsWrite()
 		return common.WorkbenchCapabilities{Read: true, Refresh: true, Create: writable && c.Kind == "github-issues", SetState: writable}
 	}
 	caps := s.workbenchPlugins[c.Kind].capabilities
@@ -190,9 +262,22 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 
 func (s *Service) workbenchPluginInfo(id string, enabled bool) WorkbenchPlugin {
 	info := WorkbenchPlugin{ID: id, Enabled: enabled, Connector: id}
-	if enabled && s.workbenchConnectorRelease != nil && id == s.managedPluginID(s.workbenchConnectorRelease.ConnectorID) {
-		release := *s.workbenchConnectorRelease
+	if id == common.WorkbenchGitHubRepository {
+		id = "github-issues"
+	}
+	if connector := s.registeredConnector(id); connector != nil {
+		info.Imported = connector.trusted
+		if !enabled {
+			return info
+		}
+		release := connector.release
 		info.Release = &release
+		scope := connector.description.ScopeConfig
+		info.ScopeConfig = &scope
+		endpoint := connector.description.EndpointConfig
+		info.EndpointConfig = &endpoint
+		info.EndpointSchemaVersion = connector.description.EndpointConfig.Version
+		info.Writable = connector.supportsWrite()
 	}
 	return info
 }
@@ -210,6 +295,8 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 	if err != nil {
 		log.Printf("workbench: bundled Connector registration failed: %v", err)
 	}
+	s.restoreImportedConnectors()
+	development := false
 	if file := os.Getenv("APILOT_DEV_CONNECTOR_MANIFEST"); len(packages) == 0 && file != "" && !insideWorkbenchApp(executable) {
 		dir, err := filepath.EvalSymlinks(filepath.Dir(file))
 		if err != nil || !filepath.IsAbs(file) {
@@ -219,13 +306,36 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 		if err != nil {
 			return err
 		}
-		if _, reserved := s.workbenchPlugins[pkg.Manifest.ConnectorID]; reserved && pkg.Manifest.ConnectorID != "github-issues" {
+		if _, reserved := s.workbenchPlugins[pkg.Manifest.ConnectorID]; reserved || pkg.Manifest.ConnectorID == "github-issues" {
 			return common.Err("INVALID_ARGUMENT", "Development Connector ID is reserved")
 		}
-		packages = append(packages, pkg)
+		id := pkg.Manifest.ConnectorID
+		owned := s.registeredConnector(id) != nil
+		if store, ok := s.store.(workbenchImportStore); ok && !owned {
+			digest, err := store.WorkbenchPluginDigest(s.managedPluginID(id))
+			if err != nil {
+				return err
+			}
+			owned, err = s.hasManagedConnectorPackage(store, id, digest)
+			if err != nil {
+				return err
+			}
+			if !owned && digest == pkg.Digest && id != "fixture" {
+				if err := s.migrateConnectorNamespace(id, "development-connectors"); err != nil {
+					return err
+				}
+			}
+		}
+		if !owned {
+			development = true
+			packages = append(packages, pkg)
+		}
 	}
 	for _, pkg := range packages {
 		namespace := filepath.Join(s.dir, "connectors", pkg.Manifest.ConnectorID)
+		if development && pkg.Manifest.ConnectorID != "fixture" {
+			namespace = filepath.Join(s.dir, "development-connectors", pkg.Manifest.ConnectorID)
+		}
 		if err := os.MkdirAll(namespace, 0700); err != nil {
 			return err
 		}
@@ -236,15 +346,13 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 			log.Printf("workbench: bundled Connector describe failed: %v", err)
 			continue
 		}
-		s.workbenchConnectorProcess = process
-		s.workbenchConnectorSyncBuckets = description.SyncRateLimitBuckets
-		s.workbenchConnectorSupportsDelta = slices.Contains(description.Capabilities, "tasks.sync.delta")
 		release = &common.WorkbenchConnectorRelease{
 			ConnectorID: pkg.Manifest.ConnectorID, ReleaseVersion: pkg.Manifest.ReleaseVersion,
 			ProtocolVersion: protocol.Version, PackageDigest: pkg.Digest,
 		}
+		s.managedConnectors.Store(release.ConnectorID, &managedConnectorRelease{process: process, release: *release, description: description})
 	}
-	s.workbenchConnectorRelease = release
+
 	if store, ok := s.store.(interface {
 		RegisterWorkbenchPluginRelease(string, *common.WorkbenchConnectorRelease) error
 	}); ok {
@@ -278,7 +386,38 @@ func insideWorkbenchApp(executable string) bool {
 }
 
 func (s *Service) closeWorkbenchConnector() {
-	if s.workbenchConnectorProcess != nil {
-		s.workbenchConnectorProcess.Close()
+	for _, connector := range s.registeredConnectors() {
+		connector.process.Close()
+	}
+}
+
+func (c *managedConnectorRelease) supportsWrite() bool {
+	if c == nil {
+		return false
+	}
+	if c.release.ConnectorID == "github-issues" || c.release.ConnectorID == "fixture" && !c.trusted {
+		return true
+	}
+	return c.trusted && slices.Contains(c.description.Capabilities, protocol.Mutate)
+}
+
+func (s *Service) cancelConnectorAuthorizations(id string) {
+	for _, session := range s.workbenchConnectorAuth {
+		if session.status.ConnectorID == id {
+			session.cancel()
+			session.status.Status = "cancelled"
+			session.status.VerificationURL, session.status.UserCode = "", ""
+		}
+	}
+}
+
+func (s *Service) cancelConnectorSyncs(id string) {
+	connections, _ := s.WorkbenchConnections()
+	for _, connection := range connections {
+		if connection.Kind == id || connection.ParentConnectionID != "" && s.managedPluginID(connection.Kind) == id {
+			if cancel := s.workbenchActive[connection.ID]; cancel != nil {
+				cancel()
+			}
+		}
 	}
 }

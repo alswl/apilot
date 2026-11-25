@@ -3,11 +3,12 @@ package common
 import "github.com/alswl/apilot/connectors/protocol"
 
 type WorkbenchConnectorNewScope struct {
-	ID           string
-	Context      protocol.ScopeContext
-	Label        string
-	DisplayName  string
-	WriteEnabled bool
+	ID             string
+	Context        protocol.ScopeContext
+	Label          string
+	DisplayName    string
+	WriteEnabled   bool
+	AppendExisting bool
 }
 
 type WorkbenchConnectorStoredScope struct {

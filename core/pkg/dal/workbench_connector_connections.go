@@ -13,6 +13,7 @@ import (
 type connectorScopeConfig struct {
 	Mapping map[string]protocol.MappingRule `json:"mapping,omitempty"`
 	common.WorkbenchConnection
+	ScopeType          string          `json:"scope_type,omitempty"`
 	ScopeConfig        json.RawMessage `json:"scope_config"`
 	ScopeSchemaVersion int             `json:"scope_schema_version"`
 }
@@ -37,12 +38,23 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 		parent.ConnectorID, parent.EndpointRef, parent.AccountRef).Scan(&out.ConnectionID); err != nil {
 		return out, err
 	}
+	sameEndpointConfig := true
+	if out.ConnectionID != parent.ID {
+		var stored string
+		var storedVersion int
+		if err := tx.QueryRow("SELECT endpoint_config,endpoint_schema_version FROM workbench_connector_connections WHERE id=?", out.ConnectionID).Scan(&stored, &storedVersion); err != nil {
+			return out, err
+		}
+		sameEndpointConfig = stored == string(endpointConfig) && storedVersion == endpointSchemaVersion
+	}
 	for _, scope := range scopes {
 		result := common.WorkbenchConnectorScopeResult{ScopeID: scope.ID, ScopeRef: scope.Context.ScopeRef, Label: scope.Label, Status: "queued"}
 		if out.ConnectionID != parent.ID {
 			result.ScopeID = ""
 			err := tx.QueryRow("SELECT id FROM workbench_connections WHERE connector_connection_id=? AND scope_ref=?", out.ConnectionID, result.ScopeRef).Scan(&result.ScopeID)
 			switch {
+			case errors.Is(err, sql.ErrNoRows) && scope.AppendExisting && sameEndpointConfig:
+				result.ScopeID = scope.ID
 			case errors.Is(err, sql.ErrNoRows):
 				result.Status, result.ErrorKind = "rejected", "connection_exists"
 			case err != nil:
@@ -50,10 +62,11 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 			default:
 				result.Status = "already_connected"
 			}
-		} else {
+		}
+		if result.Status == "queued" {
 			config := connectorScopeConfig{
 				WorkbenchConnection: common.WorkbenchConnection{ID: scope.ID, Kind: parent.ConnectorID, Name: scope.Label, Mode: "sync", Version: 1, AccountLogin: scope.DisplayName, WriteEnabled: scope.WriteEnabled},
-				ScopeConfig:         scope.Context.ScopeConfig, ScopeSchemaVersion: scope.Context.ScopeSchemaVersion,
+				ScopeType:           scope.Context.ScopeType, ScopeConfig: scope.Context.ScopeConfig, ScopeSchemaVersion: scope.Context.ScopeSchemaVersion,
 			}
 			_, err := tx.Exec(`INSERT INTO workbench_connections(id,config,version,connector_connection_id,scope_ref,config_revision)
 				VALUES(?,?,1,?,?,1)`, scope.ID, encode(config), out.ConnectionID, scope.Context.ScopeRef)
@@ -66,10 +79,23 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 	return out, tx.Commit()
 }
 
-func (s *Store) WorkbenchConnectorSelectedValues(connectorID, endpointRef, accountRef, field string) (map[string]bool, error) {
+func (s *Store) WorkbenchConnectorEndpointConfig(connectorID, endpointRef, accountRef string) (string, json.RawMessage, int, error) {
+	var id string
+	var config []byte
+	var version int
+	err := s.db.QueryRow(`SELECT id,endpoint_config,endpoint_schema_version FROM workbench_connector_connections
+  WHERE connector_id=? AND endpoint_ref=? AND account_ref=?`, connectorID, endpointRef, accountRef).Scan(&id, &config, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, 0, nil
+	}
+	return id, config, version, err
+}
+
+func (s *Store) WorkbenchConnectorSelectedValues(connectorID, endpointRef, accountRef, field, scopeType string) (map[string]bool, error) {
 	rows, err := s.db.Query(`SELECT c.config -> '$.scope_config'
 		FROM workbench_connections c JOIN workbench_connector_connections p ON p.id=c.connector_connection_id
-		WHERE p.connector_id=? AND p.endpoint_ref=? AND p.account_ref=?`, connectorID, endpointRef, accountRef)
+		WHERE p.connector_id=? AND p.endpoint_ref=? AND p.account_ref=?
+ AND coalesce(c.config ->> '$.scope_type','')=?`, connectorID, endpointRef, accountRef, scopeType)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +182,8 @@ func scanConnectorScope(row interface{ Scan(...any) error }) (common.WorkbenchCo
 	scope.Context.ScopeRef = scope.ScopeRef
 	scope.Context.EndpointConfig = json.RawMessage(endpointConfig)
 	scope.Context.ScopeConfig = config.ScopeConfig
+	scope.ScopeType = config.ScopeType
+	scope.Context.ScopeType = config.ScopeType
 	scope.Context.ScopeSchemaVersion = config.ScopeSchemaVersion
 	return scope, nil
 }

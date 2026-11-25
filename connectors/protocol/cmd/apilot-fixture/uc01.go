@@ -267,7 +267,11 @@ func (c fixtureConfig) checkScope(p protocol.ScopeContext) *protocol.RPCError {
 	if problem := c.checkAccount(p.AccountRef, p.EndpointRef); problem != nil {
 		return problem
 	}
-	if p.ScopeRef != "PAY" && p.ScopeRef != "OPS" {
+	knownScope := p.ScopeRef == "PAY" || p.ScopeRef == "OPS"
+	if fixtureScopeMode != "" {
+		knownScope = p.ScopeRef == "alpha" || p.ScopeRef == "beta"
+	}
+	if !knownScope {
 		return protocol.Problem(protocol.InvalidConfig, "scope", "Unknown fixture scope")
 	}
 	if p.ScopeRef == c.DeniedScope {

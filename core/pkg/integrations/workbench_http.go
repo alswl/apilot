@@ -30,7 +30,7 @@ func CallWorkbenchHTTPContext(ctx context.Context, socket, method string, params
 	}
 	timeout := 3 * time.Second
 	switch method {
-	case "workbench.connection.save", "workbench.connector.connection.save", "workbench.connector.options":
+	case "workbench.connection.save", "workbench.connector.connection.save", "workbench.connector.options", "workbench.plugin.import", "workbench.plugin.set":
 		timeout = 40 * time.Second
 	case "workbench.github.authorization.start":
 		timeout = 20 * time.Second
@@ -110,11 +110,7 @@ func requestWorkbenchHTTP(ctx context.Context, client *Client, method string, pa
 		}
 		return client.StartWorkbenchConnectorAuthorization(ctx, in)
 	case "workbench.connector.connection.save":
-		var in SaveWorkbenchConnectorConnectionJSONRequestBody
-		if json.Unmarshal(input, &in) != nil {
-			return nil, common.Err("INVALID_ARGUMENT", "Invalid Connector selection")
-		}
-		return client.SaveWorkbenchConnectorConnection(ctx, in)
+		return client.SaveWorkbenchConnectorConnectionWithBody(ctx, "application/json", bytes.NewReader(input))
 	case "workbench.connector.options":
 		var in struct {
 			ID string `json:"id"`
@@ -165,6 +161,12 @@ func requestWorkbenchHTTP(ctx context.Context, client *Client, method string, pa
 		return client.GetGitHubAuthorization(ctx, in.ID)
 	case "workbench.operation.submit":
 		return client.SubmitWorkbenchTaskOperationWithBody(ctx, "application/json", bytes.NewReader(input))
+	case "workbench.plugin.import":
+		var in ImportWorkbenchConnectorJSONRequestBody
+		if json.Unmarshal(input, &in) != nil || in.Path == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "Connector package path is required")
+		}
+		return client.ImportWorkbenchConnector(ctx, in)
 	case "workbench.plugin.list":
 		return client.ListWorkbenchPlugins(ctx)
 	case "workbench.task.list":

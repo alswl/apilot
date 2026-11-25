@@ -2,11 +2,13 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/services"
 )
@@ -21,11 +23,16 @@ type workbenchConnectorSyncInput struct {
 }
 
 type workbenchConnectorOptionsInput struct {
-	ID              string `path:"id" minLength:"1"`
-	AuthorizationID string `query:"authorization_id" required:"true" minLength:"1"`
-	Field           string `query:"field" required:"true" minLength:"1" maxLength:"100"`
-	Search          string `query:"search" maxLength:"200"`
-	Page            string `query:"page" maxLength:"512"`
+	ID                 string `path:"id" minLength:"1"`
+	ReuseSavedEndpoint bool   `query:"reuse_saved_endpoint"`
+	ScopeType          string `query:"scope_type"`
+	ConfigLevel        string `query:"config_level" enum:"endpoint,scope"`
+	EndpointConfig     string `query:"endpoint_config" maxLength:"4096"`
+	ScopeConfig        string `query:"scope_config" maxLength:"4096"`
+	AuthorizationID    string `query:"authorization_id" required:"true" minLength:"1"`
+	Field              string `query:"field" required:"true" minLength:"1" maxLength:"100"`
+	Search             string `query:"search" maxLength:"200"`
+	Page               string `query:"page" maxLength:"512"`
 }
 
 func registerWorkbenchConnectorHTTP(api huma.API, s *services.Service) {
@@ -47,7 +54,23 @@ func registerWorkbenchConnectorHTTP(api huma.API, s *services.Service) {
 		func(ctx context.Context, in *workbenchConnectorOptionsInput) (common.WorkbenchConnectorOptions, error) {
 			ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 			defer cancel()
-			return s.WorkbenchConnectorOptions(ctx, in.ID, in.AuthorizationID, in.Field, in.Search, in.Page)
+			draft := protocol.OptionsParams{ConfigLevel: in.ConfigLevel}
+			for _, target := range []struct {
+				raw    string
+				target *json.RawMessage
+			}{
+				{in.EndpointConfig, &draft.EndpointConfig}, {in.ScopeConfig, &draft.ScopeConfig},
+			} {
+				if target.raw == "" {
+					continue
+				}
+				var object map[string]json.RawMessage
+				if json.Unmarshal([]byte(target.raw), &object) != nil || object == nil || in.ConfigLevel == "" {
+					return common.WorkbenchConnectorOptions{}, common.Err("INVALID_ARGUMENT", "Options configuration must be an object with a configuration level")
+				}
+				*target.target = json.RawMessage(target.raw)
+			}
+			return s.WorkbenchConnectorOptions(ctx, in.ID, in.AuthorizationID, in.Field, in.Search, in.Page, in.ScopeType, draft, in.ReuseSavedEndpoint)
 		})
 	registerWorkbench(api, http.MethodGet, connections, "listWorkbenchConnectorConnections", "List Connector connections and their scopes", "Connections", nil,
 		func(_ *struct{}) (workbenchItems[common.WorkbenchConnectorOverview], error) {
