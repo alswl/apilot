@@ -204,19 +204,21 @@ func (m *mockup) connectorDraftFields(c *ui.Context, p *connectorLoginPanel) {
 				values = []any{true, false}
 			}
 			selected := slices.IndexFunc(values, func(choice any) bool { return reflect.DeepEqual(value, choice) })
-			previous := selected
 			components.Muted(key.Key("label"), field.meta.Title)
 			ui.RadioGroup(key.Key("value"), func() {
 				ui.Row(key.Key("choices")).Wrap().Gap(8).Children(func() {
 					for index, choice := range values {
-						ui.Radio(key.Key(index), &selected, index, configFieldText(choice)).Disabled(disabled)
+						if ui.Radio(key.Key(index), &selected, index, configFieldText(choice)).Disabled(disabled).Changed() {
+							changed = true
+						}
 					}
 					if !field.required {
-						ui.Radio(key.Key("unset"), &selected, -1, tr("请选择")).Disabled(disabled)
+						if ui.Radio(key.Key("unset"), &selected, -1, tr("请选择")).Disabled(disabled).Changed() {
+							changed = true
+						}
 					}
 				})
-			})
-			changed = selected != previous
+			}).Label(field.meta.Title)
 			if changed {
 				value = nil
 				if selected >= 0 {
