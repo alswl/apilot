@@ -1,4 +1,11 @@
 {
+  "显示配置规则": "Show configuration schema",
+  "请从配置中移除凭据字段": "Remove credential fields from the configuration",
+  "输入 JSON 对象。请通过登录提供凭据。": "Enter JSON objects. Use Log In to supply credentials.",
+  "端点配置 JSON": "Endpoint configuration JSON",
+  "范围配置 JSON": "Scope configuration JSON",
+  "请输入有效的 JSON 对象": "Enter a valid JSON object",
+  "查找选项": "Find options",
   "请选择": "Choose an option",
   "是": "Yes",
   "否": "No",

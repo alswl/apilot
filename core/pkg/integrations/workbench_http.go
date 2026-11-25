@@ -110,11 +110,7 @@ func requestWorkbenchHTTP(ctx context.Context, client *Client, method string, pa
 		}
 		return client.StartWorkbenchConnectorAuthorization(ctx, in)
 	case "workbench.connector.connection.save":
-		var in SaveWorkbenchConnectorConnectionJSONRequestBody
-		if json.Unmarshal(input, &in) != nil {
-			return nil, common.Err("INVALID_ARGUMENT", "Invalid Connector selection")
-		}
-		return client.SaveWorkbenchConnectorConnection(ctx, in)
+		return client.SaveWorkbenchConnectorConnectionWithBody(ctx, "application/json", bytes.NewReader(input))
 	case "workbench.connector.options":
 		var in struct {
 			ID string `json:"id"`

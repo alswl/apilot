@@ -79,6 +79,18 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 	return out, tx.Commit()
 }
 
+func (s *Store) WorkbenchConnectorEndpointConfig(connectorID, endpointRef, accountRef string) (string, json.RawMessage, int, error) {
+	var id string
+	var config []byte
+	var version int
+	err := s.db.QueryRow(`SELECT id,endpoint_config,endpoint_schema_version FROM workbench_connector_connections
+  WHERE connector_id=? AND endpoint_ref=? AND account_ref=?`, connectorID, endpointRef, accountRef).Scan(&id, &config, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, 0, nil
+	}
+	return id, config, version, err
+}
+
 func (s *Store) WorkbenchConnectorSelectedValues(connectorID, endpointRef, accountRef, field, scopeType string) (map[string]bool, error) {
 	rows, err := s.db.Query(`SELECT c.config -> '$.scope_config'
 		FROM workbench_connections c JOIN workbench_connector_connections p ON p.id=c.connector_connection_id

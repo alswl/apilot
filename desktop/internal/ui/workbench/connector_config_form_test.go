@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/alswl/apilot/connectors/protocol"
+	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/services"
 )
 
@@ -62,5 +63,55 @@ func TestConnectorConfigFormUnsupportedSchema(t *testing.T) {
 		ScopeConfig: &protocol.ConfigSchema{Schema: json.RawMessage(`{"type":"object","properties":{"nested":{"type":"object"}}}`)}}
 	if form := newConnectorConfigForm(plugin); form != nil {
 		t.Fatalf("unsupported nested form offered: %+v", form)
+	}
+}
+
+func TestConnectorConfigJSONFallback(t *testing.T) {
+	for _, schema := range []string{
+		`{"type":"object","properties":{"nested":{"type":"object"},"labels":{"type":"array"},"target":{"type":"string"}}}`,
+		`{"type":"object","oneOf":[{"required":["target"]},{"required":["ref"]}]}`,
+	} {
+		plugin := services.WorkbenchPlugin{Enabled: true, Imported: true, Release: &common.WorkbenchConnectorRelease{ConnectorID: "complex"}, EndpointSchemaVersion: 2,
+			EndpointConfig: &protocol.ConfigSchema{Version: 2, Schema: json.RawMessage(`{"type":"object"}`)},
+			ScopeConfig:    &protocol.ConfigSchema{Version: 1, Schema: json.RawMessage(schema), Types: []string{"space", "project"}},
+		}
+		if !connectorCanAdd(plugin) {
+			t.Fatal("enabled imported Connector is hidden")
+		}
+		m := &mockup{livePlugins: []services.WorkbenchPlugin{plugin}}
+		m.openConnectorLogin("complex", "")
+		panel := m.connectorLogin
+		if panel.form != nil || panel.jsonDraft == nil || panel.scopeType != protocol.ScopeProject {
+			t.Fatalf("JSON fallback missing: %+v", panel)
+		}
+		panel.jsonDraft.endpoint = `{"nested":{"ports":[1,9007199254740993]}}`
+		panel.jsonDraft.scope = `{"labels":["a","b"],"nested":{"enabled":false}}`
+		panel.jsonDraft.choose("scope", "target", "alpha")
+		if !panel.canSave() {
+			t.Fatal("valid objects cannot be submitted")
+		}
+		input := panel.saveInput()
+		endpoint, _ := json.Marshal(input.EndpointConfig)
+		scope, _ := json.Marshal(input.Scopes[0].Config)
+		if string(endpoint) != `{"nested":{"ports":[1,9007199254740993]}}` || string(scope) != `{"labels":["a","b"],"nested":{"enabled":false},"target":"alpha"}` {
+			t.Fatalf("configuration lost: %s %s", endpoint, scope)
+		}
+		panel.setScopeType(protocol.ScopeSpace)
+		if panel.jsonDraft.scope != "{}" || panel.scopeType != "space" || panel.jsonDraft.endpoint == "{}" {
+			t.Fatal("scope switch lost endpoint or preserved the old scope")
+		}
+		panel.jsonDraft.scope = `[]`
+		if panel.canSave() || len(panel.saveInput().Scopes) != 0 {
+			t.Fatal("non-object config could be submitted")
+		}
+	}
+}
+
+func TestConnectorConfigJSONRejectsDeclaredCredentials(t *testing.T) {
+	d := &connectorJSONDraft{endpoint: `{"settings":{"token":"example"}}`, scope: "{}",
+		endpointSchema: &protocol.ConfigSchema{Schema: json.RawMessage(`{"type":"object","properties":{"settings":{"type":"object","properties":{"token":{"type":"string","writeOnly":true}}}}}`)},
+	}
+	if _, _, ok := d.objects(); ok {
+		t.Fatal("declared credential could be submitted")
 	}
 }

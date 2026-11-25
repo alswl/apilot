@@ -42,6 +42,7 @@ func TestSignedScopedConnector(t *testing.T) {
 	const secondID = "synthetic-project"
 	second := build(secondID, "0.1.0", "project")
 	multi := build("synthetic-multi", "0.1.0", "multi")
+	multiUpgrade := build("synthetic-multi", "0.2.0", "multi-endpoint2")
 	rawTrust, err := os.ReadFile(filepath.Join(packages, "connector-publishers.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -161,6 +162,31 @@ func TestSignedScopedConnector(t *testing.T) {
 		t.Fatalf("multi save: %+v", multiSaved)
 	}
 	uc01Wait(t, func() bool { return api.scopeTasks(multiSaved.Scopes[0].ScopeID).Total == 1 })
+	api.call(http.MethodPost, "/plugins/import", map[string]string{"path": multiUpgrade}, &multiPlugin)
+	if multiPlugin.EndpointSchemaVersion != 2 {
+		t.Fatalf("upgraded schema not advertised: %+v", multiPlugin)
+	}
+	api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: "synthetic-multi"}, &multiAuth)
+	if api.status(multiAuth.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" }).Status != "authorized" {
+		t.Fatal("upgrade login failed")
+	}
+	appendSpace := common.WorkbenchConnectorSaveInput{AuthorizationID: multiAuth.ID, EndpointSchemaVersion: 2, ScopeSchemaVersion: 1,
+		EndpointConfig: map[string]any{"cluster": "demo", "region": "different"},
+		Scopes:         []common.WorkbenchConnectorSelection{{ScopeType: protocol.ScopeSpace, Config: map[string]any{"board": "delivery", "target": "alpha", "labels": []string{"demo"}, "metadata": map[string]any{"counter": json.Number("9007199254740993")}}}},
+	}
+	expect(http.MethodPut, "/connector-connections", appendSpace, http.StatusConflict)
+	appendSpace.EndpointConfig["region"] = "east"
+	var multiSpace common.WorkbenchConnectorSaveResult
+	api.call(http.MethodPut, "/connector-connections", appendSpace, &multiSpace)
+	if multiSpace.ConnectionID != multiSaved.ConnectionID || multiSpace.Scopes[0].Status != "queued" {
+		t.Fatalf("space after endpoint-schema upgrade: %+v", multiSpace)
+	}
+	uc01Wait(t, func() bool { return api.scopeTasks(multiSpace.Scopes[0].ScopeID).Total == 2 })
+	for _, id := range []string{multiSaved.Scopes[0].ScopeID, multiSpace.Scopes[0].ScopeID} {
+		tasks := api.scopeTasks(id)
+		api.call(http.MethodGet, "/tasks/"+tasks.Items[0].ID+"/detail?scope_id="+id, nil, nil)
+	}
+
 	var auth common.WorkbenchConnectorAuthorization
 	api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: id}, &auth)
 	login := api.status(auth.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" })

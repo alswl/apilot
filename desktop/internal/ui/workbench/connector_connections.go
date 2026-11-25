@@ -120,6 +120,7 @@ type connectorLoginPanel struct {
 	queryGeneration          uint64
 	cancelQuery              context.CancelFunc
 	form                     *connectorConfigForm
+	jsonDraft                *connectorJSONDraft
 	fieldDrafts              map[string]string
 	optionField, optionLevel string
 }
@@ -136,6 +137,8 @@ func (m *mockup) openConnectorLogin(kind, parent string) {
 			panel.fieldDrafts = make(map[string]string)
 			if panel.form != nil {
 				panel.activatePrimary()
+			} else {
+				panel.jsonDraft = newConnectorJSONDraft(plugin)
 			}
 		}
 		panel.writable = plugin.Writable || panel.writable
@@ -217,7 +220,7 @@ func (m *mockup) pollConnectorLogin(p *connectorLoginPanel) {
 }
 
 func (p *connectorLoginPanel) field() string {
-	if p.form != nil {
+	if p.form != nil || p.jsonDraft != nil {
 		return p.optionField
 	}
 
@@ -233,6 +236,10 @@ func (p *connectorLoginPanel) setScopeType(kind string) {
 	clear(p.selected)
 	clear(p.connected)
 	p.queryGeneration++
+	if p.jsonDraft != nil {
+		p.jsonDraft.scope = "{}"
+		p.activateOptions(connectorConfigField{})
+	}
 	if p.form != nil {
 		endpoint := p.form.endpoint
 		p.form.reset()
@@ -267,6 +274,23 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 				data, _ := json.Marshal(value)
 				input[key] = string(data)
 			}
+		}
+	}
+	if p.jsonDraft != nil {
+		endpoint, scope, ok := p.jsonDraft.objects()
+		if !ok {
+			cancel()
+			p.busy = false
+			return
+		}
+		input["config_level"] = p.optionLevel
+		if len(endpoint) > 0 {
+			data, _ := json.Marshal(endpoint)
+			input["endpoint_config"] = string(data)
+		}
+		if len(scope) > 0 {
+			data, _ := json.Marshal(scope)
+			input["scope_config"] = string(data)
 		}
 	}
 	if p.scopeType != "" && p.optionLevel != "endpoint" {
@@ -329,6 +353,14 @@ func (p *connectorLoginPanel) saveInput() common.WorkbenchConnectorSaveInput {
 		scopeVersion = p.scopeConfig.Version
 	}
 	input := common.WorkbenchConnectorSaveInput{AuthorizationID: p.auth.ID, EndpointSchemaVersion: p.endpointSchemaVersion, ScopeSchemaVersion: scopeVersion}
+	if p.jsonDraft != nil {
+		endpoint, scope, ok := p.jsonDraft.objects()
+		if ok {
+			input.EndpointConfig = endpoint
+			input.Scopes = []common.WorkbenchConnectorSelection{{Config: scope, ScopeType: p.scopeType, WriteEnabled: p.write && p.writable}}
+		}
+		return input
+	}
 	field := p.field()
 	config := map[string]any{}
 	if p.form != nil {
@@ -421,10 +453,13 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 				}
 				ui.Scroll(c.Key("scopes")).FillWidth().MaxHeight(max(160, min(height-250, 310))).Children(func() {
 					ui.Column(c).FillWidth().Gap(8).Children(func() {
+						if p.jsonDraft != nil && len(p.results) == 0 {
+							m.connectorJSONFields(c.Key("json-config"), p)
+						}
 						if p.form != nil && len(p.results) == 0 {
 							m.connectorDraftFields(c.Key("config"), p)
 						}
-						if (len(p.scopeTypes) != 0 || p.form != nil) && p.field() != "" && len(p.results) == 0 {
+						if (len(p.scopeTypes) != 0 || p.form != nil || p.jsonDraft != nil) && p.field() != "" && len(p.results) == 0 {
 							search := ui.TextInput(c.Key("search-scopes"), &p.search).Label(tr("搜索范围")).Placeholder(tr("搜索范围")).FillWidth().Disabled(p.saving)
 							if search.Changed() {
 								p.choices, p.next = nil, ""
@@ -438,6 +473,13 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 							}
 						}
 						for _, choice := range p.choices {
+							if p.jsonDraft != nil {
+								if ui.Button(c.Key(choice.Value), choice.Label).Disabled(p.busy || p.saving || len(p.results) > 0).Clicked() {
+									p.jsonDraft.choose(p.optionLevel, p.optionField, choice.Value)
+									p.activateOptions(connectorConfigField{})
+								}
+								continue
+							}
 							if p.form != nil && (p.optionLevel != "scope" || p.optionField != p.form.primary) {
 								if ui.Button(c.Key(choice.Value), choice.Label).Disabled(p.busy).Clicked() {
 									p.chooseDraftOption(choice.Value)
@@ -463,7 +505,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 						}
 					})
 				})
-				if p.form == nil || p.form.primary != "" {
+				if p.jsonDraft == nil && (p.form == nil || p.form.primary != "") {
 					components.Muted(c.Key("selected-count"), fmt.Sprintf(tr("已选择 %d 项"), len(p.selected)))
 				}
 				if p.writable {
@@ -730,6 +772,10 @@ func connectorLabel(id string) string {
 }
 
 func (p *connectorLoginPanel) canSave() bool {
+	if p.jsonDraft != nil {
+		_, _, ok := p.jsonDraft.objects()
+		return ok
+	}
 	if p.form != nil {
 		for _, field := range p.form.fields {
 			if text := p.fieldDrafts[field.level+"."+field.key]; strings.TrimSpace(text) != "" && parseConfigField(field.kind, text) == nil {

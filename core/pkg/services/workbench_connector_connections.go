@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ type connectorAuthorization struct {
 type workbenchManagedConnectorStore interface {
 	SaveWorkbenchConnectorConnection(common.WorkbenchConnectorConnection, []common.WorkbenchConnectorNewScope) (common.WorkbenchConnectorSaveResult, error)
 	WorkbenchConnectorConnection(string) (common.WorkbenchConnectorConnection, error)
+	WorkbenchConnectorEndpointConfig(string, string, string) (string, json.RawMessage, int, error)
 	WorkbenchConnectorSelectedValues(string, string, string, string, string) (map[string]bool, error)
 	ConfirmWorkbenchConnectorAccount(string, int64) error
 	WorkbenchConnectorScope(string) (common.WorkbenchConnectorStoredScope, error)
@@ -302,6 +304,26 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 	if err != nil {
 		return empty, common.Err("INVALID_ARGUMENT", "Invalid endpoint configuration")
 	}
+	endpointVersion := in.EndpointSchemaVersion
+	var savedParent string
+	checkParent := connector.trusted && slices.ContainsFunc(in.Scopes, func(selection common.WorkbenchConnectorSelection) bool { return selection.ScopeType != "" })
+	if checkParent {
+		store, err := s.managedConnectorStore()
+		if err != nil {
+			return empty, err
+		}
+		parent, stored, version, err := store.WorkbenchConnectorEndpointConfig(id, account.EndpointRef, account.AccountRef)
+		if err != nil {
+			return empty, err
+		}
+		savedParent = parent
+		if savedParent != "" {
+			if !bytes.Equal(rawEndpoint, stored) {
+				return empty, common.Err("CONFLICT", "Endpoint configuration differs from the saved connection")
+			}
+			rawEndpoint, endpointVersion = stored, version
+		}
+	}
 	var selections []common.WorkbenchConnectorNewScope
 	out := common.WorkbenchConnectorSaveResult{Scopes: make([]common.WorkbenchConnectorScopeResult, len(in.Scopes))}
 	var indices []int
@@ -314,7 +336,7 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 			continue
 		}
 		params := protocol.ScopeContext{AccountRef: account.AccountRef, EndpointRef: account.EndpointRef, EndpointConfig: rawEndpoint, ScopeConfig: rawScope,
-			EndpointSchemaVersion: in.EndpointSchemaVersion, ScopeSchemaVersion: in.ScopeSchemaVersion, ScopeType: selection.ScopeType}
+			EndpointSchemaVersion: endpointVersion, ScopeSchemaVersion: in.ScopeSchemaVersion, ScopeType: selection.ScopeType}
 		scope, err := callWorkbenchConnector[protocol.ValidatedScope](ctx, process, common.ID(), protocol.Validate, protocol.ValidateParams{ScopeContext: params, Mode: "static"}, nil)
 		if err == nil && (scope.ScopeRef == "" || scope.EndpointRef != account.EndpointRef || scope.Label == "") {
 			err = integrations.ErrWorkbenchConnectorProtocol
@@ -347,8 +369,10 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, _, err := s.authorizedConnectorAccount(in.AuthorizationID, id); err != nil {
+	if active, _, err := s.authorizedConnectorAccount(in.AuthorizationID, id); err != nil {
 		return empty, err
+	} else if active != process {
+		return empty, common.Err("STALE_REVISION", "Connector changed during configuration validation")
 	}
 	if ctx.Err() != nil {
 		return empty, ctx.Err()
@@ -357,6 +381,15 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 		store, err := s.managedConnectorStore()
 		if err != nil {
 			return empty, err
+		}
+		if checkParent {
+			parent, stored, version, err := store.WorkbenchConnectorEndpointConfig(id, account.EndpointRef, account.AccountRef)
+			if err != nil {
+				return empty, err
+			}
+			if parent != savedParent || parent != "" && (version != endpointVersion || !bytes.Equal(stored, rawEndpoint)) {
+				return empty, common.Err("STALE_REVISION", "Endpoint configuration changed during validation")
+			}
 		}
 		result, err := store.SaveWorkbenchConnectorConnection(common.WorkbenchConnectorConnection{ID: common.ID(), ConnectorID: id, EndpointRef: account.EndpointRef, AccountRef: account.AccountRef}, selections)
 		if err != nil {

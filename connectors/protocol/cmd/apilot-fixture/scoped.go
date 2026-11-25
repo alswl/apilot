@@ -23,10 +23,13 @@ func scopedFixtureDescription(description *protocol.Description) {
 	description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target"],"properties":{"target":{"type":"string"}},"additionalProperties":false}`)
 	description.ScopeConfig.Fields = map[string]protocol.ConfigField{"target": {Title: "Target", Control: "select", DynamicOptions: true}}
 	description.ScopeConfig.Types = []string{protocol.ScopeProject, protocol.ScopeSpace}
+	if fixtureScopeMode == "multi-endpoint2" {
+		description.EndpointConfig.Version = 2
+	}
 	if fixtureScopeMode == "schema2" {
 		description.ScopeConfig.Version = 2
 	}
-	if fixtureScopeMode == "multi" {
+	if scopedMultiFixture() {
 		description.EndpointConfig.Schema = json.RawMessage(`{"type":"object","required":["cluster","region"],"properties":{"cluster":{"type":"string","enum":["demo"]},"region":{"type":"string"}},"additionalProperties":false}`)
 		description.EndpointConfig.Fields = map[string]protocol.ConfigField{
 			"region": {Title: "Region", Control: "select", DynamicOptions: true, DependsOn: []string{"cluster"}},
@@ -34,6 +37,9 @@ func scopedFixtureDescription(description *protocol.Description) {
 		description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["board","target"],"properties":{"board":{"type":"string","enum":["delivery"]},"target":{"type":"string"}},"additionalProperties":false}`)
 		description.ScopeConfig.Fields["board"] = protocol.ConfigField{Title: "Board", DependsOn: []string{"endpoint.region"}}
 		description.ScopeConfig.Fields["target"] = protocol.ConfigField{Title: "Target", Control: "select", DynamicOptions: true, DependsOn: []string{"board"}}
+	}
+	if fixtureScopeMode == "multi-endpoint2" {
+		description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["board","target"],"properties":{"board":{"type":"string","enum":["delivery"]},"target":{"type":"string"},"metadata":{"type":"object"},"labels":{"type":"array","items":{"type":"string"}}},"additionalProperties":false}`)
 	}
 	if fixtureScopeMode == "project" {
 		description.ScopeConfig.Types = []string{protocol.ScopeProject}
@@ -72,7 +78,7 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		if p.AccountRef != scopedAccount || p.EndpointRef != scopedEndpoint {
 			return nil, badScope
 		}
-		if fixtureScopeMode == "multi" {
+		if scopedMultiFixture() {
 			var endpoint, scope map[string]string
 			_ = json.Unmarshal(p.EndpointConfig, &endpoint)
 			_ = json.Unmarshal(p.ScopeConfig, &scope)
@@ -125,21 +131,25 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		return nil, protocol.Problem(protocol.AuthRequired, "account", "Synthetic account unavailable")
 	}
 	var selection struct {
-		Target string `json:"target"`
-		Board  string `json:"board"`
+		Target   string                     `json:"target"`
+		Board    string                     `json:"board"`
+		Metadata map[string]json.RawMessage `json:"metadata"`
 	}
 	scopeVersion := 1
 	if fixtureScopeMode == "schema2" {
 		scopeVersion = 2
 	}
-	if json.Unmarshal(scope.ScopeConfig, &selection) != nil || scope.ScopeSchemaVersion != scopeVersion || scope.EndpointSchemaVersion != 1 {
+	if json.Unmarshal(scope.ScopeConfig, &selection) != nil || scope.ScopeSchemaVersion != scopeVersion || (scope.EndpointSchemaVersion != 1 && (fixtureScopeMode != "multi-endpoint2" || scope.EndpointSchemaVersion != 2)) {
 		return nil, badScope
 	}
-	if fixtureScopeMode == "multi" {
+	if scopedMultiFixture() {
 		var endpoint map[string]string
 		if json.Unmarshal(scope.EndpointConfig, &endpoint) != nil || endpoint["cluster"] != "demo" || endpoint["region"] != "east" || selection.Board != "delivery" {
 			return nil, badScope
 		}
+	}
+	if counter := selection.Metadata["counter"]; counter != nil && string(counter) != "9007199254740993" {
+		return nil, badScope
 	}
 	var projects []string
 	switch {
@@ -261,4 +271,8 @@ func scopedRecord(project string) protocol.SourceRecord {
 	record := fixtureCurrent(project, "1")
 	record.SourceID = project
 	return record
+}
+
+func scopedMultiFixture() bool {
+	return fixtureScopeMode == "multi" || fixtureScopeMode == "multi-endpoint2"
 }

@@ -1,8 +1,11 @@
 package common
 
 import (
-	"github.com/alswl/apilot/connectors/protocol"
+	"bytes"
+	"encoding/json"
 	"time"
+
+	"github.com/alswl/apilot/connectors/protocol"
 )
 
 // WorkbenchConnectorConnection is the account-level parent of one or more scopes.
@@ -108,6 +111,14 @@ type WorkbenchConnectorSaveInput struct {
 	EndpointSchemaVersion int                           `json:"endpoint_schema_version" minimum:"1"`
 	ScopeSchemaVersion    int                           `json:"scope_schema_version" minimum:"1"`
 	Scopes                []WorkbenchConnectorSelection `json:"scopes" minItems:"1" maxItems:"20"`
+}
+
+// UnmarshalJSON preserves opaque configuration numbers before forwarding them.
+func (in *WorkbenchConnectorSaveInput) UnmarshalJSON(data []byte) error {
+	type wire WorkbenchConnectorSaveInput
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode((*wire)(in))
 }
 
 type WorkbenchConnectorScopeResult struct {
