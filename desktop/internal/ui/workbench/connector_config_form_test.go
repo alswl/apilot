@@ -231,3 +231,48 @@ func TestConnectorOptionLimitAndPasswordFormat(t *testing.T) {
 		t.Fatal("password exposed as an ordinary field")
 	}
 }
+
+func TestConnectorOpaqueNextOptionDoesNotSharePagingState(t *testing.T) {
+	for _, mode := range []string{"scope selection", "dynamic field", "JSON draft"} {
+		t.Run(mode, func(t *testing.T) {
+			panel := &connectorLoginPanel{
+				auth: common.WorkbenchConnectorAuthorization{Status: "authorized"}, scopeType: "project",
+				optionLevel: "scope", optionField: "target", next: "next-page-token",
+				choices:  []protocol.ConfigOption{{Value: "next", Label: "Opaque option"}},
+				selected: map[string]bool{}, connected: map[string]bool{},
+			}
+			switch mode {
+			case "scope selection":
+				panel.form = &connectorConfigForm{primary: "target", endpoint: map[string]any{}, scope: map[string]any{}}
+			case "dynamic field":
+				panel.form = &connectorConfigForm{fields: []connectorConfigField{{key: "target", level: "scope", kind: "string", meta: protocol.ConfigField{DynamicOptions: true}}},
+					endpoint: map[string]any{}, scope: map[string]any{}}
+			case "JSON draft":
+				panel.jsonDraft = &connectorJSONDraft{endpoint: "{}", scope: "{}"}
+			}
+			m := &mockup{connectorLogin: panel}
+			view := ui.NewTester(m.connectorLoginDialog, 1000, 900)
+			if !view.HasText(tr("加载更多")) {
+				t.Fatal("paging button not rendered")
+			}
+			click(t, view, "Opaque option")
+			switch mode {
+			case "scope selection":
+				if !panel.selected["next"] || panel.next != "next-page-token" {
+					t.Fatal("checkbox did not select the opaque value")
+				}
+			case "dynamic field":
+				if panel.form.scope["target"] != "next" {
+					t.Fatalf("dynamic draft = %v", panel.form.scope)
+				}
+			case "JSON draft":
+				if _, scope, ok := panel.jsonDraft.objects(); !ok || scope["target"] != "next" {
+					t.Fatalf("JSON draft = %s", panel.jsonDraft.scope)
+				}
+			}
+			if panel.busy {
+				t.Fatal("selecting an option started paging")
+			}
+		})
+	}
+}

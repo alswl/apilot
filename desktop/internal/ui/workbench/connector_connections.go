@@ -560,27 +560,30 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 								components.Muted(c.Key("no-scopes"), tr("没有符合条件的范围"))
 							}
 						}
+						optionKey := func(role, value string) *ui.Context {
+							return c.Key([5]string{role, p.scopeType, p.optionLevel, p.field(), value})
+						}
 						for _, choice := range p.choices {
 							if p.jsonDraft != nil {
-								if ui.Button(c.Key(choice.Value), choice.Label).Disabled(p.busy || p.saving || p.finished()).Clicked() {
+								if ui.Button(optionKey("option", choice.Value), choice.Label).Disabled(p.busy || p.saving || p.finished()).Clicked() {
 									p.jsonDraft.choose(p.optionLevel, p.optionField, choice.Value, p.reuseEndpoint)
 									p.activateOptions(connectorConfigField{})
 								}
 								continue
 							}
 							if p.form != nil && (p.optionLevel != "scope" || p.optionField != p.form.primary) {
-								if ui.Button(c.Key(choice.Value), choice.Label).Disabled(p.busy).Clicked() {
+								if ui.Button(optionKey("option", choice.Value), choice.Label).Disabled(p.busy).Clicked() {
 									p.chooseDraftOption(choice.Value)
 									m.loadConnectorChoices(p, "")
 								}
 								continue
 							}
 							if p.connected[choice.Value] {
-								components.Muted(c.Key(choice.Value), choice.Label+" · "+tr("已连接"))
+								components.Muted(optionKey("connected", choice.Value), choice.Label+" · "+tr("已连接"))
 								continue
 							}
 							selected := p.selected[choice.Value]
-							if ui.Checkbox(c.Key(choice.Value), &selected, choice.Label).Disabled(p.busy || p.finished()).Changed() {
+							if ui.Checkbox(optionKey("selection", choice.Value), &selected, choice.Label).Disabled(p.busy || p.finished()).Changed() {
 								if selected {
 									p.selected[choice.Value] = true
 								} else {
@@ -588,7 +591,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 								}
 							}
 						}
-						if p.next != "" && ui.Button(c.Key("next"), tr("加载更多")).Disabled(p.busy || p.finished()).Clicked() {
+						if p.next != "" && ui.Button(optionKey("pagination", ""), tr("加载更多")).Disabled(p.busy || p.finished()).Clicked() {
 							m.loadConnectorChoices(p, p.next)
 						}
 					})
