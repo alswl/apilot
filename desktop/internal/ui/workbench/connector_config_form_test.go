@@ -134,3 +134,29 @@ func TestConnectorConfigEnumInLoginModal(t *testing.T) {
 		t.Fatal("clicking the visible option did not enable Region")
 	}
 }
+
+func TestConnectorJSONEditorsFocusAndInput(t *testing.T) {
+	panel := &connectorLoginPanel{jsonDraft: &connectorJSONDraft{endpoint: "{}", scope: "{}"}}
+	m := &mockup{connectorLogin: panel}
+	view := ui.NewTester(func(c *ui.Context) { m.connectorJSONFields(c, panel) }, 640, 480)
+	click(t, view, "端点配置 JSON")
+	if !view.Focused("端点配置 JSON") || view.Focused("范围配置 JSON") {
+		t.Fatal("endpoint editor did not get exclusive focus")
+	}
+	view.Key(ui.Cmd, ui.KeyA)
+	view.Type(`{"cluster":"demo","region":"east"}`)
+	click(t, view, "范围配置 JSON")
+	if view.Focused("端点配置 JSON") || !view.Focused("范围配置 JSON") {
+		t.Fatal("scope editor did not get exclusive focus")
+	}
+	view.Key(ui.Cmd, ui.KeyA)
+	view.Type(`{"target":"alpha","metadata":{"counter":9007199254740993}}`)
+	input := panel.saveInput()
+	if len(input.Scopes) != 1 || input.EndpointConfig["cluster"] != "demo" {
+		t.Fatalf("drafts failed to preserve separate objects: %q / %q", panel.jsonDraft.endpoint, panel.jsonDraft.scope)
+	}
+	metadata, _ := input.Scopes[0].Config["metadata"].(map[string]any)
+	if counter := metadata["counter"]; counter != json.Number("9007199254740993") {
+		t.Fatalf("counter = %v", counter)
+	}
+}

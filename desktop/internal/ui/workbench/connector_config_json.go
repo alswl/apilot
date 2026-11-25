@@ -69,14 +69,13 @@ func (m *mockup) connectorJSONFields(c *ui.Context, p *connectorLoginPanel) {
 		{"endpoint", tr("端点配置 JSON"), &d.endpoint, d.endpointSchema},
 		{"scope", tr("范围配置 JSON"), &d.scope, d.scopeSchema},
 	} {
-		key := c.Key(config.level)
-		if ui.TextArea(key.Key("draft"), config.draft).Label(config.label).FillWidth().Height(65).Disabled(p.saving).Changed() {
+		if ui.TextArea(c.Key([3]string{config.level, "draft"}), config.draft).Label(config.label).FillWidth().Height(65).Disabled(p.saving).Changed() {
 			p.activateOptions(connectorConfigField{})
 		}
 		if object, ok := connectorJSONObject(*config.draft); !ok {
-			components.Muted(key.Key("invalid"), tr("请输入有效的 JSON 对象"))
+			components.Muted(c.Key([3]string{config.level, "invalid"}), tr("请输入有效的 JSON 对象"))
 		} else if !safeConnectorJSON(config.schema, object) {
-			components.Muted(key.Key("invalid"), tr("请从配置中移除凭据字段"))
+			components.Muted(c.Key([3]string{config.level, "invalid"}), tr("请从配置中移除凭据字段"))
 		}
 		if config.schema == nil {
 			continue
@@ -85,7 +84,7 @@ func (m *mockup) connectorJSONFields(c *ui.Context, p *connectorLoginPanel) {
 			var pretty bytes.Buffer
 			if json.Indent(&pretty, config.schema.Schema, "", "  ") == nil {
 				source := pretty.String()
-				ui.TextArea(key.Key("schema"), &source).Label(config.label).ReadOnly(true).FillWidth().Height(90)
+				ui.TextArea(c.Key([3]string{config.level, "schema"}), &source).Label(config.label).ReadOnly(true).FillWidth().Height(90)
 			}
 		}
 		for _, field := range slices.Sorted(maps.Keys(config.schema.Fields)) {
@@ -97,7 +96,7 @@ func (m *mockup) connectorJSONFields(c *ui.Context, p *connectorLoginPanel) {
 			if title == "" {
 				title = field
 			}
-			if ui.Button(key.Key(field), tr("查找选项")+" · "+title).Disabled(p.saving || !p.canSave()).Clicked() {
+			if ui.Button(c.Key([3]string{config.level, "option", field}), tr("查找选项")+" · "+title).Disabled(p.saving || !p.canSave()).Clicked() {
 				p.activateOptions(connectorConfigField{key: field, level: config.level})
 				m.loadConnectorChoices(p, "")
 			}
