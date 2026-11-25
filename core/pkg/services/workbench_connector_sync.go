@@ -104,7 +104,7 @@ func (s *Service) startWorkbenchConnectorRunLocked(store workbenchManagedConnect
 	}
 	now := time.Now().UTC()
 	mode := "delta"
-	if full || scope.Checkpoint == "" || scope.AccessState != "available" || scope.LastFullSuccess == nil || now.Sub(*scope.LastFullSuccess) >= connectorFullInterval {
+	if !s.workbenchConnectorSupportsDelta || full || scope.Checkpoint == "" || scope.AccessState != "available" || scope.LastFullSuccess == nil || now.Sub(*scope.LastFullSuccess) >= connectorFullInterval {
 		mode = "full"
 	}
 	if until, err := store.WorkbenchConnectorBackoff(scope.ConnectionID, scope.ScopeID, s.workbenchConnectorSyncBuckets[mode]); err != nil {

@@ -82,7 +82,7 @@ func (m *mockup) connections(c *ui.Context) {
 		components.Muted(c.Key("connector-problem"), m.connectorProblem)
 	}
 	for i := range m.connectionsData {
-		if m.connectorDesktop() && isManagedConnector(m.connectionsData[i].SourceKind) {
+		if m.connectorDesktop() && m.isManagedConnector(m.connectionsData[i].SourceKind) {
 			continue
 		}
 		m.connectorSummary(c.Key(m.connectionsData[i].ID), &m.connectionsData[i])

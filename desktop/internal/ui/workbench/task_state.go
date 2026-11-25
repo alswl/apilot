@@ -39,7 +39,7 @@ func (conn *connection) reopenState() string {
 }
 
 func (m *mockup) taskStateMenu(o sourceObject, menu *ui.Menu) {
-	if m.live != nil && isManagedConnector(o.Kind) {
+	if m.live != nil && m.isManagedConnector(o.Kind) {
 		if menu.Item(tr("状态操作")).Disabled(!m.canToggleSourceTask(o) || m.sourceWritePending(o.ID)).Chosen() {
 			m.openConnectorTaskEditor(o, true)
 		}

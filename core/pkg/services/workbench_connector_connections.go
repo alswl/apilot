@@ -264,6 +264,11 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 		return empty, err
 	}
 	id := s.workbenchConnectorAuth[in.AuthorizationID].status.ConnectorID
+	if id != "github-issues" && id != "fixture" {
+		for i := range in.Scopes {
+			in.Scopes[i].WriteEnabled = false
+		}
+	}
 	s.mu.Unlock()
 	endpoint := in.EndpointConfig
 	if endpoint == nil {
@@ -463,6 +468,9 @@ func (s *Service) ConfigureWorkbenchConnectorScope(id, kind, name string, versio
 	}
 	if scope.ParentConnectionID == "" || scope.Kind != kind {
 		return empty, common.Err("INVALID_ARGUMENT", "Connector type cannot change")
+	}
+	if kind != "github-issues" && kind != "fixture" && write {
+		return empty, common.Err("FORBIDDEN", "Connector is read-only")
 	}
 	if scope.Version != version {
 		return empty, common.Err("STALE_REVISION", "Scope configuration changed")

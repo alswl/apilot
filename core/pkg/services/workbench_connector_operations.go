@@ -125,6 +125,9 @@ func (s *Service) submitConnectorOperation(input common.WorkbenchTaskWrite, conn
 	if err != nil {
 		return empty, err
 	}
+	if scope.ConnectorID != "github-issues" && scope.ConnectorID != "fixture" {
+		return empty, common.Err("FORBIDDEN", "Connector is read-only")
+	}
 	if !scope.Config.WriteEnabled || scope.Config.Paused || scope.Config.Version != input.ConnectionVersion ||
 		(input.MappingRevision != nil && *input.MappingRevision != scope.MappingRevision) {
 		return empty, common.Err("STALE_REVISION", "Scope write settings changed")
@@ -335,7 +338,7 @@ func (s *Service) runConnectorOperation(ctx context.Context, op common.Workbench
 	scope, process, err := s.readableConnectorScope(receipt.ConnectionID)
 	valid := err == nil && scope.ConfigRevision == binding.ConfigRevision && scope.MappingRevision == binding.MappingRevision &&
 		scope.AuthGeneration == binding.AuthGeneration && s.workbenchConnectorRelease.PackageDigest == binding.PackageDigest
-	if !valid || (!reconcile && (!scope.Config.WriteEnabled || scope.Config.Paused || s.stopping)) {
+	if !valid || (!reconcile && (!scope.Config.WriteEnabled || scope.Config.Paused || s.stopping || (scope.ConnectorID != "github-issues" && scope.ConnectorID != "fixture"))) {
 		if !reconcile {
 			receipt.SyncState, receipt.Reason = common.WorkbenchOperationNotExecuted, "Scope access or mapping changed before dispatch"
 			err = ops.AdvanceWorkbenchTaskOperation(receipt.RequestID, from, receipt.SyncState, receipt)

@@ -33,7 +33,7 @@ func (m *mockup) supportsConnectorEditor(task sourceObject) bool {
 	if conn == nil || conn.Paused || conn.PluginDisabled {
 		return false
 	}
-	return task.Kind == common.WorkbenchLocal || (isManagedConnector(task.Kind) && conn.WriteEnabled && conn.Status != "授权不可用")
+	return task.Kind == common.WorkbenchLocal || (m.isManagedConnector(task.Kind) && conn.WriteEnabled && conn.Status != "授权不可用")
 }
 
 func (m *mockup) openConnectorTaskEditor(task sourceObject, action bool) {
@@ -68,7 +68,7 @@ func (m *mockup) openConnectorTaskEditor(task sourceObject, action bool) {
 			value := taskEditorValue(task, field.ID)
 			p.values[field.ID], p.original[field.ID] = value, value
 		}
-		if !action && isManagedConnector(task.Kind) {
+		if !action && m.isManagedConnector(task.Kind) {
 			for _, field := range p.fields {
 				if field.ID == "description" {
 					p.loading = true
@@ -452,7 +452,7 @@ type connectorConflictRefresh struct {
 func (m *mockup) resolveConnectorConflict(task sourceObject, edit bool) {
 	conflict := m.connectorConflicts[task.ID].Conflict
 	actionMode := conflict != nil && conflict.Action != ""
-	if !isManagedConnector(task.Kind) {
+	if !m.isManagedConnector(task.Kind) {
 		m.openConnectorTaskEditor(task, actionMode)
 		return
 	}

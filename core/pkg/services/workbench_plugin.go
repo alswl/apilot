@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/alswl/apilot/connectors/protocol"
@@ -93,12 +94,13 @@ func (s *Service) WorkbenchPlugins() ([]WorkbenchPlugin, error) {
 		}
 		plugins = append(plugins, s.workbenchPluginInfo(connector.Kind, enabled))
 	}
-	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID == "fixture" {
-		enabled, err := s.workbenchPluginEnabled("fixture")
+	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID != "github-issues" {
+		id := s.workbenchConnectorRelease.ConnectorID
+		enabled, err := s.workbenchPluginEnabled(id)
 		if err != nil {
 			return nil, err
 		}
-		plugins = append(plugins, s.workbenchPluginInfo("fixture", enabled))
+		plugins = append(plugins, s.workbenchPluginInfo(id, enabled))
 	}
 	return plugins, nil
 }
@@ -157,12 +159,13 @@ func (s *Service) WorkbenchConnectors() ([]WorkbenchConnector, error) {
 		descriptor.Capabilities = plugin.capabilities
 		result = append(result, descriptor)
 	}
-	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID == "fixture" {
-		enabled, err := s.workbenchPluginEnabled("fixture")
+	if s.workbenchConnectorRelease != nil && s.workbenchConnectorRelease.ConnectorID != "github-issues" {
+		id := s.workbenchConnectorRelease.ConnectorID
+		enabled, err := s.workbenchPluginEnabled(id)
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, WorkbenchConnector{Kind: "fixture", Name: "Local protocol fixture", PluginID: "fixture", Release: s.workbenchPluginInfo("fixture", enabled).Release, Capabilities: common.WorkbenchCapabilities{Read: enabled, Refresh: enabled}})
+		result = append(result, WorkbenchConnector{Kind: id, Name: id, PluginID: id, Release: s.workbenchPluginInfo(id, enabled).Release, Capabilities: common.WorkbenchCapabilities{Read: enabled, Refresh: enabled}})
 	}
 	return result, nil
 }
@@ -172,7 +175,7 @@ func (s *Service) workbenchConnectionCapabilities(c common.WorkbenchSnapshot) co
 		return common.WorkbenchCapabilities{}
 	}
 	if c.ParentConnectionID != "" {
-		writable := c.WriteEnabled && c.AccessState == "available"
+		writable := c.WriteEnabled && c.AccessState == "available" && (c.Kind == "github-issues" || c.Kind == "fixture")
 		return common.WorkbenchCapabilities{Read: true, Refresh: true, Create: writable && c.Kind == "github-issues", SetState: writable}
 	}
 	caps := s.workbenchPlugins[c.Kind].capabilities
@@ -216,8 +219,8 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 		if err != nil {
 			return err
 		}
-		if pkg.Manifest.ConnectorID != "fixture" && pkg.Manifest.ConnectorID != "github-issues" {
-			return common.Err("INVALID_ARGUMENT", "Unknown development Connector")
+		if _, reserved := s.workbenchPlugins[pkg.Manifest.ConnectorID]; reserved && pkg.Manifest.ConnectorID != "github-issues" {
+			return common.Err("INVALID_ARGUMENT", "Development Connector ID is reserved")
 		}
 		packages = append(packages, pkg)
 	}
@@ -235,6 +238,7 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 		}
 		s.workbenchConnectorProcess = process
 		s.workbenchConnectorSyncBuckets = description.SyncRateLimitBuckets
+		s.workbenchConnectorSupportsDelta = slices.Contains(description.Capabilities, "tasks.sync.delta")
 		release = &common.WorkbenchConnectorRelease{
 			ConnectorID: pkg.Manifest.ConnectorID, ReleaseVersion: pkg.Manifest.ReleaseVersion,
 			ProtocolVersion: protocol.Version, PackageDigest: pkg.Digest,
@@ -244,7 +248,11 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 	if store, ok := s.store.(interface {
 		RegisterWorkbenchPluginRelease(string, *common.WorkbenchConnectorRelease) error
 	}); ok {
-		for _, id := range []string{common.WorkbenchGitHubRepository, "fixture"} {
+		ids := []string{common.WorkbenchGitHubRepository, "fixture"}
+		if release != nil && !slices.Contains(ids, s.managedPluginID(release.ConnectorID)) {
+			ids = append(ids, s.managedPluginID(release.ConnectorID))
+		}
+		for _, id := range ids {
 			var current *common.WorkbenchConnectorRelease
 			if release != nil && id == s.managedPluginID(release.ConnectorID) {
 				current = release

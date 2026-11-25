@@ -16,6 +16,7 @@ import (
 
 	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/alswl/apilot/core/pkg/services"
 )
 
 func TestWorkbenchConnectorUC01HTTP(t *testing.T) {
@@ -25,9 +26,14 @@ func TestWorkbenchConnectorUC01HTTP(t *testing.T) {
 
 func prepareUC01TestAPI(t *testing.T) (uc01TestAPI, string) {
 	t.Helper()
+	return prepareNamedConnectorTestAPI(t, "fixture")
+}
+
+func prepareNamedConnectorTestAPI(t *testing.T, connectorID string) (uc01TestAPI, string) {
+	t.Helper()
 	fixtureDir := t.TempDir()
 	binary := filepath.Join(fixtureDir, "apilot-fixture")
-	cmd := exec.Command("go", "-C", "../../../connectors/protocol", "build", "-o", binary, "./cmd/apilot-fixture")
+	cmd := exec.Command("go", "-C", "../../../connectors/protocol", "build", "-ldflags", "-X main.fixtureConnectorID="+connectorID, "-o", binary, "./cmd/apilot-fixture")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build protocol fixture: %v\n%s", err, out)
 	}
@@ -35,7 +41,7 @@ func prepareUC01TestAPI(t *testing.T) (uc01TestAPI, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manifest := protocol.Manifest{ManifestVersion: 1, ConnectorID: "fixture", ReleaseVersion: "0.1.0", ProtocolVersions: []int{1}, OS: runtime.GOOS, Arch: runtime.GOARCH,
+	manifest := protocol.Manifest{ManifestVersion: 1, ConnectorID: connectorID, ReleaseVersion: "0.1.0", ProtocolVersions: []int{1}, OS: runtime.GOOS, Arch: runtime.GOARCH,
 		Entrypoint: "apilot-fixture", EntrypointSHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
 	manifestPath := filepath.Join(fixtureDir, "fixture.json")
 	writeUC01JSON(t, manifestPath, manifest)
@@ -51,7 +57,7 @@ func prepareUC01TestAPI(t *testing.T) (uc01TestAPI, string) {
 		}
 	})
 	router, _ := workbenchRouter(s)
-	path := filepath.Join(dir, "connectors", "fixture", "fixture.json")
+	path := filepath.Join(dir, "connectors", connectorID, "fixture.json")
 	api := uc01TestAPI{t: t, handler: router}
 
 	return api, path
@@ -297,5 +303,154 @@ func writeUC01JSON(t *testing.T, path string, input any) {
 	}
 	if err := os.Rename(path+".next", path); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestThirdPartyReadOnlyFullSync(t *testing.T) {
+	api, config := prepareNamedConnectorTestAPI(t, "external-sample")
+	var catalog workbenchItems[services.WorkbenchConnector]
+	api.call(http.MethodGet, "/connectors", nil, &catalog)
+	found := false
+	for _, item := range catalog.Items {
+		if item.Kind == "external-sample" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("third-party connector missing from catalog")
+	}
+	var auth common.WorkbenchConnectorAuthorization
+	api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: "external-sample"}, &auth)
+	auth = api.status(auth.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" })
+	if auth.Status != "authorized" {
+		t.Fatalf("authorization: %+v", auth)
+	}
+	var invalid common.WorkbenchConnectorSaveResult
+	api.call(http.MethodPut, "/connector-connections", common.WorkbenchConnectorSaveInput{AuthorizationID: auth.ID, EndpointSchemaVersion: 1, ScopeSchemaVersion: 1, Scopes: []common.WorkbenchConnectorSelection{{Config: map[string]any{"project": "INVALID"}}}}, &invalid)
+	if invalid.ConnectionID != "" || len(invalid.Scopes) != 1 || invalid.Scopes[0].Status != "rejected" {
+		t.Fatalf("invalid config: %+v", invalid)
+	}
+	var saved common.WorkbenchConnectorSaveResult
+	api.call(http.MethodPut, "/connector-connections", common.WorkbenchConnectorSaveInput{AuthorizationID: auth.ID, EndpointSchemaVersion: 1, ScopeSchemaVersion: 1, Scopes: []common.WorkbenchConnectorSelection{{Config: map[string]any{"project": "PAY"}, WriteEnabled: true}}}, &saved)
+	if saved.ConnectionID == "" || len(saved.Scopes) != 1 {
+		t.Fatalf("save: %+v", saved)
+	}
+	var overview common.WorkbenchConnectorOverview
+	uc01Wait(t, func() bool {
+		api.call(http.MethodGet, "/connector-connections/"+saved.ConnectionID, nil, &overview)
+		return len(overview.Scopes) == 1 && overview.Scopes[0].LastRun != nil && overview.Scopes[0].LastRun.Status == "success"
+	})
+	var snapshot common.WorkbenchSnapshot
+	api.call(http.MethodGet, "/connections/"+overview.Scopes[0].ScopeID, nil, &snapshot)
+	if snapshot.WriteEnabled {
+		t.Fatal("third-party connection became writable")
+	}
+
+	request := httptest.NewRequest(http.MethodPut, workbenchPath+"/connections", bytes.NewBufferString(fmt.Sprintf(`{"id":%q,"kind":"external-sample","name":"External","version":%d,"write_enabled":true}`, snapshot.ID, snapshot.Version)))
+	request.Header.Set(common.WorkbenchAPIVersionHeader, common.WorkbenchAPIVersion)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	api.handler.ServeHTTP(response, request)
+	if response.Code == http.StatusOK {
+		t.Fatalf("write permission accepted: %s", response.Body.String())
+	}
+	runID := overview.Scopes[0].LastRun.ID
+	api.call(http.MethodPost, "/connector-connections/"+saved.ConnectionID+"/sync", nil, nil)
+	uc01Wait(t, func() bool {
+		api.call(http.MethodGet, "/connector-connections/"+saved.ConnectionID, nil, &overview)
+		return overview.Scopes[0].LastRun != nil && overview.Scopes[0].LastRun.ID != runID && overview.Scopes[0].LastRun.Status == "success"
+	})
+	if overview.Scopes[0].LastRun.Mode != "full" {
+		t.Fatalf("sync mode: %+v", overview.Scopes[0].LastRun)
+	}
+	var page common.WorkbenchPage
+	api.call(http.MethodGet, "/tasks?scope_id="+overview.Scopes[0].ScopeID, nil, &page)
+	if page.Total != 2 {
+		t.Fatalf("tasks: %+v", page)
+	}
+	var detail common.WorkbenchTaskDetail
+	api.call(http.MethodGet, "/tasks/"+page.Items[0].ID+"/detail?segment=description", nil, &detail)
+	if len(detail.Items) == 0 {
+		t.Fatal("description missing")
+	}
+
+	writeInput, err := json.Marshal(common.WorkbenchTaskWrite{RequestID: "external-write", ConnectionID: snapshot.ID, ConnectionVersion: snapshot.Version, SourceObjectID: page.Items[0].ID, TargetVersion: page.Items[0].TargetVersion, Title: "Changed"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRequest := httptest.NewRequest(http.MethodPost, workbenchPath+"/task-operations", bytes.NewReader(writeInput))
+	writeRequest.Header.Set(common.WorkbenchAPIVersionHeader, common.WorkbenchAPIVersion)
+	writeRequest.Header.Set("Content-Type", "application/json")
+	writeResponse := httptest.NewRecorder()
+	api.handler.ServeHTTP(writeResponse, writeRequest)
+	if writeResponse.Code == http.StatusOK {
+		t.Fatalf("write accepted: %s", writeResponse.Body.String())
+	}
+	logData, err := os.ReadFile(filepath.Join(filepath.Dir(config), "requests.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(logData, []byte(`"method":"tasks.mutate"`)) {
+		t.Fatal("mutation reached source")
+	}
+	taskID := page.Items[0].ID
+	api.call(http.MethodPut, "/tasks/"+taskID+"/annotations/note", map[string]string{"body": "Local note"}, nil)
+	lastSuccess := *overview.Scopes[0].LastSuccess
+	for _, failure := range []map[string]any{{"fail_second_page": "PAY"}, {"empty_scope": "PAY", "unverified_scope": "PAY"}} {
+		writeUC01JSON(t, config, failure)
+		runID = overview.Scopes[0].LastRun.ID
+		api.call(http.MethodPost, "/connector-connections/"+saved.ConnectionID+"/sync", nil, nil)
+		uc01Wait(t, func() bool {
+			api.call(http.MethodGet, "/connector-connections/"+saved.ConnectionID, nil, &overview)
+			return overview.Scopes[0].LastRun != nil && overview.Scopes[0].LastRun.ID != runID && overview.Scopes[0].LastRun.Status == "failed"
+		})
+		api.call(http.MethodGet, "/tasks?scope_id="+overview.Scopes[0].ScopeID, nil, &page)
+		var annotations workbenchItems[common.WorkbenchAnnotation]
+		api.call(http.MethodGet, "/tasks/"+taskID+"/annotations", nil, &annotations)
+		if len(annotations.Items) != 1 || annotations.Items[0].Body != "Local note" {
+			t.Fatalf("annotation lost: %+v", annotations)
+		}
+		if page.Total != 2 || !overview.Scopes[0].LastSuccess.Equal(lastSuccess) {
+			t.Fatalf("failed sync changed snapshot: %+v %+v", page, overview.Scopes[0])
+		}
+	}
+
+	writeUC01JSON(t, config, map[string]any{})
+	runID = overview.Scopes[0].LastRun.ID
+	api.call(http.MethodPost, "/connector-connections/"+saved.ConnectionID+"/sync", nil, nil)
+	uc01Wait(t, func() bool {
+		api.call(http.MethodGet, "/connector-connections/"+saved.ConnectionID, nil, &overview)
+		return overview.Scopes[0].LastRun != nil && overview.Scopes[0].LastRun.ID != runID && overview.Scopes[0].LastRun.Status == "success"
+	})
+}
+
+func TestThirdPartyRejectsInvalidPackage(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*protocol.Manifest)
+	}{
+		{"digest", func(m *protocol.Manifest) { m.EntrypointSHA256 = fmt.Sprintf("%064d", 0) }},
+		{"architecture", func(m *protocol.Manifest) { m.Arch = "other" }},
+		{"protocol", func(m *protocol.Manifest) { m.ProtocolVersions = []int{999} }},
+		{"reserved", func(m *protocol.Manifest) { m.ConnectorID = "local" }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			binary := filepath.Join(dir, "connector")
+			data := []byte("not a connector")
+			if err := os.WriteFile(binary, data, 0700); err != nil {
+				t.Fatal(err)
+			}
+			manifest := protocol.Manifest{ManifestVersion: 1, ConnectorID: "external-sample", ReleaseVersion: "0.1.0", ProtocolVersions: []int{1}, OS: runtime.GOOS, Arch: runtime.GOARCH, Entrypoint: "connector", EntrypointSHA256: fmt.Sprintf("%x", sha256.Sum256(data))}
+			tc.change(&manifest)
+			path := filepath.Join(dir, "manifest.json")
+			writeUC01JSON(t, path, manifest)
+			t.Setenv("APILOT_DEV_CONNECTOR_MANIFEST", path)
+			s, err := OpenService(t.TempDir())
+			if err == nil {
+				s.Close()
+				t.Fatalf("invalid %s accepted", tc.name)
+			}
+		})
 	}
 }
