@@ -182,7 +182,8 @@ func (m *mockup) connectorDraftFields(c *ui.Context, p *connectorLoginPanel) {
 		if field.level == "scope" && field.key == p.form.primary {
 			continue
 		}
-		key := c.Key(field.level + "." + field.key)
+		fieldID := field.level + "." + field.key
+		key := c.Key(fieldID)
 		value := p.form.values(field.level)[field.key]
 		disabled := p.saving || !p.form.ready(field)
 		if field.meta.DynamicOptions {
@@ -204,16 +205,16 @@ func (m *mockup) connectorDraftFields(c *ui.Context, p *connectorLoginPanel) {
 				values = []any{true, false}
 			}
 			selected := slices.IndexFunc(values, func(choice any) bool { return reflect.DeepEqual(value, choice) })
-			components.Muted(key.Key("label"), field.meta.Title)
-			ui.RadioGroup(key.Key("value"), func() {
-				ui.Row(key.Key("choices")).Wrap().Gap(8).Children(func() {
+			components.Muted(c.Key(fieldID+".label"), field.meta.Title)
+			ui.RadioGroup(c.Key(fieldID+".value"), func() {
+				ui.Row(c.Key(fieldID + ".choices")).Wrap().Gap(8).Children(func() {
 					for index, choice := range values {
-						if ui.Radio(key.Key(index), &selected, index, configFieldText(choice)).Disabled(disabled).Changed() {
+						if ui.Radio(c.Key(fieldID+".choice."+strconv.Itoa(index)), &selected, index, configFieldText(choice)).Disabled(disabled).Changed() {
 							changed = true
 						}
 					}
 					if !field.required {
-						if ui.Radio(key.Key("unset"), &selected, -1, tr("请选择")).Disabled(disabled).Changed() {
+						if ui.Radio(c.Key(fieldID+".unset"), &selected, -1, tr("请选择")).Disabled(disabled).Changed() {
 							changed = true
 						}
 					}

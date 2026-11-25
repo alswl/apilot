@@ -124,6 +124,7 @@ func TestConnectorConfigEnumInLoginModal(t *testing.T) {
 		form: &connectorConfigForm{endpoint: map[string]any{}, scope: map[string]any{}, fields: []connectorConfigField{
 			{key: "cluster", kind: "string", level: "endpoint", required: true, choices: []any{"demo"}, meta: protocol.ConfigField{Title: "Cluster"}},
 			{key: "region", kind: "string", level: "endpoint", required: true, meta: protocol.ConfigField{Title: "Region", DynamicOptions: true, DependsOn: []string{"cluster"}}},
+			{key: "board", kind: "string", level: "scope", required: true, choices: []any{"delivery"}, meta: protocol.ConfigField{Title: "Board", DependsOn: []string{"endpoint.region"}}},
 		}},
 	}
 	m := &mockup{connectorLogin: panel}
