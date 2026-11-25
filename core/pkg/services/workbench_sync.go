@@ -46,7 +46,7 @@ func (s *Service) WorkbenchConnections() ([]common.WorkbenchSnapshot, error) {
 	}
 	for i := range connections {
 		if connections[i].ParentConnectionID != "" {
-			if connections[i].Kind != "github-issues" && connections[i].Kind != "fixture" {
+			if !s.registeredConnector(connections[i].Kind).supportsWrite() {
 				connections[i].WriteEnabled = false
 			}
 			_, err := s.managedConnector(connections[i].Kind)

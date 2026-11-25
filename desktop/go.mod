@@ -27,6 +27,7 @@ require (
 	go.digitalxero.dev/rpm v0.3.4 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
 	golang.org/x/image v0.46.0 // indirect
+	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.63.0 // indirect
 	golang.org/x/text v0.44.0 // indirect
 )

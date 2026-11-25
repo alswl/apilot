@@ -82,6 +82,7 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 		{"getGitHubAuthorization", "GET", "/v1/workbench/github-authorizations/item", "github authorization show item", ``},
 		{"listGitHubRepositories", "GET", "/v1/workbench/github-repositories", "github repositories --authorization item", ``},
 		{"listWorkbenchLabels", "GET", "/v1/workbench/labels", "label list", ``},
+		{"importWorkbenchConnector", "POST", "/v1/workbench/plugins/import", "plugin import item", ``},
 		{"listWorkbenchPlugins", "GET", "/v1/workbench/plugins", "plugin list", ``},
 		{"setWorkbenchPluginEnabled", "PUT", "/v1/workbench/plugins/item/enabled", "plugin enable item", ``},
 		{"submitWorkbenchTaskOperation", "POST", "/v1/workbench/task-operations", "task operation submit -", `{"request_id":"item"}`},

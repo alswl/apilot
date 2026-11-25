@@ -19,6 +19,7 @@ type WorkbenchScopeState struct {
 	ScopeID         string     `json:"scope_id"`
 	ConnectionID    string     `json:"connection_id"`
 	ScopeRef        string     `json:"scope_ref"`
+	ScopeType       string     `json:"scope_type,omitempty"`
 	AccessState     string     `json:"access_state"`
 	ConfigRevision  int64      `json:"config_revision"`
 	MappingRevision int64      `json:"mapping_revision"`
@@ -96,6 +97,7 @@ type WorkbenchConnectorOptions struct {
 }
 
 type WorkbenchConnectorSelection struct {
+	ScopeType    string         `json:"scope_type,omitempty"`
 	Config       map[string]any `json:"config"`
 	WriteEnabled bool           `json:"write_enabled,omitempty"`
 }

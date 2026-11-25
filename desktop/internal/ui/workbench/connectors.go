@@ -56,11 +56,18 @@ func (m *mockup) connections(c *ui.Context) {
 	if m.liveError {
 		components.Muted(c.Key("live-error"), tr("无法读取工作台数据"))
 	}
-	ui.Row(c.Key("actions")).FillWidth().Justify(ui.End).Children(func() {
+	ui.Row(c.Key("actions")).FillWidth().Justify(ui.End).Gap(8).Children(func() {
+		if m.connectorDesktop() && ui.Button(c.Key("import"), tr("导入连接器")).Disabled(m.connectorImportBusy).Clicked() {
+			m.importConnector()
+		}
 		ui.MenuButton(c.Key("add"), tr("添加连接"), func(menu *ui.Menu) {
 			if m.connectorDesktop() {
-				for _, id := range []string{managedGitHub, managedFixture} {
-					if m.visibleConnectorKind(id) && m.connectorRelease(id) != nil && menu.Item(connectorLabel(id)).Chosen() {
+				for _, plugin := range m.livePlugins {
+					if !plugin.Enabled || plugin.Release == nil {
+						continue
+					}
+					id := plugin.Release.ConnectorID
+					if (plugin.Imported || id == managedGitHub || id == managedFixture) && m.visibleConnectorKind(id) && menu.Item(connectorLabel(id)).Chosen() {
 						m.openConnectorLogin(id, "")
 					}
 				}
@@ -77,6 +84,9 @@ func (m *mockup) connections(c *ui.Context) {
 	})
 	if m.connectorDesktop() {
 		m.managedConnections(c.Key("managed"))
+	}
+	if m.connectorImportStatus != "" {
+		components.Muted(c.Key("connector-import-status"), m.connectorImportStatus)
 	}
 	if m.connectorProblem != "" {
 		components.Muted(c.Key("connector-problem"), m.connectorProblem)
@@ -798,4 +808,28 @@ func (m *mockup) saveConnector(config connection) string {
 		m.connectionsData = append(m.connectionsData, config)
 	}
 	return ""
+}
+
+func (m *mockup) importConnector() {
+	m.connectorImportBusy = true
+	m.connectorImportStatus = ""
+	window, remote := m.win, m.live
+	title := tr("导入连接器")
+	go func() {
+		paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{Parent: window, Title: title, ButtonLabel: title})
+		var plugin services.WorkbenchPlugin
+		if err == nil && len(paths) == 1 {
+			plugin, err = connectorCall[services.WorkbenchPlugin](remote, "workbench.plugin.import", map[string]string{"path": paths[0]})
+		}
+		mygo.RunOnMain(func() {
+			m.connectorImportBusy = false
+			if err != nil {
+				m.connectorImportStatus = common.ProtocolError(err).Message
+			} else if plugin.ID != "" {
+				m.connectorImportStatus = tr("连接器已安装") + " · " + plugin.ID
+				m.refreshLive()
+			}
+			m.invalidateLiveWindow()
+		})
+	}()
 }

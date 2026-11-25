@@ -22,6 +22,7 @@ type workbenchConnectorSyncInput struct {
 
 type workbenchConnectorOptionsInput struct {
 	ID              string `path:"id" minLength:"1"`
+	ScopeType       string `query:"scope_type"`
 	AuthorizationID string `query:"authorization_id" required:"true" minLength:"1"`
 	Field           string `query:"field" required:"true" minLength:"1" maxLength:"100"`
 	Search          string `query:"search" maxLength:"200"`
@@ -47,7 +48,7 @@ func registerWorkbenchConnectorHTTP(api huma.API, s *services.Service) {
 		func(ctx context.Context, in *workbenchConnectorOptionsInput) (common.WorkbenchConnectorOptions, error) {
 			ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
 			defer cancel()
-			return s.WorkbenchConnectorOptions(ctx, in.ID, in.AuthorizationID, in.Field, in.Search, in.Page)
+			return s.WorkbenchConnectorOptions(ctx, in.ID, in.AuthorizationID, in.Field, in.Search, in.Page, in.ScopeType)
 		})
 	registerWorkbench(api, http.MethodGet, connections, "listWorkbenchConnectorConnections", "List Connector connections and their scopes", "Connections", nil,
 		func(_ *struct{}) (workbenchItems[common.WorkbenchConnectorOverview], error) {

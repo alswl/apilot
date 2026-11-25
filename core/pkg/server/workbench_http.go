@@ -242,6 +242,12 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 			}
 			return workbenchHealth{"ready"}, nil
 		})
+	registerWorkbenchContext(api, http.MethodPost, workbenchPath+"/plugins/import", "importWorkbenchConnector", "Install or upgrade a signed local Connector package", "Connectors", []int{400, 409},
+		func(ctx context.Context, in *workbenchBody[struct {
+			Path string `json:"path" minLength:"1"`
+		}]) (services.WorkbenchPlugin, error) {
+			return s.ImportWorkbenchConnector(ctx, in.Body.Path)
+		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/plugins", "listWorkbenchPlugins", "List source plugins", "Connectors", nil,
 		func(_ *struct{}) (workbenchItems[services.WorkbenchPlugin], error) {
 			items, err := s.WorkbenchPlugins()

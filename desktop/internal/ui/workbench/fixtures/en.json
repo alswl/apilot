@@ -1,4 +1,10 @@
 {
+  "导入连接器": "Import Connector",
+  "连接器已安装": "Connector installed",
+  "空间": "Space",
+  "搜索范围": "Search scopes",
+  "正在查找范围": "Searching scopes…",
+  "没有符合条件的范围": "No matching scopes",
   "外部更新": "External update",
   "刷新失败": "Refresh failed",
   "重连": "Reconnect",

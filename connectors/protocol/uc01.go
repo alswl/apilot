@@ -26,6 +26,7 @@ type Account struct {
 }
 
 type OptionsParams struct {
+	ScopeType   string `json:"scope_type,omitempty"`
 	AccountRef  string `json:"account_ref"`
 	EndpointRef string `json:"endpoint_ref"`
 	Field       string `json:"field"`

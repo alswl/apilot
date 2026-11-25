@@ -37,3 +37,12 @@ func (s *Store) RegisterWorkbenchPluginRelease(id string, release *common.Workbe
 		id, release.ReleaseVersion, release.ProtocolVersion, release.PackageDigest)
 	return err
 }
+
+func (s *Store) WorkbenchPluginDigest(id string) (string, error) {
+	var digest sql.NullString
+	err := s.db.QueryRow("SELECT package_digest FROM workbench_plugin_settings WHERE id=?", id).Scan(&digest)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return digest.String, err
+}

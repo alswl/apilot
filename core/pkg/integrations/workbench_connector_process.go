@@ -38,6 +38,10 @@ func NewWorkbenchConnectorProcess(pkg WorkbenchConnectorPackage, namespace strin
 	return &WorkbenchConnectorProcess{pkg: pkg, namespace: namespace, ctx: ctx, cancel: cancel}
 }
 
+func (p *WorkbenchConnectorProcess) Fresh() *WorkbenchConnectorProcess {
+	return NewWorkbenchConnectorProcess(p.pkg, p.namespace)
+}
+
 func (p *WorkbenchConnectorProcess) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -58,10 +62,21 @@ func (p *WorkbenchConnectorProcess) Describe(ctx context.Context) (protocol.Desc
 	m := p.pkg.Manifest
 	if json.Unmarshal(result, &description) != nil || description.ConnectorID != m.ConnectorID ||
 		description.ReleaseVersion != m.ReleaseVersion || !slices.Equal(description.ProtocolVersions, m.ProtocolVersions) ||
-		!validConnectorSchema(description.EndpointConfig) || !validConnectorSchema(description.ScopeConfig) {
+		!validConnectorSchema(description.EndpointConfig) || !validConnectorSchema(description.ScopeConfig) || !validScopeTypes(description.ScopeConfig.Types) || len(description.EndpointConfig.Types) != 0 {
 		return protocol.Description{}, ErrWorkbenchConnectorProtocol
 	}
 	return description, nil
+}
+
+func validScopeTypes(types []string) bool {
+	seen := make(map[string]bool, len(types))
+	for _, kind := range types {
+		if (kind != protocol.ScopeProject && kind != protocol.ScopeSpace) || seen[kind] {
+			return false
+		}
+		seen[kind] = true
+	}
+	return true
 }
 
 func validConnectorSchema(schema protocol.ConfigSchema) bool {

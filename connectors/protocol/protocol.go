@@ -38,6 +38,7 @@ type ConfigSchema struct {
 	Version int                    `json:"version"`
 	Schema  json.RawMessage        `json:"schema"`
 	Fields  map[string]ConfigField `json:"fields,omitempty"`
+	Types   []string               `json:"types,omitempty"`
 }
 
 type ConfigField struct {
@@ -142,7 +143,13 @@ type RichText struct {
 	Content json.RawMessage `json:"content"`
 }
 
+const (
+	ScopeProject = "project"
+	ScopeSpace   = "space"
+)
+
 type ScopeContext struct {
+	ScopeType             string          `json:"scope_type,omitempty"`
 	AccountRef            string          `json:"account_ref"`
 	EndpointRef           string          `json:"endpoint_ref"`
 	ScopeRef              string          `json:"scope_ref"`

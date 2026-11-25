@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ type connectorAuthorization struct {
 type workbenchManagedConnectorStore interface {
 	SaveWorkbenchConnectorConnection(common.WorkbenchConnectorConnection, []common.WorkbenchConnectorNewScope) (common.WorkbenchConnectorSaveResult, error)
 	WorkbenchConnectorConnection(string) (common.WorkbenchConnectorConnection, error)
-	WorkbenchConnectorSelectedValues(string, string, string, string) (map[string]bool, error)
+	WorkbenchConnectorSelectedValues(string, string, string, string, string) (map[string]bool, error)
 	ConfirmWorkbenchConnectorAccount(string, int64) error
 	WorkbenchConnectorScope(string) (common.WorkbenchConnectorStoredScope, error)
 	WorkbenchConnectorOverviews(string) ([]common.WorkbenchConnectorOverview, error)
@@ -48,13 +49,14 @@ func (s *Service) managedConnectorStore() (workbenchManagedConnectorStore, error
 }
 
 func (s *Service) managedConnector(id string) (*integrations.WorkbenchConnectorProcess, error) {
-	if s.workbenchConnectorRelease == nil || s.workbenchConnectorRelease.ConnectorID != id {
+	connector := s.registeredConnector(id)
+	if connector == nil {
 		return nil, common.Err("NOT_FOUND", "Connector release unavailable")
 	}
 	if err := s.workbenchPluginAvailable(s.managedPluginID(id)); err != nil {
 		return nil, err
 	}
-	return s.workbenchConnectorProcess, nil
+	return connector.process, nil
 }
 
 func (s *Service) managedPluginID(id string) string {
@@ -222,25 +224,41 @@ func (s *Service) authorizedConnectorAccount(id, connectorID string) (*integrati
 	return process, session.account, err
 }
 
-func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizationID, field, search, page string) (common.WorkbenchConnectorOptions, error) {
+func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizationID, field, search, page string, scopeTypes ...string) (common.WorkbenchConnectorOptions, error) {
 	var out common.WorkbenchConnectorOptions
 	s.mu.Lock()
 	process, account, err := s.authorizedConnectorAccount(authorizationID, id)
+	if id == "" && err == nil {
+		id = s.workbenchConnectorAuth[authorizationID].status.ConnectorID
+	}
+	connector := s.registeredConnector(id)
 	s.mu.Unlock()
 	if err != nil {
 		return out, err
 	}
+	var scopeType string
+	if len(scopeTypes) > 0 {
+		scopeType = scopeTypes[0]
+	}
+	if scopeType != "" && !slices.Contains(connector.description.ScopeConfig.Types, scopeType) {
+		return out, common.Err("INVALID_ARGUMENT", "Connector does not support this scope type")
+	}
 	out.ConfigOptions, err = callWorkbenchConnector[protocol.ConfigOptions](ctx, process, common.ID(), protocol.Options, protocol.OptionsParams{
-		AccountRef: account.AccountRef, EndpointRef: account.EndpointRef, Field: field, Search: search, Page: page,
+		AccountRef: account.AccountRef, EndpointRef: account.EndpointRef, Field: field, Search: search, Page: page, ScopeType: scopeType,
 	}, nil)
 	if err != nil {
 		return out, publicConnectorError(err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if active, _, err := s.authorizedConnectorAccount(authorizationID, id); err != nil || active != process {
+		return common.WorkbenchConnectorOptions{}, common.Err("CONFLICT", "Connector authorization changed")
 	}
 	store, err := s.managedConnectorStore()
 	if err != nil {
 		return out, err
 	}
-	connected, err := store.WorkbenchConnectorSelectedValues(id, account.EndpointRef, account.AccountRef, field)
+	connected, err := store.WorkbenchConnectorSelectedValues(id, account.EndpointRef, account.AccountRef, field, scopeType)
 	if err != nil {
 		return out, err
 	}
@@ -264,7 +282,8 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 		return empty, err
 	}
 	id := s.workbenchConnectorAuth[in.AuthorizationID].status.ConnectorID
-	if id != "github-issues" && id != "fixture" {
+	connector := s.registeredConnector(id)
+	if !connector.supportsWrite() {
 		for i := range in.Scopes {
 			in.Scopes[i].WriteEnabled = false
 		}
@@ -285,12 +304,12 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 	repeated := make(map[int]int)
 	for i, selection := range in.Scopes {
 		rawScope, err := json.Marshal(selection.Config)
-		if selection.Config == nil || err != nil {
+		if selection.Config == nil || err != nil || (selection.ScopeType != "" && !slices.Contains(connector.description.ScopeConfig.Types, selection.ScopeType)) {
 			out.Scopes[i] = common.WorkbenchConnectorScopeResult{Status: "rejected", ErrorKind: string(protocol.InvalidConfig)}
 			continue
 		}
 		params := protocol.ScopeContext{AccountRef: account.AccountRef, EndpointRef: account.EndpointRef, EndpointConfig: rawEndpoint, ScopeConfig: rawScope,
-			EndpointSchemaVersion: in.EndpointSchemaVersion, ScopeSchemaVersion: in.ScopeSchemaVersion}
+			EndpointSchemaVersion: in.EndpointSchemaVersion, ScopeSchemaVersion: in.ScopeSchemaVersion, ScopeType: selection.ScopeType}
 		scope, err := callWorkbenchConnector[protocol.ValidatedScope](ctx, process, common.ID(), protocol.Validate, protocol.ValidateParams{ScopeContext: params, Mode: "static"}, nil)
 		if err == nil && (scope.ScopeRef == "" || scope.EndpointRef != account.EndpointRef || scope.Label == "") {
 			err = integrations.ErrWorkbenchConnectorProtocol
@@ -469,7 +488,7 @@ func (s *Service) ConfigureWorkbenchConnectorScope(id, kind, name string, versio
 	if scope.ParentConnectionID == "" || scope.Kind != kind {
 		return empty, common.Err("INVALID_ARGUMENT", "Connector type cannot change")
 	}
-	if kind != "github-issues" && kind != "fixture" && write {
+	if write && !s.registeredConnector(kind).supportsWrite() {
 		return empty, common.Err("FORBIDDEN", "Connector is read-only")
 	}
 	if scope.Version != version {
