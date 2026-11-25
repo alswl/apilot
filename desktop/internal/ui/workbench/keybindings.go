@@ -3,6 +3,7 @@ package workbench
 import (
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -47,6 +48,11 @@ var defaultBindings = map[string][]string{
 	"now.reply": {"r"}, "view.save": {"Alt+V"}, "task.open": {"o"}, "settings.open": {},
 }
 
+var shortcutPunctuation = map[string]ui.Key{
+	"/": ui.KeySlash, ",": ui.KeyComma, ".": ui.KeyPeriod, "-": ui.KeyMinus,
+	"=": ui.KeyEqual, ";": ui.KeySemicolon, "[": ui.KeyBracketLeft, "]": ui.KeyBracketRight,
+}
+
 func parseStroke(value string) (keystroke, error) {
 	parts := strings.Split(strings.ToLower(value), "+")
 	key := parts[len(parts)-1]
@@ -68,10 +74,7 @@ func parseStroke(value string) (keystroke, error) {
 	case len(key) == 1 && key[0] >= '0' && key[0] <= '9':
 		stroke.key = ui.Key0 + ui.Key(key[0]-'0')
 	default:
-		stroke.key = map[string]ui.Key{
-			"/": ui.KeySlash, ",": ui.KeyComma, ".": ui.KeyPeriod, "-": ui.KeyMinus,
-			"=": ui.KeyEqual, ";": ui.KeySemicolon, "[": ui.KeyBracketLeft, "]": ui.KeyBracketRight,
-		}[key]
+		stroke.key = shortcutPunctuation[key]
 	}
 	if stroke.key == ui.KeyUnknown {
 		return keystroke{}, fmt.Errorf("unsupported key %q", value)
@@ -160,10 +163,54 @@ func (k *keyboardState) display(id string) string {
 	var labels []string
 	for _, item := range k.bindings {
 		if item.command == id {
-			labels = append(labels, item.label)
+			labels = append(labels, item.displayLabel(runtime.GOOS))
 		}
 	}
 	return strings.Join(labels, "  /  ")
+}
+
+func (b binding) displayLabel(platform string) string {
+	if platform != "darwin" {
+		return b.label
+	}
+	label := b.first.macLabel()
+	if b.second.key != ui.KeyUnknown {
+		label += " " + b.second.macLabel()
+	}
+	return label
+}
+
+func (s keystroke) macLabel() string {
+	if s.key == ui.KeySlash && s.mods == ui.Shift {
+		return "?"
+	}
+	var label strings.Builder
+	for _, modifier := range [...]struct {
+		flag   ui.Modifiers
+		symbol string
+	}{{ui.Ctrl, "⌃"}, {ui.Alt, "⌥"}, {ui.Shift, "⇧"}, {ui.Cmd, "⌘"}} {
+		if s.mods&modifier.flag != 0 {
+			label.WriteString(modifier.symbol)
+		}
+	}
+	switch {
+	case s.key >= ui.KeyA && s.key <= ui.KeyZ:
+		base := byte('a')
+		if s.mods != 0 {
+			base = 'A'
+		}
+		label.WriteByte(base + byte(s.key-ui.KeyA))
+	case s.key >= ui.Key0 && s.key <= ui.Key9:
+		label.WriteByte('0' + byte(s.key-ui.Key0))
+	default:
+		for text, key := range shortcutPunctuation {
+			if key == s.key {
+				label.WriteString(text)
+				break
+			}
+		}
+	}
+	return label.String()
 }
 
 func (k *keyboardState) observe(event ui.InputEvent) {
