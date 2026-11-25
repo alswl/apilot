@@ -23,6 +23,18 @@ func scopedFixtureDescription(description *protocol.Description) {
 	description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target"],"properties":{"target":{"type":"string"}},"additionalProperties":false}`)
 	description.ScopeConfig.Fields = map[string]protocol.ConfigField{"target": {Title: "Target", Control: "select", DynamicOptions: true}}
 	description.ScopeConfig.Types = []string{protocol.ScopeProject, protocol.ScopeSpace}
+	if fixtureScopeMode == "schema2" {
+		description.ScopeConfig.Version = 2
+	}
+	if fixtureScopeMode == "multi" {
+		description.EndpointConfig.Schema = json.RawMessage(`{"type":"object","required":["cluster","region"],"properties":{"cluster":{"type":"string","enum":["demo"]},"region":{"type":"string"}},"additionalProperties":false}`)
+		description.EndpointConfig.Fields = map[string]protocol.ConfigField{
+			"region": {Title: "Region", Control: "select", DynamicOptions: true, DependsOn: []string{"cluster"}},
+		}
+		description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["board","target"],"properties":{"board":{"type":"string","enum":["delivery"]},"target":{"type":"string"}},"additionalProperties":false}`)
+		description.ScopeConfig.Fields["board"] = protocol.ConfigField{Title: "Board", DependsOn: []string{"endpoint.region"}}
+		description.ScopeConfig.Fields["target"] = protocol.ConfigField{Title: "Target", Control: "select", DynamicOptions: true, DependsOn: []string{"board"}}
+	}
 	if fixtureScopeMode == "project" {
 		description.ScopeConfig.Types = []string{protocol.ScopeProject}
 	}
@@ -57,7 +69,21 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		if err := protocol.DecodeParams(req, &p); err != nil {
 			return nil, err
 		}
-		if p.AccountRef != scopedAccount || p.EndpointRef != scopedEndpoint || p.Field != "target" {
+		if p.AccountRef != scopedAccount || p.EndpointRef != scopedEndpoint {
+			return nil, badScope
+		}
+		if fixtureScopeMode == "multi" {
+			var endpoint, scope map[string]string
+			_ = json.Unmarshal(p.EndpointConfig, &endpoint)
+			_ = json.Unmarshal(p.ScopeConfig, &scope)
+			if p.ConfigLevel == "endpoint" && p.Field == "region" && endpoint["cluster"] == "demo" && p.Page == "" {
+				return protocol.ConfigOptions{Items: []protocol.ConfigOption{{Value: "east", Label: "East"}}}, nil
+			}
+			if p.ConfigLevel != "scope" || endpoint["cluster"] != "demo" || endpoint["region"] != "east" || scope["board"] != "delivery" {
+				return nil, badScope
+			}
+		}
+		if p.Field != "target" {
 			return nil, badScope
 		}
 		var options []protocol.ConfigOption
@@ -100,9 +126,20 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 	}
 	var selection struct {
 		Target string `json:"target"`
+		Board  string `json:"board"`
 	}
-	if json.Unmarshal(scope.ScopeConfig, &selection) != nil || scope.ScopeSchemaVersion != 1 || scope.EndpointSchemaVersion != 1 {
+	scopeVersion := 1
+	if fixtureScopeMode == "schema2" {
+		scopeVersion = 2
+	}
+	if json.Unmarshal(scope.ScopeConfig, &selection) != nil || scope.ScopeSchemaVersion != scopeVersion || scope.EndpointSchemaVersion != 1 {
 		return nil, badScope
+	}
+	if fixtureScopeMode == "multi" {
+		var endpoint map[string]string
+		if json.Unmarshal(scope.EndpointConfig, &endpoint) != nil || endpoint["cluster"] != "demo" || endpoint["region"] != "east" || selection.Board != "delivery" {
+			return nil, badScope
+		}
 	}
 	var projects []string
 	switch {
@@ -114,6 +151,9 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		return nil, badScope
 	}
 	ref := scope.ScopeType + ":" + selection.Target
+	if fixtureScopeMode == "renamed" {
+		ref = "new:" + ref
+	}
 	if req.Method == protocol.Validate {
 		var p protocol.ValidateParams
 		if err := protocol.DecodeParams(req, &p); err != nil {

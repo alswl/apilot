@@ -410,22 +410,6 @@ components:
         - updated
         - removed
       type: object
-    WorkbenchBodyStruct { Path string "json:\"path\" minLength:\"1\"" }Body:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - http://apilot/schemas/WorkbenchBodyStruct { Path string "json:\"path\" minLength:\"1\"" }Body.json
-          format: uri
-          readOnly: true
-          type: string
-        path:
-          minLength: 1
-          type: string
-      required:
-        - path
-      type: object
     WorkbenchCapabilities:
       additionalProperties: false
       properties:
@@ -1272,6 +1256,8 @@ components:
           type: string
         enabled:
           type: boolean
+        endpoint_config:
+          $ref: "#/components/schemas/ConfigSchema"
         endpoint_schema_version:
           format: int64
           type: integer
@@ -1289,6 +1275,22 @@ components:
         - id
         - enabled
         - connector
+      type: object
+    WorkbenchPluginImportInput:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchPluginImportInput.json
+          format: uri
+          readOnly: true
+          type: string
+        path:
+          minLength: 1
+          type: string
+      required:
+        - path
       type: object
     WorkbenchPluginInputBody:
       additionalProperties: false
@@ -3037,6 +3039,26 @@ paths:
             type: string
         - explode: false
           in: query
+          name: config_level
+          schema:
+            enum:
+              - endpoint
+              - scope
+            type: string
+        - explode: false
+          in: query
+          name: endpoint_config
+          schema:
+            maxLength: 4096
+            type: string
+        - explode: false
+          in: query
+          name: scope_config
+          schema:
+            maxLength: 4096
+            type: string
+        - explode: false
+          in: query
           name: authorization_id
           required: true
           schema:
@@ -3369,7 +3391,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/WorkbenchBodyStruct { Path string \"json:\\\"path\\\" minLength:\\\"1\\\"\" }Body"
+              $ref: "#/components/schemas/WorkbenchPluginImportInput"
         required: true
       responses:
         "200":

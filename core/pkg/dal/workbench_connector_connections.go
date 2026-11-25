@@ -53,7 +53,7 @@ func (s *Store) SaveWorkbenchConnectorConnection(parent common.WorkbenchConnecto
 			result.ScopeID = ""
 			err := tx.QueryRow("SELECT id FROM workbench_connections WHERE connector_connection_id=? AND scope_ref=?", out.ConnectionID, result.ScopeRef).Scan(&result.ScopeID)
 			switch {
-			case errors.Is(err, sql.ErrNoRows) && scope.Context.ScopeType != "" && sameEndpointConfig:
+			case errors.Is(err, sql.ErrNoRows) && scope.AppendExisting && sameEndpointConfig:
 				result.ScopeID = scope.ID
 			case errors.Is(err, sql.ErrNoRows):
 				result.Status, result.ErrorKind = "rejected", "connection_exists"

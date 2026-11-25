@@ -58,6 +58,7 @@ type WorkbenchPlugin struct {
 	Enabled               bool                              `json:"enabled"`
 	Connector             string                            `json:"connector"`
 	Release               *common.WorkbenchConnectorRelease `json:"release,omitempty"`
+	EndpointConfig        *protocol.ConfigSchema            `json:"endpoint_config,omitempty"`
 	ScopeConfig           *protocol.ConfigSchema            `json:"scope_config,omitempty"`
 	EndpointSchemaVersion int                               `json:"endpoint_schema_version,omitempty"`
 	Writable              bool                              `json:"writable,omitempty"`
@@ -273,6 +274,8 @@ func (s *Service) workbenchPluginInfo(id string, enabled bool) WorkbenchPlugin {
 		info.Release = &release
 		scope := connector.description.ScopeConfig
 		info.ScopeConfig = &scope
+		endpoint := connector.description.EndpointConfig
+		info.EndpointConfig = &endpoint
 		info.EndpointSchemaVersion = connector.description.EndpointConfig.Version
 		info.Writable = connector.supportsWrite()
 	}
@@ -292,6 +295,8 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 	if err != nil {
 		log.Printf("workbench: bundled Connector registration failed: %v", err)
 	}
+	s.restoreImportedConnectors()
+	development := false
 	if file := os.Getenv("APILOT_DEV_CONNECTOR_MANIFEST"); len(packages) == 0 && file != "" && !insideWorkbenchApp(executable) {
 		dir, err := filepath.EvalSymlinks(filepath.Dir(file))
 		if err != nil || !filepath.IsAbs(file) {
@@ -301,13 +306,36 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 		if err != nil {
 			return err
 		}
-		if _, reserved := s.workbenchPlugins[pkg.Manifest.ConnectorID]; reserved && pkg.Manifest.ConnectorID != "github-issues" {
+		if _, reserved := s.workbenchPlugins[pkg.Manifest.ConnectorID]; reserved || pkg.Manifest.ConnectorID == "github-issues" {
 			return common.Err("INVALID_ARGUMENT", "Development Connector ID is reserved")
 		}
-		packages = append(packages, pkg)
+		id := pkg.Manifest.ConnectorID
+		owned := s.registeredConnector(id) != nil
+		if store, ok := s.store.(workbenchImportStore); ok && !owned {
+			digest, err := store.WorkbenchPluginDigest(s.managedPluginID(id))
+			if err != nil {
+				return err
+			}
+			owned, err = s.hasManagedConnectorPackage(store, id, digest)
+			if err != nil {
+				return err
+			}
+			if !owned && digest == pkg.Digest && id != "fixture" {
+				if err := s.migrateConnectorNamespace(id, "development-connectors"); err != nil {
+					return err
+				}
+			}
+		}
+		if !owned {
+			development = true
+			packages = append(packages, pkg)
+		}
 	}
 	for _, pkg := range packages {
 		namespace := filepath.Join(s.dir, "connectors", pkg.Manifest.ConnectorID)
+		if development && pkg.Manifest.ConnectorID != "fixture" {
+			namespace = filepath.Join(s.dir, "development-connectors", pkg.Manifest.ConnectorID)
+		}
 		if err := os.MkdirAll(namespace, 0700); err != nil {
 			return err
 		}
@@ -342,7 +370,6 @@ func (s *Service) registerBundledWorkbenchConnector() error {
 			}
 		}
 	}
-	s.restoreImportedConnectors()
 	if store, ok := s.store.(workbenchManagedConnectorStore); ok {
 		return store.RecoverWorkbenchConnectorRuns()
 	}

@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
 
 	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
@@ -16,7 +18,8 @@ import (
 
 type workbenchImportStore interface {
 	WorkbenchPluginDigest(string) (string, error)
-	RegisterWorkbenchPluginRelease(string, *common.WorkbenchConnectorRelease) error
+	WorkbenchManagedPlugin(string) (bool, error)
+	RegisterWorkbenchManagedRelease(string, common.WorkbenchConnectorRelease) error
 }
 
 func (s *Service) connectorPackageRoot() (string, error) {
@@ -44,7 +47,7 @@ func (s *Service) verifyImportedConnector(dir string) (integrations.WorkbenchCon
 }
 
 func (s *Service) newImportedConnector(pkg integrations.WorkbenchConnectorPackage, key []byte, description protocol.Description) (*managedConnectorRelease, error) {
-	namespace := filepath.Join(s.dir, "connectors", pkg.Manifest.ConnectorID)
+	namespace := filepath.Join(s.dir, "managed-connectors", pkg.Manifest.ConnectorID)
 	if err := os.MkdirAll(namespace, 0700); err != nil {
 		return nil, err
 	}
@@ -91,12 +94,23 @@ func (s *Service) ImportWorkbenchConnector(ctx context.Context, path string) (Wo
 	if err != nil {
 		return empty, err
 	}
-	if prior == nil && digest != "" || prior != nil && (!prior.trusted || !bytes.Equal(prior.publisher, key) || semver.Compare("v"+pkg.Manifest.ReleaseVersion, "v"+prior.release.ReleaseVersion) <= 0) {
+	owned, err := s.hasManagedConnectorPackage(store, id, digest)
+	if err != nil {
+		return empty, err
+	}
+	if owned && (prior == nil || !prior.trusted) || prior != nil && prior.trusted && (!bytes.Equal(prior.publisher, key) || semver.Compare("v"+pkg.Manifest.ReleaseVersion, "v"+prior.release.ReleaseVersion) <= 0) {
 		return empty, common.Err("CONFLICT", "Connector ID, publisher or release conflicts with the installed Connector")
 	}
 	enabled, err := s.workbenchPluginPreference(id)
 	if err != nil {
 		return empty, err
+	}
+	saved, err := s.savedConnectorContexts(id)
+	if err != nil {
+		return empty, err
+	}
+	if (prior == nil || !prior.trusted) && len(saved) != 0 {
+		return empty, common.Err("CONFLICT", "Existing development connections must be removed before importing this ID")
 	}
 	// Run the identity handshake with an isolated namespace before granting access
 	// to the installed Connector's account state.
@@ -108,11 +122,16 @@ func (s *Service) ImportWorkbenchConnector(ctx context.Context, path string) (Wo
 	handshakeContext, cancel := context.WithCancel(ctx)
 	stop := context.AfterFunc(s.ctx, cancel)
 	description, err := process.Describe(handshakeContext)
+	if err == nil {
+		err = validateSavedConnectorContexts(handshakeContext, process, description, saved)
+	} else {
+		err = common.Err("INVALID_ARGUMENT", "Connector identity handshake failed")
+	}
 	stop()
 	cancel()
 	process.Close()
 	if err != nil {
-		return empty, common.Err("INVALID_ARGUMENT", "Connector identity handshake failed")
+		return empty, err
 	}
 	if err := os.RemoveAll(handshakeDir); err != nil {
 		return empty, err
@@ -154,7 +173,15 @@ func (s *Service) ImportWorkbenchConnector(ctx context.Context, path string) (Wo
 		connector.process.Close()
 		return empty, common.Err("CONFLICT", "Connector import was interrupted")
 	}
-	if err := store.RegisterWorkbenchPluginRelease(id, &connector.release); err != nil {
+	current, err := s.savedConnectorContexts(id)
+	if err != nil || !reflect.DeepEqual(current, saved) {
+		connector.process.Close()
+		if err != nil {
+			return empty, err
+		}
+		return empty, common.Err("STALE_REVISION", "Connector configuration changed during package validation")
+	}
+	if err := store.RegisterWorkbenchManagedRelease(id, connector.release); err != nil {
 		connector.process.Close()
 		return empty, err
 	}
@@ -216,6 +243,15 @@ func (s *Service) restoreImportedConnector(store workbenchImportStore, root, id 
 	if err != nil {
 		return err
 	}
+	managed, err := store.WorkbenchManagedPlugin(id)
+	if err != nil {
+		return err
+	}
+	if !managed {
+		if err := s.migrateConnectorNamespace(id, "managed-connectors"); err != nil {
+			return err
+		}
+	}
 	connector, err := s.newImportedConnector(pkg, key, protocol.Description{})
 	if err != nil {
 		return err
@@ -226,6 +262,10 @@ func (s *Service) restoreImportedConnector(store workbenchImportStore, root, id 
 			connector.process.Close()
 			return err
 		}
+	}
+	if err := store.RegisterWorkbenchManagedRelease(id, connector.release); err != nil {
+		connector.process.Close()
+		return err
 	}
 	s.managedConnectors.Store(id, connector)
 	return nil
@@ -244,4 +284,91 @@ func (s *Service) verifyInstalledConnector(id, digest string, publisher []byte) 
 		return common.Err("CONFLICT", "Installed Connector identity changed")
 	}
 	return nil
+}
+
+func (s *Service) hasManagedConnectorPackage(store workbenchImportStore, id, digest string) (bool, error) {
+	managed, err := store.WorkbenchManagedPlugin(id)
+	if err != nil || managed {
+		return managed, err
+	}
+	// Releases installed before the ownership column are identified by their
+	// database-selected directory and promoted during successful restoration.
+	if b, err := hex.DecodeString(digest); err != nil || len(b) != 32 {
+		return false, nil
+	}
+	root, err := s.connectorPackageRoot()
+	if err != nil {
+		return false, err
+	}
+	// Reserve a managed slot even if its signature or files cannot be loaded.
+	_, err = os.Lstat(filepath.Join(root, id, digest))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (s *Service) savedConnectorContexts(id string) (map[string]protocol.ScopeContext, error) {
+	store, err := s.managedConnectorStore()
+	if err != nil {
+		return nil, err
+	}
+	overviews, err := store.WorkbenchConnectorOverviews("")
+	if err != nil {
+		return nil, err
+	}
+	saved := make(map[string]protocol.ScopeContext)
+	for _, account := range overviews {
+		if account.Connection.ConnectorID != id {
+			continue
+		}
+		for _, entry := range account.Scopes {
+			scope, err := store.WorkbenchConnectorScope(entry.ScopeID)
+			if err != nil {
+				return nil, err
+			}
+			saved[entry.ScopeID] = scope.Context
+		}
+	}
+	return saved, nil
+}
+
+func validateSavedConnectorContexts(ctx context.Context, process *integrations.WorkbenchConnectorProcess, description protocol.Description, saved map[string]protocol.ScopeContext) error {
+	for _, scope := range saved {
+		if scope.ScopeType != "" && !slices.Contains(description.ScopeConfig.Types, scope.ScopeType) {
+			return common.Err("CONFLICT", "New Connector release does not support a saved scope type")
+		}
+		expected := scope.ScopeRef
+		scope.ScopeRef = ""
+		result, err := callWorkbenchConnector[protocol.ValidatedScope](ctx, process, common.ID(), protocol.Validate, protocol.ValidateParams{ScopeContext: scope, Mode: "static"}, nil)
+		if err != nil || result.ScopeRef != expected || result.EndpointRef != scope.EndpointRef || result.Label == "" {
+			return common.Err("CONFLICT", "New Connector release cannot validate a saved configuration and its original scope reference")
+		}
+	}
+	return nil
+}
+
+func (s *Service) migrateConnectorNamespace(id, kind string) error {
+	old := filepath.Join(s.dir, "connectors", id)
+	target := filepath.Join(s.dir, kind, id)
+	if info, err := os.Lstat(target); !os.IsNotExist(err) {
+		if err == nil && !info.IsDir() {
+			return common.Err("CONFLICT", "Connector namespace is not a directory")
+		}
+		return err
+	}
+	info, err := os.Lstat(old)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return common.Err("CONFLICT", "Legacy Connector namespace is not a directory")
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return err
+	}
+	return os.Rename(old, target)
 }

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 if [[ $# -lt 1 || $# -gt 4 ]]; then
-  printf 'Usage: %s OUTPUT_DIRECTORY [VERSION [CONNECTOR_ID [both|project]]]\n' "$0" >&2
+  printf 'Usage: %s OUTPUT_DIRECTORY [VERSION [CONNECTOR_ID [both|project|schema2|renamed|multi]]]\n' "$0" >&2
   exit 2
 fi
 mkdir -p "$1"
@@ -10,7 +10,7 @@ output=$(cd "$1" && pwd -P)
 version=${2:-0.1.0}
 id=${3:-synthetic-scopes}
 scope_mode=${4:-both}
-if [[ ! $id =~ ^[a-z0-9]+(-[a-z0-9]+)*$ || ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ( $scope_mode != both && $scope_mode != project ) ]]; then
+if [[ ! $id =~ ^[a-z0-9]+(-[a-z0-9]+)*$ || ! $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ || ( $scope_mode != both && $scope_mode != project && $scope_mode != schema2 && $scope_mode != renamed && $scope_mode != multi ) ]]; then
   printf 'Invalid synthetic Connector ID, version or scope mode\n' >&2
   exit 2
 fi

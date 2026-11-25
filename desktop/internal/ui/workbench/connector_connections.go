@@ -103,22 +103,25 @@ func (m *mockup) connectorRelease(id string) *common.WorkbenchConnectorRelease {
 }
 
 type connectorLoginPanel struct {
-	kind, parent          string
-	auth                  common.WorkbenchConnectorAuthorization
-	choices               []protocol.ConfigOption
-	selected              map[string]bool
-	connected             map[string]bool
-	results               []common.WorkbenchConnectorScopeResult
-	next, problem         string
-	write, busy           bool
-	saving                bool
-	scopeType, search     string
-	scopeTypes            []string
-	scopeConfig           *protocol.ConfigSchema
-	endpointSchemaVersion int
-	writable              bool
-	queryGeneration       uint64
-	cancelQuery           context.CancelFunc
+	kind, parent             string
+	auth                     common.WorkbenchConnectorAuthorization
+	choices                  []protocol.ConfigOption
+	selected                 map[string]bool
+	connected                map[string]bool
+	results                  []common.WorkbenchConnectorScopeResult
+	next, problem            string
+	write, busy              bool
+	saving                   bool
+	scopeType, search        string
+	scopeTypes               []string
+	scopeConfig              *protocol.ConfigSchema
+	endpointSchemaVersion    int
+	writable                 bool
+	queryGeneration          uint64
+	cancelQuery              context.CancelFunc
+	form                     *connectorConfigForm
+	fieldDrafts              map[string]string
+	optionField, optionLevel string
 }
 
 func (m *mockup) openConnectorLogin(kind, parent string) {
@@ -128,6 +131,13 @@ func (m *mockup) openConnectorLogin(kind, parent string) {
 			continue
 		}
 		panel.scopeConfig = plugin.ScopeConfig
+		if plugin.Imported && parent == "" {
+			panel.form = newConnectorConfigForm(plugin)
+			panel.fieldDrafts = make(map[string]string)
+			if panel.form != nil {
+				panel.activatePrimary()
+			}
+		}
 		panel.writable = plugin.Writable || panel.writable
 		if plugin.EndpointSchemaVersion > 0 {
 			panel.endpointSchemaVersion = plugin.EndpointSchemaVersion
@@ -207,17 +217,10 @@ func (m *mockup) pollConnectorLogin(p *connectorLoginPanel) {
 }
 
 func (p *connectorLoginPanel) field() string {
-	if p.scopeConfig != nil {
-		if _, ok := p.scopeConfig.Fields[p.scopeType]; ok {
-			return p.scopeType
-		}
-		for _, field := range slices.Sorted(maps.Keys(p.scopeConfig.Fields)) {
-			meta := p.scopeConfig.Fields[field]
-			if meta.DynamicOptions || meta.Control == "select" {
-				return field
-			}
-		}
+	if p.form != nil {
+		return p.optionField
 	}
+
 	if p.kind == managedFixture {
 		return "project"
 	}
@@ -230,9 +233,24 @@ func (p *connectorLoginPanel) setScopeType(kind string) {
 	clear(p.selected)
 	clear(p.connected)
 	p.queryGeneration++
+	if p.form != nil {
+		endpoint := p.form.endpoint
+		p.form.reset()
+		p.form.endpoint = endpoint
+		for key := range p.fieldDrafts {
+			if strings.HasPrefix(key, "scope.") {
+				delete(p.fieldDrafts, key)
+			}
+		}
+		p.activatePrimary()
+	}
 }
 
 func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
+	field := p.field()
+	if field == "" {
+		return
+	}
 	p.busy = true
 	if p.cancelQuery != nil {
 		p.cancelQuery()
@@ -241,9 +259,17 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 	p.cancelQuery = cancel
 	p.queryGeneration++
 	generation := p.queryGeneration
-	field := p.field()
 	input := map[string]string{"id": p.kind, "authorization_id": p.auth.ID, "field": field}
-	if p.scopeType != "" {
+	if p.form != nil && (p.optionLevel == "endpoint" || len(p.form.endpoint) > 0 || len(p.form.scope) > 0) {
+		input["config_level"] = p.optionLevel
+		for key, value := range map[string]map[string]any{"endpoint_config": p.form.endpoint, "scope_config": p.form.scope} {
+			if len(value) > 0 {
+				data, _ := json.Marshal(value)
+				input[key] = string(data)
+			}
+		}
+	}
+	if p.scopeType != "" && p.optionLevel != "endpoint" {
 		input["scope_type"] = p.scopeType
 	}
 	if p.search != "" {
@@ -272,6 +298,7 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 			}
 			return
 		}
+		p.problem = ""
 		p.next = value.NextPage
 		for _, connected := range value.ConnectedValues {
 			p.connected[connected] = true
@@ -296,18 +323,38 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 
 }
 
-func (m *mockup) saveConnectorChoices(p *connectorLoginPanel) {
+func (p *connectorLoginPanel) saveInput() common.WorkbenchConnectorSaveInput {
 	scopeVersion := 1
 	if p.scopeConfig != nil {
 		scopeVersion = p.scopeConfig.Version
 	}
 	input := common.WorkbenchConnectorSaveInput{AuthorizationID: p.auth.ID, EndpointSchemaVersion: p.endpointSchemaVersion, ScopeSchemaVersion: scopeVersion}
 	field := p.field()
-	for _, choice := range p.choices {
-		if p.selected[choice.Value] {
-			input.Scopes = append(input.Scopes, common.WorkbenchConnectorSelection{Config: map[string]any{field: choice.Value}, ScopeType: p.scopeType, WriteEnabled: p.write && p.writable})
+	config := map[string]any{}
+	if p.form != nil {
+		input.EndpointConfig = maps.Clone(p.form.endpoint)
+		config = maps.Clone(p.form.scope)
+		field = p.form.primary
+	}
+	appendScope := func(selected string) {
+		draft := maps.Clone(config)
+		if field != "" {
+			draft[field] = selected
+		}
+		input.Scopes = append(input.Scopes, common.WorkbenchConnectorSelection{Config: draft, ScopeType: p.scopeType, WriteEnabled: p.write && p.writable})
+	}
+	if p.form != nil && field == "" {
+		appendScope("")
+	} else {
+		for _, selected := range slices.Sorted(maps.Keys(p.selected)) {
+			appendScope(selected)
 		}
 	}
+	return input
+}
+
+func (m *mockup) saveConnectorChoices(p *connectorLoginPanel) {
+	input := p.saveInput()
 	if len(input.Scopes) == 0 {
 		return
 	}
@@ -372,23 +419,32 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 						m.loadConnectorChoices(p, "")
 					}
 				}
-				if len(p.scopeTypes) != 0 && len(p.results) == 0 {
-					search := ui.TextInput(c.Key("search-scopes"), &p.search).Label(tr("搜索范围")).Placeholder(tr("搜索范围")).FillWidth().Disabled(p.saving)
-					if search.Changed() {
-						p.choices, p.next = nil, ""
-						clear(p.selected)
-						clear(p.connected)
-						m.loadConnectorChoices(p, "")
-					}
-					if p.busy && !p.saving {
-						components.StatusLabel(c.Key("loading-scopes"), components.Status{Text: tr("正在查找范围"), Loading: true, Color: c.Theme().TextMuted})
-					} else if len(p.choices) == 0 && p.problem == "" {
-						components.Muted(c.Key("no-scopes"), tr("没有符合条件的范围"))
-					}
-				}
 				ui.Scroll(c.Key("scopes")).FillWidth().MaxHeight(max(160, min(height-250, 310))).Children(func() {
 					ui.Column(c).FillWidth().Gap(8).Children(func() {
+						if p.form != nil && len(p.results) == 0 {
+							m.connectorDraftFields(c.Key("config"), p)
+						}
+						if (len(p.scopeTypes) != 0 || p.form != nil) && p.field() != "" && len(p.results) == 0 {
+							search := ui.TextInput(c.Key("search-scopes"), &p.search).Label(tr("搜索范围")).Placeholder(tr("搜索范围")).FillWidth().Disabled(p.saving)
+							if search.Changed() {
+								p.choices, p.next = nil, ""
+								clear(p.connected)
+								m.loadConnectorChoices(p, "")
+							}
+							if p.busy && !p.saving {
+								components.StatusLabel(c.Key("loading-scopes"), components.Status{Text: tr("正在查找范围"), Loading: true, Color: c.Theme().TextMuted})
+							} else if len(p.choices) == 0 && p.problem == "" {
+								components.Muted(c.Key("no-scopes"), tr("没有符合条件的范围"))
+							}
+						}
 						for _, choice := range p.choices {
+							if p.form != nil && (p.optionLevel != "scope" || p.optionField != p.form.primary) {
+								if ui.Button(c.Key(choice.Value), choice.Label).Disabled(p.busy).Clicked() {
+									p.chooseDraftOption(choice.Value)
+									m.loadConnectorChoices(p, "")
+								}
+								continue
+							}
 							if p.connected[choice.Value] {
 								components.Muted(c.Key(choice.Value), choice.Label+" · "+tr("已连接"))
 								continue
@@ -407,6 +463,9 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 						}
 					})
 				})
+				if p.form == nil || p.form.primary != "" {
+					components.Muted(c.Key("selected-count"), fmt.Sprintf(tr("已选择 %d 项"), len(p.selected)))
+				}
 				if p.writable {
 					ui.Checkbox(c.Key("write"), &p.write, tr("允许回写")).Disabled(p.busy || len(p.results) > 0)
 				}
@@ -448,7 +507,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 						m.startConnectorLogin(p)
 					}
 				}
-				if p.auth.Status == "authorized" && len(p.results) == 0 && ui.PrimaryButton(c.Key("save"), tr("保存所选范围")).Disabled(p.busy || len(p.selected) == 0 || len(p.selected) > 20).Clicked() {
+				if p.auth.Status == "authorized" && len(p.results) == 0 && ui.PrimaryButton(c.Key("save"), tr("保存所选范围")).Disabled(p.busy || !p.canSave()).Clicked() {
 					m.saveConnectorChoices(p)
 				}
 			})
@@ -621,7 +680,7 @@ func (m *mockup) managedScope(c *ui.Context, scope common.WorkbenchConnectorScop
 				m.sourceFilter, m.sourceFilterID = scope.Label, scope.ScopeID
 				m.taskPageIndex = 0
 			}
-			if conn := m.connectionByID(scope.ScopeID); conn != nil {
+			if conn := m.connectionByID(scope.ScopeID); conn != nil && m.connectorCanWrite(conn.SourceKind) {
 				write := conn.WriteEnabled
 				if ui.Checkbox(c.Key("write"), &write, tr("允许回写")).Disabled(disabled).Changed() {
 					m.toggleConnectorScopeWrite(conn, write)
@@ -668,4 +727,27 @@ func connectorLabel(id string) string {
 	default:
 		return id
 	}
+}
+
+func (p *connectorLoginPanel) canSave() bool {
+	if p.form != nil {
+		for _, field := range p.form.fields {
+			if text := p.fieldDrafts[field.level+"."+field.key]; strings.TrimSpace(text) != "" && parseConfigField(field.kind, text) == nil {
+				return false
+			}
+		}
+		if !p.form.complete() {
+			return false
+		}
+		if p.form.primary == "" {
+			return true
+		}
+	}
+	return len(p.selected) > 0 && len(p.selected) <= 20
+}
+
+func (m *mockup) connectorCanWrite(kind string) bool {
+	return slices.ContainsFunc(m.livePlugins, func(plugin services.WorkbenchPlugin) bool {
+		return plugin.Enabled && plugin.Writable && plugin.Release != nil && plugin.Release.ConnectorID == kind
+	})
 }

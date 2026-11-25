@@ -26,12 +26,15 @@ type Account struct {
 }
 
 type OptionsParams struct {
-	ScopeType   string `json:"scope_type,omitempty"`
-	AccountRef  string `json:"account_ref"`
-	EndpointRef string `json:"endpoint_ref"`
-	Field       string `json:"field"`
-	Search      string `json:"search,omitempty"`
-	Page        string `json:"page,omitempty"`
+	ConfigLevel    string          `json:"config_level,omitempty"`
+	EndpointConfig json.RawMessage `json:"endpoint_config,omitempty"`
+	ScopeConfig    json.RawMessage `json:"scope_config,omitempty"`
+	ScopeType      string          `json:"scope_type,omitempty"`
+	AccountRef     string          `json:"account_ref"`
+	EndpointRef    string          `json:"endpoint_ref"`
+	Field          string          `json:"field"`
+	Search         string          `json:"search,omitempty"`
+	Page           string          `json:"page,omitempty"`
 }
 
 type ConfigOptions struct {

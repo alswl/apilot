@@ -67,7 +67,7 @@ func (m *mockup) connections(c *ui.Context) {
 						continue
 					}
 					id := plugin.Release.ConnectorID
-					if (plugin.Imported || id == managedGitHub || id == managedFixture) && m.visibleConnectorKind(id) && menu.Item(connectorLabel(id)).Chosen() {
+					if (plugin.Imported && newConnectorConfigForm(plugin) != nil || id == managedGitHub || id == managedFixture) && m.visibleConnectorKind(id) && menu.Item(connectorLabel(id)).Chosen() {
 						m.openConnectorLogin(id, "")
 					}
 				}
@@ -827,6 +827,9 @@ func (m *mockup) importConnector() {
 				m.connectorImportStatus = common.ProtocolError(err).Message
 			} else if plugin.ID != "" {
 				m.connectorImportStatus = tr("连接器已安装") + " · " + plugin.ID
+				if plugin.Enabled && newConnectorConfigForm(plugin) == nil {
+					m.connectorImportStatus += " · " + tr("桌面不支持此连接器的配置表单")
+				}
 				m.refreshLive()
 			}
 			m.invalidateLiveWindow()

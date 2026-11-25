@@ -1,4 +1,9 @@
 {
+  "请选择": "Choose an option",
+  "是": "Yes",
+  "否": "No",
+  "已选择 %d 项": "%d selected",
+  "桌面不支持此连接器的配置表单": "This Connector’s configuration form is unavailable on desktop",
   "导入连接器": "Import Connector",
   "连接器已安装": "Connector installed",
   "空间": "Space",

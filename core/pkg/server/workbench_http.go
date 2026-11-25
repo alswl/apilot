@@ -31,6 +31,10 @@ type workbenchID struct {
 type workbenchOperationID struct {
 	RequestID string `path:"request_id" minLength:"1"`
 }
+type workbenchPluginImportInput struct {
+	Path string `json:"path" minLength:"1"`
+}
+
 type workbenchPluginInput struct {
 	ID   string `path:"id" minLength:"1"`
 	Body struct {
@@ -243,9 +247,7 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 			return workbenchHealth{"ready"}, nil
 		})
 	registerWorkbenchContext(api, http.MethodPost, workbenchPath+"/plugins/import", "importWorkbenchConnector", "Install or upgrade a signed local Connector package", "Connectors", []int{400, 409},
-		func(ctx context.Context, in *workbenchBody[struct {
-			Path string `json:"path" minLength:"1"`
-		}]) (services.WorkbenchPlugin, error) {
+		func(ctx context.Context, in *workbenchBody[workbenchPluginImportInput]) (services.WorkbenchPlugin, error) {
 			return s.ImportWorkbenchConnector(ctx, in.Body.Path)
 		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/plugins", "listWorkbenchPlugins", "List source plugins", "Connectors", nil,

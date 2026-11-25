@@ -224,7 +224,7 @@ func (s *Service) authorizedConnectorAccount(id, connectorID string) (*integrati
 	return process, session.account, err
 }
 
-func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizationID, field, search, page string, scopeTypes ...string) (common.WorkbenchConnectorOptions, error) {
+func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizationID, field, search, page, scopeType string, draft protocol.OptionsParams) (common.WorkbenchConnectorOptions, error) {
 	var out common.WorkbenchConnectorOptions
 	s.mu.Lock()
 	process, account, err := s.authorizedConnectorAccount(authorizationID, id)
@@ -236,16 +236,18 @@ func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizati
 	if err != nil {
 		return out, err
 	}
-	var scopeType string
-	if len(scopeTypes) > 0 {
-		scopeType = scopeTypes[0]
-	}
+
 	if scopeType != "" && !slices.Contains(connector.description.ScopeConfig.Types, scopeType) {
 		return out, common.Err("INVALID_ARGUMENT", "Connector does not support this scope type")
 	}
-	out.ConfigOptions, err = callWorkbenchConnector[protocol.ConfigOptions](ctx, process, common.ID(), protocol.Options, protocol.OptionsParams{
-		AccountRef: account.AccountRef, EndpointRef: account.EndpointRef, Field: field, Search: search, Page: page, ScopeType: scopeType,
-	}, nil)
+	if draft.ConfigLevel != "" {
+		if !connector.trusted || (draft.ConfigLevel != "endpoint" && draft.ConfigLevel != "scope") {
+			return out, common.Err("INVALID_ARGUMENT", "Unsupported configuration options context")
+		}
+	}
+	draft.AccountRef, draft.EndpointRef = account.AccountRef, account.EndpointRef
+	draft.Field, draft.Search, draft.Page, draft.ScopeType = field, search, page, scopeType
+	out.ConfigOptions, err = callWorkbenchConnector[protocol.ConfigOptions](ctx, process, common.ID(), protocol.Options, draft, nil)
 	if err != nil {
 		return out, publicConnectorError(err)
 	}
@@ -253,6 +255,9 @@ func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizati
 	defer s.mu.Unlock()
 	if active, _, err := s.authorizedConnectorAccount(authorizationID, id); err != nil || active != process {
 		return common.WorkbenchConnectorOptions{}, common.Err("CONFLICT", "Connector authorization changed")
+	}
+	if draft.ConfigLevel == "endpoint" || len(draft.EndpointConfig) != 0 || len(draft.ScopeConfig) != 0 {
+		return out, nil
 	}
 	store, err := s.managedConnectorStore()
 	if err != nil {
@@ -338,7 +343,7 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 			continue
 		}
 		indices = append(indices, i)
-		selections = append(selections, common.WorkbenchConnectorNewScope{ID: common.ID(), Context: params, Label: scope.Label, DisplayName: account.DisplayName, WriteEnabled: selection.WriteEnabled})
+		selections = append(selections, common.WorkbenchConnectorNewScope{ID: common.ID(), Context: params, Label: scope.Label, DisplayName: account.DisplayName, WriteEnabled: selection.WriteEnabled, AppendExisting: selection.ScopeType != ""})
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

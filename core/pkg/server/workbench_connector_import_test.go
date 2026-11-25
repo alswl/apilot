@@ -6,9 +6,11 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -36,8 +38,10 @@ func TestSignedScopedConnector(t *testing.T) {
 		return filepath.Join(packages, id+"-"+version+".apilotconnector")
 	}
 	initial, upgrade := build(id, "0.1.0", "both"), build(id, "0.2.0", "both")
+	incompatible := []string{build(id, "0.3.0", "project"), build(id, "0.4.0", "schema2"), build(id, "0.5.0", "renamed")}
 	const secondID = "synthetic-project"
 	second := build(secondID, "0.1.0", "project")
+	multi := build("synthetic-multi", "0.1.0", "multi")
 	rawTrust, err := os.ReadFile(filepath.Join(packages, "connector-publishers.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -54,7 +58,20 @@ func TestSignedScopedConnector(t *testing.T) {
 		router, _ := workbenchRouter(s)
 		api = uc01TestAPI{t: t, handler: router}
 	}
+	// A previous development registration uses the same ID and writes only
+	// to the development namespace. With no saved connections it must not
+	// block the first signed installation.
+	devManifest := developmentManifestFromPackage(t, initial)
+	t.Setenv("APILOT_DEV_CONNECTOR_MANIFEST", devManifest)
 	open()
+	var developmentAuth common.WorkbenchConnectorAuthorization
+	api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: id}, &developmentAuth)
+	if api.status(developmentAuth.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" }).Status != "authorized" {
+		t.Fatal("development login failed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "development-connectors", id, "authorization.log")); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() {
 		if err := s.Close(); err != nil {
 			t.Error(err)
@@ -75,7 +92,12 @@ func TestSignedScopedConnector(t *testing.T) {
 			t.Fatalf("%s %s: got %d, want %d: %s", method, path, response.Code, status, response.Body.String())
 		}
 	}
-	sourceDir := filepath.Join(dir, "connectors", id)
+	sourceDir := filepath.Join(dir, "managed-connectors", id)
+	// A stale legacy development directory must not be adopted by the signed install.
+	if err := os.MkdirAll(filepath.Join(dir, "connectors", id), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeUC01JSON(t, filepath.Join(dir, "connectors", id, "fixture.json"), map[string]string{"legacy": "development"})
 	expect(http.MethodPost, "/plugins/import", map[string]string{"path": initial}, http.StatusBadRequest)
 	if _, err := os.Stat(sourceDir); !os.IsNotExist(err) {
 		t.Fatalf("untrusted package changed source namespace: %v", err)
@@ -109,6 +131,36 @@ func TestSignedScopedConnector(t *testing.T) {
 	if single.ScopeConfig == nil || len(single.ScopeConfig.Types) != 1 || single.ScopeConfig.Types[0] != protocol.ScopeProject {
 		t.Fatalf("single-scope Connector: %+v", single)
 	}
+	var multiPlugin services.WorkbenchPlugin
+	api.call(http.MethodPost, "/plugins/import", map[string]string{"path": multi}, &multiPlugin)
+	if multiPlugin.EndpointConfig.Fields["region"].DependsOn[0] != "cluster" {
+		t.Fatal("endpoint metadata unavailable")
+	}
+	var multiAuth common.WorkbenchConnectorAuthorization
+	api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: "synthetic-multi"}, &multiAuth)
+	if api.status(multiAuth.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" }).Status != "authorized" {
+		t.Fatal("multi login failed")
+	}
+	multiOptions := "/connectors/synthetic-multi/options?authorization_id=" + multiAuth.ID
+	var draftOptions common.WorkbenchConnectorOptions
+	api.call(http.MethodGet, multiOptions+"&field=region&config_level=endpoint&endpoint_config="+url.QueryEscape(`{"cluster":"demo"}`), nil, &draftOptions)
+	if len(draftOptions.Items) != 1 || draftOptions.Items[0].Value != "east" {
+		t.Fatalf("endpoint options: %+v", draftOptions)
+	}
+	api.call(http.MethodGet, multiOptions+"&field=target&config_level=scope&scope_type=project&endpoint_config="+url.QueryEscape(`{"cluster":"demo","region":"east"}`)+"&scope_config="+url.QueryEscape(`{"board":"delivery"}`), nil, &draftOptions)
+	if len(draftOptions.Items) != 1 || draftOptions.Items[0].Value != "alpha" {
+		t.Fatalf("scope options: %+v", draftOptions)
+	}
+	var multiSaved common.WorkbenchConnectorSaveResult
+	api.call(http.MethodPut, "/connector-connections", common.WorkbenchConnectorSaveInput{
+		AuthorizationID: multiAuth.ID, EndpointSchemaVersion: 1, ScopeSchemaVersion: 1,
+		EndpointConfig: map[string]any{"cluster": "demo", "region": "east"},
+		Scopes:         []common.WorkbenchConnectorSelection{{ScopeType: protocol.ScopeProject, Config: map[string]any{"board": "delivery", "target": "alpha"}}},
+	}, &multiSaved)
+	if len(multiSaved.Scopes) != 1 || multiSaved.Scopes[0].ScopeID == "" {
+		t.Fatalf("multi save: %+v", multiSaved)
+	}
+	uc01Wait(t, func() bool { return api.scopeTasks(multiSaved.Scopes[0].ScopeID).Total == 1 })
 	var auth common.WorkbenchConnectorAuthorization
 	api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: id}, &auth)
 	login := api.status(auth.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" })
@@ -171,7 +223,31 @@ func TestSignedScopedConnector(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
+	// Simulate the previous signed data layout and its lack of an ownership flag.
+	legacy := filepath.Join(dir, "connectors", id)
+	if err := os.Remove(filepath.Join(legacy, "fixture.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(sourceDir, legacy); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite3", filepath.Join(dir, "apilot.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE workbench_plugin_settings SET managed=0 WHERE id=?", id); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
 	open()
+	if _, err := os.Stat(filepath.Join(sourceDir, "authorization.log")); err != nil {
+		t.Fatal(err)
+	}
 	expect(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: id}, http.StatusConflict)
 	var secondAuth common.WorkbenchConnectorAuthorization
 	api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: secondID}, &secondAuth)
@@ -180,6 +256,16 @@ func TestSignedScopedConnector(t *testing.T) {
 	}
 	expect(http.MethodGet, "/connectors/"+id+"/options?field=target&scope_type=project&authorization_id="+secondAuth.ID, nil, http.StatusNotFound)
 	api.call(http.MethodPut, "/plugins/"+id+"/enabled", map[string]bool{"enabled": true}, nil)
+	for _, candidate := range incompatible {
+		expect(http.MethodPost, "/plugins/import", map[string]string{"path": candidate}, http.StatusConflict)
+		if _, err := s.WorkbenchConnectorTaskDetail(context.Background(), alphaTask.ID, "fields", "", alphaID); err != nil {
+			t.Fatalf("failed upgrade displaced current release: %v", err)
+		}
+	}
+	loginLog, err := os.ReadFile(filepath.Join(sourceDir, "authorization.log"))
+	if err != nil || string(loginLog) != "auth.login\n" {
+		t.Fatalf("upgrade changed the source authorization log: %v %q", err, loginLog)
+	}
 	api.call(http.MethodPost, "/plugins/import", map[string]string{"path": upgrade}, &plugin)
 	if plugin.Release == nil || plugin.Release.ReleaseVersion != "0.2.0" {
 		t.Fatalf("upgrade: %+v", plugin)
@@ -273,4 +359,27 @@ func corruptConnectorFixture(t *testing.T, original, kind string, key ed25519.Pr
 		t.Fatal(err)
 	}
 	return output
+}
+
+func developmentManifestFromPackage(t *testing.T, path string) string {
+	t.Helper()
+	archive, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer archive.Close()
+	dir := t.TempDir()
+	for _, name := range []string{"manifest.json", "connector"} {
+		data, err := fs.ReadFile(archive, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if name == "manifest.json" {
+			data = append(data, '\n')
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, "manifest.json")
 }

@@ -101,6 +101,24 @@ func (e SyncWorkbenchConnectorConnectionParamsMode) Valid() bool {
 	}
 }
 
+// Defines values for ListWorkbenchConnectorOptionsParamsConfigLevel.
+const (
+	Endpoint ListWorkbenchConnectorOptionsParamsConfigLevel = "endpoint"
+	Scope    ListWorkbenchConnectorOptionsParamsConfigLevel = "scope"
+)
+
+// Valid indicates whether the value is a known member of the ListWorkbenchConnectorOptionsParamsConfigLevel enum.
+func (e ListWorkbenchConnectorOptionsParamsConfigLevel) Valid() bool {
+	switch e {
+	case Endpoint:
+		return true
+	case Scope:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListWorkbenchSyncRunsParamsMode.
 const (
 	ListWorkbenchSyncRunsParamsModeDelta ListWorkbenchSyncRunsParamsMode = "delta"
@@ -427,15 +445,6 @@ type WorkbenchAttemptCoverage string
 
 // WorkbenchAttemptScope defines model for WorkbenchAttempt.Scope.
 type WorkbenchAttemptScope string
-
-// WorkbenchBodyStructPathStringjsonpathMinLength1Body defines model for WorkbenchBodyStruct { Path string "json:\"path\" minLength:\"1\"" }Body.
-type WorkbenchBodyStructPathStringjsonpathMinLength1Body struct {
-	// Schema A URL to the JSON Schema for this object.
-	//
-	// Examples: http://apilot/schemas/WorkbenchBodyStruct { Path string "json:\"path\" minLength:\"1\"" }Body.json
-	Schema *string `json:"$schema,omitempty"`
-	Path   string  `json:"path"`
-}
 
 // WorkbenchCapabilities defines model for WorkbenchCapabilities.
 type WorkbenchCapabilities struct {
@@ -827,12 +836,22 @@ type WorkbenchPlugin struct {
 	Schema                *string                    `json:"$schema,omitempty"`
 	Connector             string                     `json:"connector"`
 	Enabled               bool                       `json:"enabled"`
+	EndpointConfig        *ConfigSchema              `json:"endpoint_config,omitempty"`
 	EndpointSchemaVersion *int64                     `json:"endpoint_schema_version,omitempty"`
 	Id                    string                     `json:"id"`
 	Imported              *bool                      `json:"imported,omitempty"`
 	Release               *WorkbenchConnectorRelease `json:"release,omitempty"`
 	ScopeConfig           *ConfigSchema              `json:"scope_config,omitempty"`
 	Writable              *bool                      `json:"writable,omitempty"`
+}
+
+// WorkbenchPluginImportInput defines model for WorkbenchPluginImportInput.
+type WorkbenchPluginImportInput struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchPluginImportInput.json
+	Schema *string `json:"$schema,omitempty"`
+	Path   string  `json:"path"`
 }
 
 // WorkbenchPluginInputBody defines model for WorkbenchPluginInputBody.
@@ -1060,12 +1079,18 @@ type SyncWorkbenchConnectorConnectionParamsMode string
 
 // ListWorkbenchConnectorOptionsParams defines parameters for ListWorkbenchConnectorOptions.
 type ListWorkbenchConnectorOptionsParams struct {
-	ScopeType       *string `form:"scope_type,omitempty" json:"scope_type,omitempty"`
-	AuthorizationId string  `form:"authorization_id" json:"authorization_id"`
-	Field           string  `form:"field" json:"field"`
-	Search          *string `form:"search,omitempty" json:"search,omitempty"`
-	Page            *string `form:"page,omitempty" json:"page,omitempty"`
+	ScopeType       *string                                         `form:"scope_type,omitempty" json:"scope_type,omitempty"`
+	ConfigLevel     *ListWorkbenchConnectorOptionsParamsConfigLevel `form:"config_level,omitempty" json:"config_level,omitempty"`
+	EndpointConfig  *string                                         `form:"endpoint_config,omitempty" json:"endpoint_config,omitempty"`
+	ScopeConfig     *string                                         `form:"scope_config,omitempty" json:"scope_config,omitempty"`
+	AuthorizationId string                                          `form:"authorization_id" json:"authorization_id"`
+	Field           string                                          `form:"field" json:"field"`
+	Search          *string                                         `form:"search,omitempty" json:"search,omitempty"`
+	Page            *string                                         `form:"page,omitempty" json:"page,omitempty"`
 }
+
+// ListWorkbenchConnectorOptionsParamsConfigLevel defines parameters for ListWorkbenchConnectorOptions.
+type ListWorkbenchConnectorOptionsParamsConfigLevel string
 
 // ListGitHubRepositoriesParams defines parameters for ListGitHubRepositories.
 type ListGitHubRepositoriesParams struct {
@@ -1157,7 +1182,7 @@ type StartWorkbenchConnectorAuthorizationJSONRequestBody = WorkbenchConnectorLog
 type SaveWorkbenchConnectorConnectionJSONRequestBody = WorkbenchConnectorSaveInput
 
 // ImportWorkbenchConnectorJSONRequestBody defines body for ImportWorkbenchConnector for application/json ContentType.
-type ImportWorkbenchConnectorJSONRequestBody = WorkbenchBodyStructPathStringjsonpathMinLength1Body
+type ImportWorkbenchConnectorJSONRequestBody = WorkbenchPluginImportInput
 
 // SetWorkbenchPluginEnabledJSONRequestBody defines body for SetWorkbenchPluginEnabled for application/json ContentType.
 type SetWorkbenchPluginEnabledJSONRequestBody = WorkbenchPluginInputBody
@@ -3708,6 +3733,42 @@ func NewListWorkbenchConnectorOptionsRequest(server string, id string, params *L
 		if params.ScopeType != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_type", *params.ScopeType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ConfigLevel != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "config_level", *params.ConfigLevel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.EndpointConfig != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "endpoint_config", *params.EndpointConfig, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ScopeConfig != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_config", *params.ScopeConfig, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

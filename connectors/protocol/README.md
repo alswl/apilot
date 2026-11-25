@@ -89,7 +89,10 @@ Declare `scope_config.types` in the description when the Connector supports
 `project`, `space`, or both. The host may pass `scope_type` to
 `config.options`. Treat the selected field, search string, account, endpoint
 and scope type as part of the paging context. Option values and cursors are
-opaque to the host. Without a scope type declaration, the host omits
+opaque to the host. When option resolution depends on a draft, the desktop
+sends the optional `config_level` (`endpoint` or `scope`), `endpoint_config`
+and `scope_config` objects. Field metadata can name a dependency in the
+same schema or use a qualified name such as `endpoint.region`. Without a scope type declaration, the host omits
 `scope_type` from protocol requests.
 
 Accept the selected type in `connection.validate` and return a stable scope
@@ -110,7 +113,10 @@ Apilot reads trusted publisher keys from `connector-publishers.json` in its
 data directory. The JSON object maps approved Connector IDs to base64-encoded
 Ed25519 public keys. The trust file is provisioned outside the archive.
 Imported releases have private storage per Connector ID. Upgrades require
-the original publisher and a higher semantic version.
+the original publisher and a higher semantic version. Before activation,
+the candidate must accept static validation of all saved configurations and
+return their original scope and endpoint references. The host uses a
+temporary data namespace for those checks.
 
 Build independent synthetic packages with disposable publisher keys from the
 repository root. The same output directory reuses the key for the upgrade.
@@ -127,7 +133,7 @@ APILOT_DATA_DIR="$data_dir" build/darwin-arm64/Apilot.app/Contents/MacOS/Apilot 
 
 In the App, import the `0.1.0` package through the file chooser. Its source
 namespace remains empty until you click **Log In** from **Add Connection**.
-The fixture writes that call to `connectors/synthetic-scopes/authorization.log`
+The fixture writes that call to `managed-connectors/synthetic-scopes/authorization.log`
 under the disposable data directory. Project Alpha and Project Beta each
 contain one task. Space Alpha contains both. The test publisher can also be
 used from the CLI with `apilot workbench plugin import PACKAGE` while the

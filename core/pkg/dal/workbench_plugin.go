@@ -28,12 +28,12 @@ func (s *Store) RegisterWorkbenchPluginRelease(id string, release *common.Workbe
 	if release == nil {
 		_, err := s.db.Exec(`UPDATE workbench_plugin_settings
 			SET release_version=NULL, protocol_version=NULL, package_digest=NULL
-			WHERE id=? AND release_version IS NOT NULL`, id)
+			WHERE id=? AND release_version IS NOT NULL AND managed=0`, id)
 		return err
 	}
 	_, err := s.db.Exec(`INSERT INTO workbench_plugin_settings(id,enabled,release_version,protocol_version,package_digest)
 		VALUES(?,1,?,?,?) ON CONFLICT(id) DO UPDATE SET release_version=excluded.release_version,
-			protocol_version=excluded.protocol_version,package_digest=excluded.package_digest`,
+			protocol_version=excluded.protocol_version,package_digest=excluded.package_digest WHERE managed=0`,
 		id, release.ReleaseVersion, release.ProtocolVersion, release.PackageDigest)
 	return err
 }
@@ -45,4 +45,21 @@ func (s *Store) WorkbenchPluginDigest(id string) (string, error) {
 		return "", nil
 	}
 	return digest.String, err
+}
+
+func (s *Store) WorkbenchManagedPlugin(id string) (bool, error) {
+	var managed bool
+	err := s.db.QueryRow("SELECT managed FROM workbench_plugin_settings WHERE id=?", id).Scan(&managed)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return managed, err
+}
+
+func (s *Store) RegisterWorkbenchManagedRelease(id string, release common.WorkbenchConnectorRelease) error {
+	_, err := s.db.Exec(`INSERT INTO workbench_plugin_settings(id,enabled,release_version,protocol_version,package_digest,managed)
+  VALUES(?,1,?,?,?,1) ON CONFLICT(id) DO UPDATE SET release_version=excluded.release_version,
+  protocol_version=excluded.protocol_version,package_digest=excluded.package_digest,managed=1`,
+		id, release.ReleaseVersion, release.ProtocolVersion, release.PackageDigest)
+	return err
 }
