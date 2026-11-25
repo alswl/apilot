@@ -496,16 +496,17 @@ type WorkbenchConnectorAuthorization struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchConnectorAuthorization.json
-	Schema          *string   `json:"$schema,omitempty"`
-	ConnectorId     string    `json:"connector_id"`
-	DisplayName     *string   `json:"display_name,omitempty"`
-	EndpointRef     *string   `json:"endpoint_ref,omitempty"`
-	ErrorKind       *string   `json:"error_kind,omitempty"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	Id              string    `json:"id"`
-	Status          string    `json:"status"`
-	UserCode        *string   `json:"user_code,omitempty"`
-	VerificationUrl *string   `json:"verification_url,omitempty"`
+	Schema                     *string   `json:"$schema,omitempty"`
+	ConnectorId                string    `json:"connector_id"`
+	DisplayName                *string   `json:"display_name,omitempty"`
+	EndpointRef                *string   `json:"endpoint_ref,omitempty"`
+	ErrorKind                  *string   `json:"error_kind,omitempty"`
+	ExpiresAt                  time.Time `json:"expires_at"`
+	Id                         string    `json:"id"`
+	SavedEndpointSchemaVersion *int64    `json:"saved_endpoint_schema_version,omitempty"`
+	Status                     string    `json:"status"`
+	UserCode                   *string   `json:"user_code,omitempty"`
+	VerificationUrl            *string   `json:"verification_url,omitempty"`
 }
 
 // WorkbenchConnectorConnection defines model for WorkbenchConnectorConnection.
@@ -564,6 +565,7 @@ type WorkbenchConnectorSaveInput struct {
 	AuthorizationId       string                         `json:"authorization_id"`
 	EndpointConfig        *map[string]interface{}        `json:"endpoint_config,omitempty"`
 	EndpointSchemaVersion int64                          `json:"endpoint_schema_version"`
+	ReuseSavedEndpoint    *bool                          `json:"reuse_saved_endpoint,omitempty"`
 	ScopeSchemaVersion    int64                          `json:"scope_schema_version"`
 	Scopes                *[]WorkbenchConnectorSelection `json:"scopes"`
 }
@@ -1079,14 +1081,15 @@ type SyncWorkbenchConnectorConnectionParamsMode string
 
 // ListWorkbenchConnectorOptionsParams defines parameters for ListWorkbenchConnectorOptions.
 type ListWorkbenchConnectorOptionsParams struct {
-	ScopeType       *string                                         `form:"scope_type,omitempty" json:"scope_type,omitempty"`
-	ConfigLevel     *ListWorkbenchConnectorOptionsParamsConfigLevel `form:"config_level,omitempty" json:"config_level,omitempty"`
-	EndpointConfig  *string                                         `form:"endpoint_config,omitempty" json:"endpoint_config,omitempty"`
-	ScopeConfig     *string                                         `form:"scope_config,omitempty" json:"scope_config,omitempty"`
-	AuthorizationId string                                          `form:"authorization_id" json:"authorization_id"`
-	Field           string                                          `form:"field" json:"field"`
-	Search          *string                                         `form:"search,omitempty" json:"search,omitempty"`
-	Page            *string                                         `form:"page,omitempty" json:"page,omitempty"`
+	ReuseSavedEndpoint *bool                                           `form:"reuse_saved_endpoint,omitempty" json:"reuse_saved_endpoint,omitempty"`
+	ScopeType          *string                                         `form:"scope_type,omitempty" json:"scope_type,omitempty"`
+	ConfigLevel        *ListWorkbenchConnectorOptionsParamsConfigLevel `form:"config_level,omitempty" json:"config_level,omitempty"`
+	EndpointConfig     *string                                         `form:"endpoint_config,omitempty" json:"endpoint_config,omitempty"`
+	ScopeConfig        *string                                         `form:"scope_config,omitempty" json:"scope_config,omitempty"`
+	AuthorizationId    string                                          `form:"authorization_id" json:"authorization_id"`
+	Field              string                                          `form:"field" json:"field"`
+	Search             *string                                         `form:"search,omitempty" json:"search,omitempty"`
+	Page               *string                                         `form:"page,omitempty" json:"page,omitempty"`
 }
 
 // ListWorkbenchConnectorOptionsParamsConfigLevel defines parameters for ListWorkbenchConnectorOptions.
@@ -3729,6 +3732,18 @@ func NewListWorkbenchConnectorOptionsRequest(server string, id string, params *L
 		// styled parameters, preserving literal commas as delimiters
 		// per the OpenAPI spec (e.g. "color=blue,black,brown").
 		var rawQueryFragments []string
+
+		if params.ReuseSavedEndpoint != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "reuse_saved_endpoint", *params.ReuseSavedEndpoint, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
 
 		if params.ScopeType != nil {
 

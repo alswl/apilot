@@ -1,4 +1,7 @@
 {
+  "使用已保存的端点配置": "Use saved endpoint configuration",
+  "选项查询中每份配置最多 %d 字符。": "Option lookup allows up to %d characters per configuration.",
+  "配置无效，请修改后重试": "Invalid configuration. Edit and try again.",
   "显示配置规则": "Show configuration schema",
   "请从配置中移除凭据字段": "Remove credential fields from the configuration",
   "输入 JSON 对象。请通过登录提供凭据。": "Enter JSON objects. Use Log In to supply credentials.",

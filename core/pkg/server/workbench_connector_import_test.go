@@ -43,6 +43,9 @@ func TestSignedScopedConnector(t *testing.T) {
 	second := build(secondID, "0.1.0", "project")
 	multi := build("synthetic-multi", "0.1.0", "multi")
 	multiUpgrade := build("synthetic-multi", "0.2.0", "multi-endpoint2")
+	const legacyID = "synthetic-legacy-endpoint"
+	legacyPackage := build(legacyID, "0.1.0", "both")
+	required := build(legacyID, "0.2.0", "required-endpoint2")
 	rawTrust, err := os.ReadFile(filepath.Join(packages, "connector-publishers.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -190,6 +193,66 @@ func TestSignedScopedConnector(t *testing.T) {
 	for _, id := range []string{multiSaved.Scopes[0].ScopeID, multiSpace.Scopes[0].ScopeID} {
 		tasks := api.scopeTasks(id)
 		api.call(http.MethodGet, "/tasks/"+tasks.Items[0].ID+"/detail?scope_id="+id, nil, nil)
+	}
+
+	api.call(http.MethodPost, "/plugins/import", map[string]string{"path": legacyPackage}, nil)
+	authorizeLegacy := func() common.WorkbenchConnectorAuthorization {
+		t.Helper()
+		var login common.WorkbenchConnectorAuthorization
+		api.call(http.MethodPost, "/connector-authorizations", common.WorkbenchConnectorLoginInput{ConnectorID: legacyID}, &login)
+		return api.status(login.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" })
+	}
+	legacyAuth := authorizeLegacy()
+	legacyInput := common.WorkbenchConnectorSaveInput{AuthorizationID: legacyAuth.ID, EndpointSchemaVersion: 1, ScopeSchemaVersion: 1,
+		Scopes: []common.WorkbenchConnectorSelection{{ScopeType: "project", Config: map[string]any{"target": "alpha"}}},
+	}
+	var legacyProject common.WorkbenchConnectorSaveResult
+	api.call(http.MethodPut, "/connector-connections", legacyInput, &legacyProject)
+	uc01Wait(t, func() bool { return api.scopeTasks(legacyProject.Scopes[0].ScopeID).Total == 1 })
+	api.call(http.MethodPost, "/plugins/import", map[string]string{"path": required}, nil)
+	legacyAuth = authorizeLegacy()
+	if legacyAuth.SavedEndpointSchemaVersion != 1 {
+		t.Fatalf("saved endpoint version missing: %+v", legacyAuth)
+	}
+	legacyOptions := "/connectors/" + legacyID + "/options?field=target&config_level=scope&scope_type=space&reuse_saved_endpoint=true&authorization_id=" + legacyAuth.ID
+	var reused common.WorkbenchConnectorOptions
+	api.call(http.MethodGet, legacyOptions, nil, &reused)
+	if len(reused.Items) != 1 || reused.Items[0].Value != "alpha" {
+		t.Fatalf("saved endpoint options: %+v", reused)
+	}
+	expect(http.MethodGet, legacyOptions+"&endpoint_config="+url.QueryEscape(`{"region":"east"}`), nil, http.StatusBadRequest)
+	expect(http.MethodGet, "/connectors/"+id+"/options?field=target&config_level=scope&reuse_saved_endpoint=true&authorization_id="+legacyAuth.ID, nil, http.StatusNotFound)
+	legacyInput.AuthorizationID, legacyInput.EndpointSchemaVersion = legacyAuth.ID, 2
+	legacyInput.Scopes[0].ScopeType = "space"
+	legacyInput.EndpointConfig = map[string]any{"region": "east", "token": "fixture-secret"}
+	expect(http.MethodPut, "/connector-connections", legacyInput, http.StatusBadRequest)
+	legacyInput.ReuseSavedEndpoint = true
+	legacyInput.EndpointConfig = nil
+	var legacySpace common.WorkbenchConnectorSaveResult
+	api.call(http.MethodPut, "/connector-connections", legacyInput, &legacySpace)
+	if legacySpace.ConnectionID != legacyProject.ConnectionID || legacySpace.Scopes[0].Status != "queued" {
+		t.Fatalf("append with saved endpoint: %+v", legacySpace)
+	}
+	uc01Wait(t, func() bool {
+		return api.scopeTasks(legacySpace.Scopes[0].ScopeID).Total == 2 && api.scopeTasks(legacyProject.Scopes[0].ScopeID).Total == 1
+	})
+
+	alternate := filepath.Join(dir, "managed-connectors", legacyID, "alternate-identity")
+	for _, identity := range []string{"account", "endpoint"} {
+		if err := os.WriteFile(alternate, []byte(identity), 0600); err != nil {
+			t.Fatal(err)
+		}
+		other := authorizeLegacy()
+		if other.Status != "authorized" || other.SavedEndpointSchemaVersion != 0 {
+			t.Fatalf("saved endpoint leaked to %s: %+v", identity, other)
+		}
+		expect(http.MethodGet, strings.Replace(legacyOptions, legacyAuth.ID, other.ID, 1), nil, http.StatusNotFound)
+		rejected := legacyInput
+		rejected.AuthorizationID = other.ID
+		expect(http.MethodPut, "/connector-connections", rejected, http.StatusNotFound)
+	}
+	if err := os.Remove(alternate); err != nil {
+		t.Fatal(err)
 	}
 
 	var auth common.WorkbenchConnectorAuthorization

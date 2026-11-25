@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/alswl/apilot/connectors/protocol"
+	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/services"
 	"github.com/alswl/apilot/desktop/internal/ui/components"
 	"github.com/egoist/mygo/ui"
@@ -37,14 +38,21 @@ func connectorJSONObject(raw string) (map[string]any, bool) {
 }
 
 func (d *connectorJSONDraft) objects() (endpoint, scope map[string]any, ok bool) {
-	var endpointOK, scopeOK bool
-	endpoint, endpointOK = connectorJSONObject(d.endpoint)
-	scope, scopeOK = connectorJSONObject(d.scope)
-	return endpoint, scope, endpointOK && scopeOK && safeConnectorJSON(d.endpointSchema, endpoint) && safeConnectorJSON(d.scopeSchema, scope)
+	return d.config(false)
 }
 
-func (d *connectorJSONDraft) choose(level, field, value string) {
-	endpoint, scope, ok := d.objects()
+func (d *connectorJSONDraft) config(reuseEndpoint bool) (endpoint, scope map[string]any, ok bool) {
+	var endpointOK, scopeOK bool
+	endpointOK = true
+	if !reuseEndpoint {
+		endpoint, endpointOK = connectorJSONObject(d.endpoint)
+	}
+	scope, scopeOK = connectorJSONObject(d.scope)
+	return endpoint, scope, endpointOK && scopeOK && common.ConnectorConfigAllowsOrdinaryValues(d.endpointSchema, endpoint) && common.ConnectorConfigAllowsOrdinaryValues(d.scopeSchema, scope)
+}
+
+func (d *connectorJSONDraft) choose(level, field, value string, reuseEndpoint ...bool) {
+	endpoint, scope, ok := d.config(len(reuseEndpoint) > 0 && reuseEndpoint[0])
 	if !ok {
 		return
 	}
@@ -69,12 +77,15 @@ func (m *mockup) connectorJSONFields(c *ui.Context, p *connectorLoginPanel) {
 		{"endpoint", tr("端点配置 JSON"), &d.endpoint, d.endpointSchema},
 		{"scope", tr("范围配置 JSON"), &d.scope, d.scopeSchema},
 	} {
+		if p.reuseEndpoint && config.level == "endpoint" {
+			continue
+		}
 		if ui.TextArea(c.Key([3]string{config.level, "draft"}), config.draft).Label(config.label).FillWidth().Height(65).Disabled(p.saving).Changed() {
 			p.activateOptions(connectorConfigField{})
 		}
 		if object, ok := connectorJSONObject(*config.draft); !ok {
 			components.Muted(c.Key([3]string{config.level, "invalid"}), tr("请输入有效的 JSON 对象"))
-		} else if !safeConnectorJSON(config.schema, object) {
+		} else if !common.ConnectorConfigAllowsOrdinaryValues(config.schema, object) {
 			components.Muted(c.Key([3]string{config.level, "invalid"}), tr("请从配置中移除凭据字段"))
 		}
 		if config.schema == nil {
@@ -102,55 +113,4 @@ func (m *mockup) connectorJSONFields(c *ui.Context, p *connectorLoginPanel) {
 			}
 		}
 	}
-}
-
-type connectorJSONSchema struct {
-	WriteOnly  bool                           `json:"writeOnly"`
-	Format     string                         `json:"format"`
-	Properties map[string]connectorJSONSchema `json:"properties"`
-	Items      json.RawMessage                `json:"items"`
-	AllOf      []connectorJSONSchema          `json:"allOf"`
-	AnyOf      []connectorJSONSchema          `json:"anyOf"`
-	OneOf      []connectorJSONSchema          `json:"oneOf"`
-}
-
-func safeConnectorJSON(config *protocol.ConfigSchema, data map[string]any) bool {
-	if config == nil {
-		return true
-	}
-	for key, field := range config.Fields {
-		if _, present := data[key]; present && (field.Control == "password" || field.Control == "secret") {
-			return false
-		}
-	}
-	var schema connectorJSONSchema
-	if json.Unmarshal(config.Schema, &schema) != nil {
-		return true
-	}
-	return !schema.containsCredential(data)
-}
-
-func (s connectorJSONSchema) containsCredential(value any) bool {
-	if s.WriteOnly || s.Format == "password" {
-		return true
-	}
-	switch value := value.(type) {
-	case map[string]any:
-		for key, item := range value {
-			if field, ok := s.Properties[key]; ok && field.containsCredential(item) {
-				return true
-			}
-		}
-	case []any:
-		var item connectorJSONSchema
-		if len(s.Items) > 0 && json.Unmarshal(s.Items, &item) == nil && slices.ContainsFunc(value, item.containsCredential) {
-			return true
-		}
-	}
-	for _, alternatives := range [][]connectorJSONSchema{s.AllOf, s.AnyOf, s.OneOf} {
-		if slices.ContainsFunc(alternatives, func(branch connectorJSONSchema) bool { return branch.containsCredential(value) }) {
-			return true
-		}
-	}
-	return false
 }

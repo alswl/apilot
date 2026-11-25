@@ -91,7 +91,9 @@ Declare `scope_config.types` in the description when the Connector supports
 and scope type as part of the paging context. Option values and cursors are
 opaque to the host. When option resolution depends on a draft, the desktop
 sends the optional `config_level` (`endpoint` or `scope`), `endpoint_config`
-and `scope_config` objects. Field metadata can name a dependency in the
+and `scope_config` objects. For scope options
+using a persisted endpoint, the host forwards its original configuration
+and `endpoint_schema_version`.  Field metadata can name a dependency in the
 same schema or use a qualified name such as `endpoint.region`. Without a scope type declaration, the host omits
 `scope_type` from protocol requests.
 

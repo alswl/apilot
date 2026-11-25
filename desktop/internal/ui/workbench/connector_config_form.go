@@ -26,6 +26,7 @@ type connectorConfigForm struct {
 	fields          []connectorConfigField
 	endpoint, scope map[string]any
 	primary         string
+	reuseEndpoint   bool
 }
 
 func newConnectorConfigForm(plugin services.WorkbenchPlugin) *connectorConfigForm {
@@ -63,10 +64,11 @@ func newConnectorConfigForm(plugin services.WorkbenchPlugin) *connectorConfigFor
 				Title     string `json:"title"`
 				Enum      []any  `json:"enum"`
 				WriteOnly bool   `json:"writeOnly"`
+				Format    string `json:"format"`
 				ReadOnly  bool   `json:"readOnly"`
 				Default   any    `json:"default"`
 			}
-			if json.Unmarshal(schema.Properties[key], &property) != nil || property.WriteOnly || property.ReadOnly {
+			if json.Unmarshal(schema.Properties[key], &property) != nil || property.WriteOnly || property.ReadOnly || property.Format == "password" {
 				return nil
 			}
 			field := connectorConfigField{key: key, kind: property.Type, level: config.level, meta: config.schema.Fields[key],
@@ -142,7 +144,7 @@ func (f *connectorConfigForm) values(level string) map[string]any {
 func (f *connectorConfigForm) ready(field connectorConfigField) bool {
 	for _, dep := range field.meta.DependsOn {
 		if !slices.ContainsFunc(f.fields, func(prior connectorConfigField) bool {
-			return prior.matchesDependency(field, dep) && f.values(prior.level)[prior.key] != nil
+			return prior.matchesDependency(field, dep) && (f.reuseEndpoint && prior.level == "endpoint" || f.values(prior.level)[prior.key] != nil)
 		}) {
 			return false
 		}
@@ -152,7 +154,7 @@ func (f *connectorConfigForm) ready(field connectorConfigField) bool {
 
 func (f *connectorConfigForm) complete() bool {
 	for _, field := range f.fields {
-		if field.required && !(field.level == "scope" && field.key == f.primary) && f.values(field.level)[field.key] == nil {
+		if !(f.reuseEndpoint && field.level == "endpoint") && field.required && !(field.level == "scope" && field.key == f.primary) && f.values(field.level)[field.key] == nil {
 			return false
 		}
 	}
@@ -179,7 +181,7 @@ func (f *connectorConfigForm) update(field connectorConfigField, value any) []co
 
 func (m *mockup) connectorDraftFields(c *ui.Context, p *connectorLoginPanel) {
 	for _, field := range p.form.fields {
-		if field.level == "scope" && field.key == p.form.primary {
+		if p.reuseEndpoint && field.level == "endpoint" || field.level == "scope" && field.key == p.form.primary {
 			continue
 		}
 		fieldID := field.level + "." + field.key

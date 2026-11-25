@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
@@ -109,6 +110,8 @@ type connectorLoginPanel struct {
 	selected                 map[string]bool
 	connected                map[string]bool
 	results                  []common.WorkbenchConnectorScopeResult
+	savedSelections          map[string]bool
+	reuseEndpoint            bool
 	next, problem            string
 	write, busy              bool
 	saving                   bool
@@ -205,6 +208,7 @@ func (m *mockup) pollConnectorLogin(p *connectorLoginPanel) {
 			case "waiting":
 				m.pollConnectorLogin(p)
 			case "authorized":
+				p.setReuseEndpoint(auth.SavedEndpointSchemaVersion > 0)
 				if p.parent != "" {
 					m.connectorLogin = nil
 					m.refreshLive()
@@ -253,55 +257,81 @@ func (p *connectorLoginPanel) setScopeType(kind string) {
 	}
 }
 
+func (p *connectorLoginPanel) setReuseEndpoint(reuse bool) {
+	p.reuseEndpoint = reuse
+	if p.form != nil {
+		p.form.reuseEndpoint = reuse
+		p.activatePrimary()
+	} else if p.jsonDraft != nil {
+		p.activateOptions(connectorConfigField{})
+	}
+}
+
+func (p *connectorLoginPanel) finished() bool {
+	return len(p.results) > 0 && !slices.ContainsFunc(p.results, scopeSaveRejected)
+}
+
+func scopeSaveRejected(result common.WorkbenchConnectorScopeResult) bool {
+	return result.Status == "rejected" || result.Status == "duplicate_selection" && result.ScopeID == ""
+}
+
+func selectionKey(scope common.WorkbenchConnectorSelection) string {
+	scope.WriteEnabled = false
+	raw, _ := json.Marshal(scope)
+	return string(raw)
+}
+
+func (p *connectorLoginPanel) applyScopeResults(input common.WorkbenchConnectorSaveInput, results []common.WorkbenchConnectorScopeResult) {
+	p.results = slices.DeleteFunc(p.results, scopeSaveRejected)
+	if p.savedSelections == nil {
+		p.savedSelections = make(map[string]bool)
+	}
+	field := p.field()
+	if p.form != nil {
+		field = p.form.primary
+	}
+	for index, result := range results {
+		if index >= len(input.Scopes) {
+			break
+		}
+		scope := input.Scopes[index]
+		value, _ := scope.Config[field].(string)
+		if result.Label == "" {
+			result.Label = value
+		}
+		if scopeSaveRejected(result) {
+			result.Status = "rejected"
+		} else {
+			p.savedSelections[selectionKey(scope)] = true
+			delete(p.selected, value)
+			if value != "" {
+				p.connected[value] = true
+			}
+		}
+		p.results = append(p.results, result)
+	}
+}
+
 func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 	field := p.field()
 	if field == "" {
 		return
 	}
-	p.busy = true
 	if p.cancelQuery != nil {
 		p.cancelQuery()
+		p.cancelQuery = nil
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	p.cancelQuery = cancel
 	p.queryGeneration++
 	generation := p.queryGeneration
-	input := map[string]string{"id": p.kind, "authorization_id": p.auth.ID, "field": field}
-	if p.form != nil && (p.optionLevel == "endpoint" || len(p.form.endpoint) > 0 || len(p.form.scope) > 0) {
-		input["config_level"] = p.optionLevel
-		for key, value := range map[string]map[string]any{"endpoint_config": p.form.endpoint, "scope_config": p.form.scope} {
-			if len(value) > 0 {
-				data, _ := json.Marshal(value)
-				input[key] = string(data)
-			}
-		}
+	p.busy = false
+	input, problem := p.optionInput(page)
+	if problem != "" {
+		p.problem = problem
+		return
 	}
-	if p.jsonDraft != nil {
-		endpoint, scope, ok := p.jsonDraft.objects()
-		if !ok {
-			cancel()
-			p.busy = false
-			return
-		}
-		input["config_level"] = p.optionLevel
-		if len(endpoint) > 0 {
-			data, _ := json.Marshal(endpoint)
-			input["endpoint_config"] = string(data)
-		}
-		if len(scope) > 0 {
-			data, _ := json.Marshal(scope)
-			input["scope_config"] = string(data)
-		}
-	}
-	if p.scopeType != "" && p.optionLevel != "endpoint" {
-		input["scope_type"] = p.scopeType
-	}
-	if p.search != "" {
-		input["search"] = p.search
-	}
-	if page != "" {
-		input["page"] = page
-	}
+	p.busy = true
+	ctx, cancel := context.WithCancel(context.Background())
+	p.cancelQuery = cancel
 	finish := func(value common.WorkbenchConnectorOptions, err error) {
 		if m.connectorLogin != p || p.queryGeneration != generation {
 			return
@@ -347,24 +377,71 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 
 }
 
+func (p *connectorLoginPanel) optionInput(page string) (map[string]any, string) {
+	input := map[string]any{"id": p.kind, "authorization_id": p.auth.ID, "field": p.field()}
+	var endpoint, scope map[string]any
+	if p.form != nil {
+		endpoint, scope = p.form.endpoint, p.form.scope
+	}
+	if p.jsonDraft != nil {
+		var ok bool
+		endpoint, scope, ok = p.jsonDraft.config(p.reuseEndpoint)
+		if !ok {
+			return nil, tr("请输入有效的 JSON 对象")
+		}
+	}
+	if p.reuseEndpoint {
+		input["reuse_saved_endpoint"] = true
+		endpoint = nil
+	}
+	if p.reuseEndpoint || p.optionLevel == "endpoint" || len(endpoint) > 0 || len(scope) > 0 {
+		input["config_level"] = p.optionLevel
+	}
+	for field, data := range map[string]map[string]any{"endpoint_config": endpoint, "scope_config": scope} {
+		if len(data) == 0 {
+			continue
+		}
+		raw, _ := json.Marshal(data)
+		if utf8.RuneCount(raw) > common.WorkbenchConnectorOptionsConfigLimit {
+			return nil, fmt.Sprintf(tr("选项查询中每份配置最多 %d 字符。"), common.WorkbenchConnectorOptionsConfigLimit)
+		}
+		input[field] = string(raw)
+	}
+	if p.scopeType != "" && p.optionLevel != "endpoint" {
+		input["scope_type"] = p.scopeType
+	}
+	if p.search != "" {
+		input["search"] = p.search
+	}
+	if page != "" {
+		input["page"] = page
+	}
+	return input, ""
+}
+
 func (p *connectorLoginPanel) saveInput() common.WorkbenchConnectorSaveInput {
 	scopeVersion := 1
 	if p.scopeConfig != nil {
 		scopeVersion = p.scopeConfig.Version
 	}
-	input := common.WorkbenchConnectorSaveInput{AuthorizationID: p.auth.ID, EndpointSchemaVersion: p.endpointSchemaVersion, ScopeSchemaVersion: scopeVersion}
+	input := common.WorkbenchConnectorSaveInput{AuthorizationID: p.auth.ID, EndpointSchemaVersion: p.endpointSchemaVersion, ScopeSchemaVersion: scopeVersion, ReuseSavedEndpoint: p.reuseEndpoint}
 	if p.jsonDraft != nil {
-		endpoint, scope, ok := p.jsonDraft.objects()
+		endpoint, scope, ok := p.jsonDraft.config(p.reuseEndpoint)
 		if ok {
 			input.EndpointConfig = endpoint
-			input.Scopes = []common.WorkbenchConnectorSelection{{Config: scope, ScopeType: p.scopeType, WriteEnabled: p.write && p.writable}}
+			selection := common.WorkbenchConnectorSelection{Config: scope, ScopeType: p.scopeType, WriteEnabled: p.write && p.writable}
+			if !p.savedSelections[selectionKey(selection)] {
+				input.Scopes = []common.WorkbenchConnectorSelection{selection}
+			}
 		}
 		return input
 	}
 	field := p.field()
 	config := map[string]any{}
 	if p.form != nil {
-		input.EndpointConfig = maps.Clone(p.form.endpoint)
+		if !p.reuseEndpoint {
+			input.EndpointConfig = maps.Clone(p.form.endpoint)
+		}
 		config = maps.Clone(p.form.scope)
 		field = p.form.primary
 	}
@@ -373,7 +450,10 @@ func (p *connectorLoginPanel) saveInput() common.WorkbenchConnectorSaveInput {
 		if field != "" {
 			draft[field] = selected
 		}
-		input.Scopes = append(input.Scopes, common.WorkbenchConnectorSelection{Config: draft, ScopeType: p.scopeType, WriteEnabled: p.write && p.writable})
+		selection := common.WorkbenchConnectorSelection{Config: draft, ScopeType: p.scopeType, WriteEnabled: p.write && p.writable}
+		if !p.savedSelections[selectionKey(selection)] {
+			input.Scopes = append(input.Scopes, selection)
+		}
 	}
 	if p.form != nil && field == "" {
 		appendScope("")
@@ -401,7 +481,7 @@ func (m *mockup) saveConnectorChoices(p *connectorLoginPanel) {
 			p.problem = common.ProtocolError(err).Message
 			return
 		}
-		p.results = value.Scopes
+		p.applyScopeResults(input, value.Scopes)
 		if m.connectorRecentAuthorization.ID == p.auth.ID && value.ConnectionID != "" {
 			m.connectorRecentAuthorization = common.WorkbenchConnectorAuthorization{}
 		}
@@ -437,7 +517,15 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 			}
 			if p.auth.Status == "authorized" {
 				components.Muted(c.Key("identity"), p.auth.DisplayName)
-				if len(p.scopeTypes) > 1 && len(p.results) == 0 {
+				if p.auth.SavedEndpointSchemaVersion > 0 && !p.finished() {
+					reuse := p.reuseEndpoint
+					if ui.Checkbox(c.Key("reuse-endpoint"), &reuse, tr("使用已保存的端点配置")).Disabled(p.saving).Changed() {
+						p.setReuseEndpoint(reuse)
+						clear(p.selected)
+						m.loadConnectorChoices(p, "")
+					}
+				}
+				if len(p.scopeTypes) > 1 && !p.finished() {
 					selected := slices.Index(p.scopeTypes, p.scopeType)
 					labels := make([]string, len(p.scopeTypes))
 					for i, kind := range p.scopeTypes {
@@ -453,13 +541,13 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 				}
 				ui.Scroll(c.Key("scopes")).FillWidth().MaxHeight(max(160, min(height-250, 310))).Children(func() {
 					ui.Column(c).FillWidth().Gap(8).Children(func() {
-						if p.jsonDraft != nil && len(p.results) == 0 {
+						if p.jsonDraft != nil && !p.finished() {
 							m.connectorJSONFields(c.Key("json-config"), p)
 						}
-						if p.form != nil && len(p.results) == 0 {
+						if p.form != nil && !p.finished() {
 							m.connectorDraftFields(c.Key("config"), p)
 						}
-						if (len(p.scopeTypes) != 0 || p.form != nil || p.jsonDraft != nil) && p.field() != "" && len(p.results) == 0 {
+						if (len(p.scopeTypes) != 0 || p.form != nil || p.jsonDraft != nil) && p.field() != "" && !p.finished() {
 							search := ui.TextInput(c.Key("search-scopes"), &p.search).Label(tr("搜索范围")).Placeholder(tr("搜索范围")).FillWidth().Disabled(p.saving)
 							if search.Changed() {
 								p.choices, p.next = nil, ""
@@ -474,8 +562,8 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 						}
 						for _, choice := range p.choices {
 							if p.jsonDraft != nil {
-								if ui.Button(c.Key(choice.Value), choice.Label).Disabled(p.busy || p.saving || len(p.results) > 0).Clicked() {
-									p.jsonDraft.choose(p.optionLevel, p.optionField, choice.Value)
+								if ui.Button(c.Key(choice.Value), choice.Label).Disabled(p.busy || p.saving || p.finished()).Clicked() {
+									p.jsonDraft.choose(p.optionLevel, p.optionField, choice.Value, p.reuseEndpoint)
 									p.activateOptions(connectorConfigField{})
 								}
 								continue
@@ -492,7 +580,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 								continue
 							}
 							selected := p.selected[choice.Value]
-							if ui.Checkbox(c.Key(choice.Value), &selected, choice.Label).Disabled(p.busy || len(p.results) > 0).Changed() {
+							if ui.Checkbox(c.Key(choice.Value), &selected, choice.Label).Disabled(p.busy || p.finished()).Changed() {
 								if selected {
 									p.selected[choice.Value] = true
 								} else {
@@ -500,7 +588,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 								}
 							}
 						}
-						if p.next != "" && ui.Button(c.Key("next"), tr("加载更多")).Disabled(p.busy || len(p.results) > 0).Clicked() {
+						if p.next != "" && ui.Button(c.Key("next"), tr("加载更多")).Disabled(p.busy || p.finished()).Clicked() {
 							m.loadConnectorChoices(p, p.next)
 						}
 					})
@@ -509,7 +597,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 					components.Muted(c.Key("selected-count"), fmt.Sprintf(tr("已选择 %d 项"), len(p.selected)))
 				}
 				if p.writable {
-					ui.Checkbox(c.Key("write"), &p.write, tr("允许回写")).Disabled(p.busy || len(p.results) > 0)
+					ui.Checkbox(c.Key("write"), &p.write, tr("允许回写")).Disabled(p.busy || p.finished())
 				}
 				for i, result := range p.results {
 					status, problem := result.Status, result.ErrorKind
@@ -522,7 +610,11 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 							}
 						}
 					}
-					components.Muted(c.Key(i), result.Label+" · "+connectorStatus(status)+connectorProblem(problem))
+					message := connectorStatus(status) + connectorProblem(problem)
+					if result.Label != "" {
+						message = result.Label + " · " + message
+					}
+					components.Muted(c.Key(i), message)
 				}
 			}
 			if p.problem != "" {
@@ -530,7 +622,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 			}
 			ui.Row(c.Key("buttons")).FillWidth().Justify(ui.End).Gap(8).Children(func() {
 				closeLabel := "取消"
-				if len(p.results) > 0 {
+				if p.finished() {
 					closeLabel = "关闭"
 				}
 				if ui.Button(c.Key("cancel"), tr(closeLabel)).Clicked() {
@@ -541,6 +633,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 					if p.parent == "" && recent.ConnectorID == p.kind && recent.Status == "authorized" && time.Now().Before(recent.ExpiresAt) {
 						if ui.Button(c.Key("reuse-account"), tr("使用账号")+" "+recent.DisplayName).Disabled(p.busy).Clicked() {
 							p.auth = recent
+							p.setReuseEndpoint(recent.SavedEndpointSchemaVersion > 0)
 							p.problem = ""
 							m.loadConnectorChoices(p, "")
 						}
@@ -549,7 +642,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 						m.startConnectorLogin(p)
 					}
 				}
-				if p.auth.Status == "authorized" && len(p.results) == 0 && ui.PrimaryButton(c.Key("save"), tr("保存所选范围")).Disabled(p.busy || !p.canSave()).Clicked() {
+				if p.auth.Status == "authorized" && !p.finished() && ui.PrimaryButton(c.Key("save"), tr("保存所选范围")).Disabled(p.busy || !p.canSave()).Clicked() {
 					m.saveConnectorChoices(p)
 				}
 			})
@@ -605,6 +698,8 @@ func connectorStatus(value string) string {
 		return tr("授权已过期")
 	case "duplicate_selection", "already_connected":
 		return tr("已连接")
+	case "invalid_config":
+		return tr("配置无效，请修改后重试")
 	case "rejected":
 		return tr("无法保存")
 	case "full":
@@ -773,11 +868,13 @@ func connectorLabel(id string) string {
 
 func (p *connectorLoginPanel) canSave() bool {
 	if p.jsonDraft != nil {
-		_, _, ok := p.jsonDraft.objects()
-		return ok
+		return len(p.saveInput().Scopes) != 0
 	}
 	if p.form != nil {
 		for _, field := range p.form.fields {
+			if p.reuseEndpoint && field.level == "endpoint" {
+				continue
+			}
 			if text := p.fieldDrafts[field.level+"."+field.key]; strings.TrimSpace(text) != "" && parseConfigField(field.kind, text) == nil {
 				return false
 			}
@@ -786,7 +883,7 @@ func (p *connectorLoginPanel) canSave() bool {
 			return false
 		}
 		if p.form.primary == "" {
-			return true
+			return len(p.saveInput().Scopes) != 0
 		}
 	}
 	return len(p.selected) > 0 && len(p.selected) <= 20

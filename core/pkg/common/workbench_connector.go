@@ -83,15 +83,16 @@ type WorkbenchConnectorLoginInput struct {
 }
 
 type WorkbenchConnectorAuthorization struct {
-	ID              string    `json:"id"`
-	ConnectorID     string    `json:"connector_id"`
-	Status          string    `json:"status"`
-	DisplayName     string    `json:"display_name,omitempty"`
-	EndpointRef     string    `json:"endpoint_ref,omitempty"`
-	VerificationURL string    `json:"verification_url,omitempty"`
-	UserCode        string    `json:"user_code,omitempty"`
-	ExpiresAt       time.Time `json:"expires_at"`
-	ErrorKind       string    `json:"error_kind,omitempty"`
+	SavedEndpointSchemaVersion int       `json:"saved_endpoint_schema_version,omitempty"`
+	ID                         string    `json:"id"`
+	ConnectorID                string    `json:"connector_id"`
+	Status                     string    `json:"status"`
+	DisplayName                string    `json:"display_name,omitempty"`
+	EndpointRef                string    `json:"endpoint_ref,omitempty"`
+	VerificationURL            string    `json:"verification_url,omitempty"`
+	UserCode                   string    `json:"user_code,omitempty"`
+	ExpiresAt                  time.Time `json:"expires_at"`
+	ErrorKind                  string    `json:"error_kind,omitempty"`
 }
 
 type WorkbenchConnectorOptions struct {
@@ -106,6 +107,7 @@ type WorkbenchConnectorSelection struct {
 }
 
 type WorkbenchConnectorSaveInput struct {
+	ReuseSavedEndpoint    bool                          `json:"reuse_saved_endpoint,omitempty"`
 	AuthorizationID       string                        `json:"authorization_id"`
 	EndpointConfig        map[string]any                `json:"endpoint_config,omitempty"`
 	EndpointSchemaVersion int                           `json:"endpoint_schema_version" minimum:"1"`

@@ -26,6 +26,11 @@ func scopedFixtureDescription(description *protocol.Description) {
 	if fixtureScopeMode == "multi-endpoint2" {
 		description.EndpointConfig.Version = 2
 	}
+	if fixtureScopeMode == "required-endpoint2" {
+		description.EndpointConfig.Version = 2
+		description.EndpointConfig.Schema = json.RawMessage(`{"type":"object","properties":{"region":{"type":"string"},"token":{"type":"string","format":"password"}},"required":["region"]}`)
+	}
+
 	if fixtureScopeMode == "schema2" {
 		description.ScopeConfig.Version = 2
 	}
@@ -68,7 +73,17 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		if p.AccountRef != "" && p.AccountRef != scopedAccount || p.EndpointRef != "" && p.EndpointRef != scopedEndpoint {
 			return nil, protocol.Problem(protocol.AccessDenied, "account", "Original synthetic account is required")
 		}
-		return protocol.Account{AccountRef: scopedAccount, EndpointRef: scopedEndpoint, DisplayName: "Synthetic Account"}, nil
+		account := protocol.Account{AccountRef: scopedAccount, EndpointRef: scopedEndpoint, DisplayName: "Synthetic Account"}
+		if fixtureScopeMode == "required-endpoint2" && p.AccountRef == "" && p.EndpointRef == "" {
+			alternate, _ := os.ReadFile(filepath.Join(os.Getenv("APILOT_CONNECTOR_DATA_DIR"), "alternate-identity"))
+			switch string(alternate) {
+			case "account":
+				account.AccountRef = "other-synthetic-account"
+			case "endpoint":
+				account.EndpointRef = "other.synthetic.local"
+			}
+		}
+		return account, nil
 	}
 	if req.Method == protocol.Options {
 		var p protocol.OptionsParams
@@ -100,6 +115,10 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 				return nil, badScope
 			}
 		}
+		if fixtureScopeMode == "required-endpoint2" && !scopedEndpointVersionAccepted(p.EndpointConfig, p.EndpointSchemaVersion) {
+			return nil, badScope
+		}
+
 		if p.Field != "target" {
 			return nil, badScope
 		}
@@ -150,7 +169,7 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 	if fixtureScopeMode == "schema2" {
 		scopeVersion = 2
 	}
-	if json.Unmarshal(scope.ScopeConfig, &selection) != nil || scope.ScopeSchemaVersion != scopeVersion || (scope.EndpointSchemaVersion != 1 && (fixtureScopeMode != "multi-endpoint2" || scope.EndpointSchemaVersion != 2)) {
+	if json.Unmarshal(scope.ScopeConfig, &selection) != nil || scope.ScopeSchemaVersion != scopeVersion || !scopedEndpointVersionAccepted(scope.EndpointConfig, scope.EndpointSchemaVersion) {
 		return nil, badScope
 	}
 	if scopedMultiFixture() {
@@ -286,4 +305,18 @@ func scopedRecord(project string) protocol.SourceRecord {
 
 func scopedMultiFixture() bool {
 	return fixtureScopeMode == "multi" || fixtureScopeMode == "multi-endpoint2"
+}
+
+func scopedEndpointVersionAccepted(config json.RawMessage, version int) bool {
+	if fixtureScopeMode != "required-endpoint2" {
+		return version == 1 || fixtureScopeMode == "multi-endpoint2" && version == 2
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(config, &fields) != nil || fields == nil {
+		return false
+	}
+	if version == 1 {
+		return len(fields) == 0
+	}
+	return version == 2 && string(fields["region"]) == `"east"`
 }

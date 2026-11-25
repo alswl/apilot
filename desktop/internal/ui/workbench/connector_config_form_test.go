@@ -3,6 +3,7 @@ package workbench
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/alswl/apilot/connectors/protocol"
@@ -158,5 +159,75 @@ func TestConnectorJSONEditorsFocusAndInput(t *testing.T) {
 	metadata, _ := input.Scopes[0].Config["metadata"].(map[string]any)
 	if counter := metadata["counter"]; counter != json.Number("9007199254740993") {
 		t.Fatalf("counter = %v", counter)
+	}
+}
+
+func TestConnectorSavedEndpointBypassesNewRequiredFields(t *testing.T) {
+	form := newConnectorConfigForm(services.WorkbenchPlugin{
+		EndpointConfig: &protocol.ConfigSchema{Version: 2, Schema: json.RawMessage(`{"type":"object","properties":{"region":{"type":"string"}},"required":["region"]}`)},
+		ScopeConfig: &protocol.ConfigSchema{Version: 1, Schema: json.RawMessage(`{"type":"object","properties":{"target":{"type":"string"}},"required":["target"]}`),
+			Fields: map[string]protocol.ConfigField{"target": {DynamicOptions: true, DependsOn: []string{"endpoint.region"}}}},
+	})
+	panel := &connectorLoginPanel{form: form, scopeType: "space", endpointSchemaVersion: 2, selected: map[string]bool{"alpha": true}}
+	if form == nil || panel.canSave() {
+		t.Fatal("new required endpoint field was not enforced")
+	}
+	panel.setReuseEndpoint(true)
+	if panel.field() != "target" || !panel.canSave() {
+		t.Fatal("saved endpoint did not satisfy form")
+	}
+	input, problem := panel.optionInput("")
+	if problem != "" || input["reuse_saved_endpoint"] != true || input["endpoint_config"] != nil {
+		t.Fatalf("option input: %v %s", input, problem)
+	}
+	save := panel.saveInput()
+	if !save.ReuseSavedEndpoint || save.EndpointConfig != nil || save.Scopes[0].ScopeType != "space" {
+		t.Fatalf("save input: %+v", save)
+	}
+}
+
+func TestConnectorRetryPreservesDraftAndSkipsSavedScopes(t *testing.T) {
+	panel := &connectorLoginPanel{scopeType: "project", kind: managedFixture,
+		selected: map[string]bool{"alpha": true, "beta": true}, connected: map[string]bool{},
+	}
+	panel.applyScopeResults(panel.saveInput(), []common.WorkbenchConnectorScopeResult{
+		{ScopeID: "alpha-id", Status: "queued"}, {Status: "rejected", ErrorKind: "invalid_config"},
+	})
+	if panel.finished() || !panel.canSave() || len(panel.saveInput().Scopes) != 1 || panel.saveInput().Scopes[0].Config["project"] != "beta" {
+		t.Fatalf("incorrect retry batch: %+v", panel.saveInput())
+	}
+	panel.selected["alpha"] = true
+	if len(panel.saveInput().Scopes) != 1 {
+		t.Fatal("a saved scope was included again")
+	}
+	panel.applyScopeResults(panel.saveInput(), []common.WorkbenchConnectorScopeResult{{ScopeID: "beta-id", Status: "queued"}})
+	if !panel.finished() || len(panel.results) != 2 {
+		t.Fatal("saved results were not preserved")
+	}
+
+	panel = &connectorLoginPanel{scopeType: "space", jsonDraft: &connectorJSONDraft{endpoint: `{}`, scope: `{"target":"bad"}`}}
+	panel.applyScopeResults(panel.saveInput(), []common.WorkbenchConnectorScopeResult{{Status: "rejected", ErrorKind: "invalid_config"}})
+	if panel.finished() || !panel.canSave() || panel.jsonDraft.scope != `{"target":"bad"}` {
+		t.Fatal("rejected JSON draft was lost")
+	}
+	panel.jsonDraft.scope = `{"target":"alpha"}`
+	if panel.saveInput().Scopes[0].Config["target"] != "alpha" {
+		t.Fatal("edited draft was not resubmitted")
+	}
+}
+
+func TestConnectorOptionLimitAndPasswordFormat(t *testing.T) {
+	panel := &connectorLoginPanel{scopeType: "space", optionLevel: "scope", jsonDraft: &connectorJSONDraft{endpoint: `{}`,
+		scope: `{"value":"` + strings.Repeat("界", common.WorkbenchConnectorOptionsConfigLimit-12) + `"}`}}
+	if _, problem := panel.optionInput(""); problem != "" {
+		t.Fatalf("limit counts characters, not bytes: %s", problem)
+	}
+	panel.jsonDraft.scope = `{"value":"` + strings.Repeat("界", common.WorkbenchConnectorOptionsConfigLimit) + `"}`
+	if _, problem := panel.optionInput(""); problem == "" || !panel.canSave() {
+		t.Fatal("option-specific limit was not enforced")
+	}
+	password := &protocol.ConfigSchema{Version: 1, Schema: json.RawMessage(`{"type":"object","properties":{"token":{"type":"string","format":"password"}}}`)}
+	if newConnectorConfigForm(services.WorkbenchPlugin{EndpointConfig: password, ScopeConfig: password}) != nil {
+		t.Fatal("password exposed as an ordinary field")
 	}
 }
