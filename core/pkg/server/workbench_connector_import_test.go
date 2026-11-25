@@ -262,6 +262,9 @@ func TestSignedScopedConnector(t *testing.T) {
 		t.Fatalf("login: %+v", login)
 	}
 	optionsPath := "/connectors/" + id + "/options?field=target&authorization_id=" + auth.ID
+	boundarySearch := strings.Repeat("界😀", common.WorkbenchConnectorOptionsSearchLimit/2)
+	api.call(http.MethodGet, optionsPath+"&scope_type=project&search="+url.QueryEscape(boundarySearch), nil, nil)
+	expect(http.MethodGet, optionsPath+"&scope_type=project&search="+url.QueryEscape(boundarySearch+"界"), nil, http.StatusUnprocessableEntity)
 	var options common.WorkbenchConnectorOptions
 	api.call(http.MethodGet, optionsPath+"&scope_type=project", nil, &options)
 	if len(options.Items) != 1 || options.Items[0].Value != "alpha" || options.NextPage == "" {

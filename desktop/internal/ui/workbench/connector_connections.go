@@ -329,6 +329,7 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 		p.problem = problem
 		return
 	}
+	p.problem = ""
 	p.busy = true
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancelQuery = cancel
@@ -377,7 +378,17 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 
 }
 
+func (p *connectorLoginPanel) searchLengthProblem() string {
+	if utf8.RuneCountInString(p.search) <= common.WorkbenchConnectorOptionsSearchLimit {
+		return ""
+	}
+	return fmt.Sprintf(tr("搜索词最多 %d 个 Unicode 码点。请缩短后再试。"), common.WorkbenchConnectorOptionsSearchLimit)
+}
+
 func (p *connectorLoginPanel) optionInput(page string) (map[string]any, string) {
+	if problem := p.searchLengthProblem(); problem != "" {
+		return nil, problem
+	}
 	input := map[string]any{"id": p.kind, "authorization_id": p.auth.ID, "field": p.field()}
 	var endpoint, scope map[string]any
 	if p.form != nil {
@@ -554,7 +565,9 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 								clear(p.connected)
 								m.loadConnectorChoices(p, "")
 							}
-							if p.busy && !p.saving {
+							if problem := p.searchLengthProblem(); problem != "" {
+								components.Muted(c.Key("search-length"), problem)
+							} else if p.busy && !p.saving {
 								components.StatusLabel(c.Key("loading-scopes"), components.Status{Text: tr("正在查找范围"), Loading: true, Color: c.Theme().TextMuted})
 							} else if len(p.choices) == 0 && p.problem == "" {
 								components.Muted(c.Key("no-scopes"), tr("没有符合条件的范围"))
@@ -620,7 +633,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 					components.Muted(c.Key(i), message)
 				}
 			}
-			if p.problem != "" {
+			if p.problem != "" && p.problem != p.searchLengthProblem() {
 				components.Muted(c.Key("problem"), p.problem)
 			}
 			ui.Row(c.Key("buttons")).FillWidth().Justify(ui.End).Gap(8).Children(func() {

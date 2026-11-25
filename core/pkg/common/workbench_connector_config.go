@@ -2,11 +2,16 @@ package common
 
 import (
 	"encoding/json"
-	"github.com/alswl/apilot/connectors/protocol"
 	"slices"
+
+	"github.com/alswl/apilot/connectors/protocol"
 )
 
-const WorkbenchConnectorOptionsConfigLimit = 4096
+const (
+	WorkbenchConnectorOptionsConfigLimit = 4096
+	// WorkbenchConnectorOptionsSearchLimit matches the HTTP search parameter's maxLength in Unicode code points.
+	WorkbenchConnectorOptionsSearchLimit = 200
+)
 
 type connectorJSONSchema struct {
 	WriteOnly  bool                           `json:"writeOnly"`

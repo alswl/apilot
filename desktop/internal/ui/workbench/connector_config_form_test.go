@@ -276,3 +276,26 @@ func TestConnectorOpaqueNextOptionDoesNotSharePagingState(t *testing.T) {
 		})
 	}
 }
+
+func TestConnectorSearchLengthUsesUnicodeCodePoints(t *testing.T) {
+	for _, complex := range []bool{false, true} {
+		panel := &connectorLoginPanel{optionField: "target", optionLevel: "scope", scopeType: "project", selected: map[string]bool{"alpha": true}}
+		if complex {
+			panel.jsonDraft = &connectorJSONDraft{endpoint: "{}", scope: "{}"}
+		}
+		// Four bytes per emoji, and two code points per decomposed accented letter.
+		panel.search = strings.Repeat("😀e\u0301", 66) + "界😀"
+		input, problem := panel.optionInput("")
+		if problem != "" || input["search"] != panel.search {
+			t.Fatalf("boundary input: %v %s", input, problem)
+		}
+		panel.search += "字"
+		if input, problem = panel.optionInput(""); input != nil || !strings.Contains(problem, "200") {
+			t.Fatalf("overlong input: %v %s", input, problem)
+		}
+		panel.search = "Alpha"
+		if input, problem = panel.optionInput(""); problem != "" || input["search"] != "Alpha" || !panel.selected["alpha"] {
+			t.Fatalf("shortened input: %v %s", input, problem)
+		}
+	}
+}
