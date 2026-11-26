@@ -354,7 +354,7 @@ func (m *mockup) sourceEditDialog(c *ui.Context) {
 						}
 					} else {
 						choiceField(c.Key("state"), "状态", &edit.state, []string{"待处理", "进行中", "已完成", "不计划处理"})
-						choiceField(c.Key("priority"), "优先级", &edit.priority, []string{"最高", "高", "中", "普通", "低", "最低"})
+						obsidianPriorityChoice(c.Key("priority"), &edit.priority)
 						m.sourceLabelField(c.Key("labels"), edit, "Obsidian 标签")
 						components.TextField(c.Key("due"), tr("截止日"), &edit.due).Placeholder("YYYY-MM-DD")
 						components.TextField(c.Key("scheduled"), tr("计划日期"), &edit.scheduled).Placeholder("YYYY-MM-DD")
@@ -394,6 +394,27 @@ func (m *mockup) sourceLabelField(c *ui.Context, edit *taskSourceEdit, label str
 
 func choiceField(c *ui.Context, label string, value *string, options []string) {
 	ui.Field(c, tr(label), func() { localizedSelect(c, value, options, 0) })
+}
+
+func obsidianPriorityChoice(c *ui.Context, value *string) {
+	selected := *value
+	native := obsidianPriorityLabels[selected] != ""
+	if native {
+		selected = obsidianPriorityLabels[selected]
+	}
+	previous := selected
+	choiceField(c, "优先级", &selected, []string{"最高", "高", "中", "普通", "低", "最低", "无优先级"})
+	if selected != previous {
+		*value = selected
+		if native {
+			for valueKey, label := range obsidianPriorityLabels {
+				if label == selected {
+					*value = valueKey
+					break
+				}
+			}
+		}
+	}
 }
 
 func splitValues(text string) []string {

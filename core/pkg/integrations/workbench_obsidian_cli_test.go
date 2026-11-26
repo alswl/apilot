@@ -19,7 +19,7 @@ func TestWorkbenchObsidianCLIReadsScopedMarkdown(t *testing.T) {
 	if err := os.Mkdir(scope, 0700); err != nil {
 		t.Fatal(err)
 	}
-	content := []byte("# Heading\n\n- [ ] Shared task\n")
+	content := []byte("# Heading\n\n- [ ] Shared task 🔼 📅 2027-03-20\n")
 	if err := os.WriteFile(filepath.Join(scope, "a note.md"), content, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ case "$2:$3" in
       printf '%s\n' 'The CLI is unable to find Obsidian.' >&2
       exit 1
     else
-      printf '%s\n' '[warn] Background plugin console message' '=> apilot-note-batch-v1:["# Heading\n\n- [ ] Shared task\n"]'
+      printf '%s\n' '[warn] Background plugin console message' '=> apilot-note-batch-v1:["# Heading\n\n- [ ] Shared task 🔼 📅 2027-03-20\n"]'
     fi;;
   *) exit 1;;
 esac
@@ -54,6 +54,12 @@ esac
 	actual, err := ReadWorkbenchObsidian(t.Context(), connection)
 	if err != nil || !reflect.DeepEqual(actual, direct) {
 		t.Fatalf("CLI scan differs from direct scan: %v %v", actual, err)
+	}
+	for _, task := range []common.WorkbenchTask{direct[0], actual[0]} {
+		if task.DueDate != "2027-03-20" || task.Priority == nil || *task.Priority != 4 ||
+			task.NativeFields["due"] != "2027-03-20" || task.NativeFields["priority"] != "medium" {
+			t.Fatalf("missing normalized or native metadata: %+v", task)
+		}
 	}
 	t.Setenv("APILOT_OBSIDIAN_TEST_OFFLINE", "1")
 	if _, err := ReadWorkbenchObsidian(t.Context(), connection); err == nil || common.ProtocolError(err).Code != "IPC_UNAVAILABLE" {

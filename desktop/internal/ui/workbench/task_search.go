@@ -124,10 +124,33 @@ func taskDueValue(task sourceObject) string {
 }
 
 func taskPriorityValue(task sourceObject) string {
+	if native := task.NativeFields["priority"]; task.Kind == obsidianTasks && native != "" {
+		return native
+	}
 	if task.Priority != nil {
 		return strconv.Itoa(*task.Priority)
 	}
 	return task.NativeFields["priority"]
+}
+
+func taskDisplayPriority(task sourceObject) string {
+	value := taskPriorityValue(task)
+	if value == "none" || value == "无优先级" {
+		return ""
+	}
+	return value
+}
+
+var obsidianPriorityLabels = map[string]string{
+	"highest": "最高", "high": "高", "medium": "中",
+	"normal": "普通", "low": "低", "lowest": "最低", "none": "无优先级",
+}
+
+func taskPriorityLabel(value string) string {
+	if label := obsidianPriorityLabels[value]; label != "" {
+		return tr(label)
+	}
+	return tr(value)
 }
 
 func (m *mockup) searchValues(object sourceObject, field string) []string {
@@ -273,7 +296,7 @@ func (m *mockup) appendSearch(c *ui.Context, term string) {
 // and combined with labels without maintaining a second filter model.
 func (m *mockup) sourceQuickFilters(c *ui.Context) {
 	for _, conn := range m.connectionsData {
-		if conn.Name != m.sourceFilter || len(conn.SearchFields) == 0 {
+		if m.sourceFilter == "全部来源" || !m.matchesTaskSource(conn.ID) || len(conn.SearchFields) == 0 {
 			continue
 		}
 		ui.Row(c.Key("quick-filters-" + conn.ID)).FillWidth().Wrap().Gap(8).Children(func() {

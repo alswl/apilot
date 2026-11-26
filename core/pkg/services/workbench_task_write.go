@@ -29,6 +29,10 @@ func workbenchFingerprint(value any) string {
 // identifies an Obsidian task. Source fields and the checkbox remain guarded.
 func workbenchTaskTargetVersion(task common.WorkbenchTask) string {
 	task.WorkbenchLabels = nil
+	if task.Kind == common.WorkbenchObsidianTasks {
+		// These projections duplicate native fields already covered by the edit guard.
+		task.DueDate, task.Priority = "", nil
+	}
 	if task.Kind == common.WorkbenchObsidianTasks && task.NativeID != "" {
 		task.Locator = ""
 		task.Activity = nil
@@ -41,7 +45,14 @@ func workbenchTaskTargetVersion(task common.WorkbenchTask) string {
 }
 
 func workbenchTaskMatchesTarget(task common.WorkbenchTask, target string) bool {
-	return target == workbenchTaskTargetVersion(task) || target == workbenchFingerprint(task)
+	if target == workbenchTaskTargetVersion(task) || target == workbenchFingerprint(task) {
+		return true
+	}
+	if task.Kind == common.WorkbenchObsidianTasks {
+		task.DueDate, task.Priority = "", nil
+		return target == workbenchFingerprint(task)
+	}
+	return false
 }
 
 func (s *Service) writeWorkbenchTaskLegacy(input common.WorkbenchTaskWrite) (common.WorkbenchTaskReceipt, error) {

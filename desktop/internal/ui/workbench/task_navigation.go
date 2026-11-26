@@ -9,9 +9,9 @@ import (
 )
 
 type taskReturnPoint struct {
-	taskID, selection, viewID      string
-	view                           taskViewState
-	listX, listY, detailX, detailY float32
+	taskID, selection, viewID                      string
+	view                                           taskViewState
+	listX, listY, detailX, detailY, boardX, boardY float32
 }
 
 func (m *mockup) followRelatedTask(index int) {
@@ -24,6 +24,7 @@ func (m *mockup) followRelatedTask(index int) {
 	m.taskBackStack = append(m.taskBackStack, taskReturnPoint{
 		taskID: m.objects[origin].ID, selection: m.taskSelection, viewID: m.taskView, view: m.viewState(),
 		listX: list.X, listY: list.Y, detailX: detail.X, detailY: detail.Y,
+		boardX: m.taskBoardScroll.X, boardY: m.taskBoardScroll.Y,
 	})
 	m.showTaskDetail(index)
 }
@@ -43,6 +44,7 @@ func (m *mockup) returnToRelatedSource() {
 		m.taskPageIndex, m.taskSelection = point.view.Page, point.selection
 		m.layout.revealSelection = false
 		m.pageScroll[tasksPage] = ui.ScrollState{X: point.listX, Y: point.listY}
+		m.taskBoardScroll = ui.ScrollState{X: point.boardX, Y: point.boardY}
 		m.assistantThreadFor(index).scroll = ui.ScrollState{X: point.detailX, Y: point.detailY}
 		return
 	}

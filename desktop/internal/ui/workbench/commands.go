@@ -59,6 +59,9 @@ func (m *mockup) focusTaskConnectionEntry(focus func()) {
 }
 
 func (m *mockup) closeInspector() {
+	if m.taskBoard {
+		m.layout.detailExpanded, m.layout.revealSelection = false, false
+	}
 	m.layout.detailReturnHidden = false
 	m.taskBackStack = nil
 	m.inspector, m.editingDue, m.fullTask = false, false, false
@@ -77,17 +80,30 @@ func (m *mockup) openSearch() {
 }
 
 func (m *mockup) moveSelection(delta int) {
-	rows := m.taskRows()
+	rows := m.taskNavigationRows()
 	if len(rows) == 0 {
 		return
 	}
-	m.syncTaskPage(len(rows))
-	current := slices.IndexFunc(rows, func(index int) bool { return m.objects[index].ID == m.taskSelection })
+	if !m.taskBoard {
+		m.syncTaskPage(len(rows))
+	}
+	current := -1
+	if m.taskBoard && m.inspector {
+		current = slices.Index(rows, m.selected)
+	}
 	if current < 0 {
-		first := m.taskPageIndex * m.taskPageSize
+		// A detail outside the query has no position in the results.
+		current = slices.IndexFunc(rows, func(index int) bool { return m.objects[index].ID == m.taskSelection })
+	}
+	if current < 0 {
+		first, last := 0, len(rows)
+		if !m.taskBoard {
+			first = m.taskPageIndex * m.taskPageSize
+			last = min(first+m.taskPageSize, len(rows))
+		}
 		current = first - 1
 		if delta < 0 {
-			current = min(first+m.taskPageSize, len(rows))
+			current = last
 		}
 	}
 	m.selectTask(rows[max(0, min(current+delta, len(rows)-1))])
@@ -95,7 +111,15 @@ func (m *mockup) moveSelection(delta int) {
 
 func (m *mockup) selectTask(index int) {
 	m.taskBackStack = nil
-	m.locateTaskPage(m.taskRows(), index)
+	if m.taskBoard && m.inspector {
+		m.openTask(index)
+		return
+	}
+	if m.taskBoard {
+		m.layout.revealSelection = true
+	} else {
+		m.locateTaskPage(m.taskRows(), index)
+	}
 	m.taskSelection = m.objects[index].ID
 	if m.inspector {
 		m.openTask(index)
@@ -129,15 +153,15 @@ func (m *mockup) activeCommands() []command {
 		}
 	}
 	if m.page == tasksPage {
-		rows := m.taskRows()
+		rows := m.taskNavigationRows()
 		if m.taskSelection != "" || len(rows) > 0 || m.inspector {
 			items = append(items, command{"task.open", tr("打开完整任务"), m.openCurrentTask})
 		}
 		items = append(items, command{"tasks.insert", tr("输入任务搜索"), m.openSearch}, command{"view.save", tr("保存视图"), m.saveCurrentTaskView})
-		if (!m.inspector || m.unifiedTasks()) && m.taskPageIndex > 0 {
+		if !m.taskBoard && (!m.inspector || m.unifiedTasks()) && m.taskPageIndex > 0 {
 			items = append(items, command{"view.prevPage", tr("上一页"), func() { m.browseTaskPage(-1) }})
 		}
-		if (!m.inspector || m.unifiedTasks()) && m.taskPageIndex+1 < m.taskPages(len(rows)) {
+		if !m.taskBoard && (!m.inspector || m.unifiedTasks()) && m.taskPageIndex+1 < m.taskPages(len(rows)) {
 			items = append(items, command{"view.nextPage", tr("下一页"), func() { m.browseTaskPage(1) }})
 		}
 		if len(rows) > 0 {
@@ -155,7 +179,7 @@ func (m *mockup) activeCommands() []command {
 	} else if m.page == tasksPage && m.taskSelection != "" {
 		index = slices.IndexFunc(m.objects, func(o sourceObject) bool { return o.ID == m.taskSelection })
 	}
-	if index < 0 {
+	if index < 0 || (m.page == tasksPage && m.taskBoard && !m.inspector) {
 		return items
 	}
 	object := m.objects[index]
@@ -201,7 +225,7 @@ func (m *mockup) activeCommands() []command {
 func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 	k := &m.keyboard
 	if m.connectorLogin != nil || m.connectorMapping != nil || m.connectorRuns != nil || m.connectorTaskEditor != nil || k.palette || m.assistantOpen || m.connectorEditor != nil || m.syncLogID != "" || m.newTaskOpen || m.debugOpen || m.saveTaskViewOpen || m.taskResourceOpen || m.sourceEditor != nil || m.labelEditor != nil ||
-		(m.compactTaskList() && (m.taskDisplayOpen || m.searchExpanded)) {
+		(m.compactTaskList() && (m.taskDisplayOpen || m.searchExpanded)) || (m.taskBoard && m.searchExpanded) {
 		k.prefix = keystroke{}
 		return
 	}
@@ -232,6 +256,8 @@ func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 			m.editingDue = false
 		} else if len(m.taskBackStack) > 0 {
 			m.returnRelatedPending = true
+		} else if m.taskBoard && m.layout.detailExpanded {
+			m.leaveTaskDetail()
 		} else if m.layout.detailExpanded {
 			m.layout.detailExpanded = false
 			m.layout.focusDetail = true

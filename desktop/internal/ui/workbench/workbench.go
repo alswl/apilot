@@ -69,6 +69,8 @@ type mockup struct {
 	framework                                                 bool
 	layout                                                    workbenchLayout
 	taskPageIndex, taskPageSize                               int
+	taskBoard                                                 bool
+	taskBoardScroll                                           ui.ScrollState
 	taskPageSizeOverride                                      int
 	taskBackStack                                             []taskReturnPoint
 	returnRelatedPending                                      bool
@@ -532,7 +534,7 @@ func (m *mockup) view(c *ui.Context) {
 			} else if !m.framework {
 				m.debugPane(c.Key("debug"))
 			}
-			if m.unifiedTasks() {
+			if m.unifiedTasks() && !m.taskBoard {
 				m.detailToggle(c.Key("detail-toggle"))
 			}
 		})
@@ -684,7 +686,8 @@ func (m *mockup) openTask(index int) {
 	if m.page != tasksPage {
 		m.fullTask = false
 	}
-	if m.page == tasksPage {
+	// The board keeps its card selected while a different task is in detail.
+	if m.page == tasksPage && !m.taskBoard {
 		m.taskSelection = m.objects[index].ID
 	}
 }
@@ -725,7 +728,10 @@ func (m *mockup) taskSourceDescription(o sourceObject) string {
 	if o.Mode == "mock" {
 		source += " · " + tr("模拟数据")
 	}
-	return displayTaskID(o) + " · " + source
+	if id := displayTaskID(o); id != "" {
+		return id + " · " + source
+	}
+	return source
 }
 
 func (m *mockup) taskValues(o sourceObject) []string {
@@ -748,7 +754,7 @@ func (m *mockup) taskValues(o sourceObject) []string {
 	if len(o.Activity) > 0 {
 		updated = taskActivityTime(o.Activity[len(o.Activity)-1])
 	}
-	return []string{m.sourceText(o.Title), status, tr(taskPriorityValue(o)), m.taskSourceDescription(o), due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", "), strings.Join(m.searchValues(o, "file"), ""), o.NativeFields["path"], o.NativeFields["section"]}
+	return []string{m.sourceText(o.Title), status, taskPriorityLabel(taskPriorityValue(o)), m.taskSourceDescription(o), due, updated, strings.Join(taskLabelValues(o), ", "), strings.Join(o.Assignees, ", "), strings.Join(m.searchValues(o, "file"), ""), o.NativeFields["path"], o.NativeFields["section"]}
 }
 
 func (m *mockup) matchesStatusFilter(task sourceObject) bool {
@@ -787,8 +793,10 @@ func (m *mockup) taskRows() []int {
 	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		a, b := m.objects[rows[i]], m.objects[rows[j]]
-		if group := strings.Compare(m.taskGroup(a), m.taskGroup(b)); group != 0 {
-			return group < 0
+		if !m.taskBoard {
+			if group := strings.Compare(m.taskGroup(a), m.taskGroup(b)); group != 0 {
+				return group < 0
+			}
 		}
 		order := 0
 		switch taskColumns[column].ID {
@@ -803,9 +811,12 @@ func (m *mockup) taskRows() []int {
 			order = dateA.Compare(dateB)
 		case "priority":
 			rank := map[string]int{"最低": 1, "低": 2, "普通": 3, "中": 4, "高": 5, "最高": 6, "lowest": 1, "low": 2, "normal": 3, "medium": 4, "high": 5, "highest": 6}
-			priorityA, priorityB := taskPriorityValue(a), taskPriorityValue(b)
+			priorityA, priorityB := taskDisplayPriority(a), taskDisplayPriority(b)
 			if (priorityA == "") != (priorityB == "") {
 				return priorityA != ""
+			}
+			if priorityA == "" {
+				return false
 			}
 			valueA, valueB := rank[priorityA], rank[priorityB]
 			if a.Priority != nil {
@@ -846,8 +857,11 @@ func (m *mockup) taskListControls(c *ui.Context) {
 		m.sourceLogoFilters(c.Key("source"))
 		if !compact {
 			m.taskFilterSelects(c.Key("selects"))
+			if !m.taskBoard && m.hasTaskStatusFilter() {
+				m.clearTaskStatusFilter(c.Key("clear-status"))
+			}
 		}
-		if m.unifiedTasks() {
+		if m.unifiedTasks() && !m.taskBoard {
 			m.openTaskButton(c.Key("open-task"))
 		}
 		filtered := m.statusFilter != "全部状态" || m.sourceFilter != "全部来源"
@@ -855,19 +869,31 @@ func (m *mockup) taskListControls(c *ui.Context) {
 		if fields.Clicked() {
 			m.searchExpanded = !m.searchExpanded
 		}
-		if compact {
+		if compact || m.taskBoard {
 			m.taskControlsPopover(c.Key("filter-panel"), fields, &m.searchExpanded, func() {
-				ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() { m.taskFilterSelects(c.Key("selects")) })
+				if compact {
+					ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() { m.taskFilterSelects(c.Key("selects")) })
+				}
 				m.sourceQuickFilters(c.Key("source-quick-filters"))
 				m.searchHelp(c.Key("search-help"))
 			})
 		}
 	})
-	m.activeTaskFilters(c.Key("active-filters"), compact)
+	m.activeTaskFilters(c.Key("active-filters"), compact || m.taskBoard)
 }
 
-func (m *mockup) activeTaskFilters(c *ui.Context, compact bool) {
-	showStatus := compact && m.statusFilter != "" && m.statusFilter != "全部状态"
+func (m *mockup) hasTaskStatusFilter() bool {
+	return m.statusFilter != "" && m.statusFilter != "全部状态"
+}
+
+func (m *mockup) clearTaskStatusFilter(c *ui.Context) {
+	if components.IconButton(c, "xmark", tr("清除状态条件"), false).Clicked() {
+		m.statusFilter = "全部状态"
+	}
+}
+
+func (m *mockup) activeTaskFilters(c *ui.Context, summarizeStatus bool) {
+	showStatus := summarizeStatus && m.hasTaskStatusFilter()
 	showSource := m.sourceFilter != "" && m.sourceFilter != "全部来源"
 	if !showStatus && !showSource {
 		return
@@ -876,6 +902,7 @@ func (m *mockup) activeTaskFilters(c *ui.Context, compact bool) {
 		if showStatus {
 			status := fmt.Sprintf(tr("状态：%s"), tr(m.statusFilter))
 			components.DataText(c.Key("status"), status).SingleLine().Shrink(0)
+			m.clearTaskStatusFilter(c.Key("clear-status"))
 		}
 		if showSource {
 			color := c.Theme().Text
@@ -887,7 +914,10 @@ func (m *mockup) activeTaskFilters(c *ui.Context, compact bool) {
 				source = fmt.Sprintf(tr("来源：%s"), m.sourceText(m.sourceFilter))
 			}
 			components.DataText(c.Key("source"), source).TextColor(color).
-				SingleLine().Ellipsis("…").MinWidth(0).Grow(1).Tooltip(source)
+				SingleLine().Ellipsis("…").MinWidth(0).Tooltip(source)
+			if components.IconButton(c.Key("clear-source"), "xmark", tr("清除来源条件"), false).Clicked() {
+				m.sourceFilter, m.sourceFilterID = "全部来源", ""
+			}
 		}
 	})
 }
@@ -944,7 +974,7 @@ func (m *mockup) sourceLogoFilters(c *ui.Context) {
 
 func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 	autoFit := viewportHeight > 0 && m.unifiedTasks() && m.taskPageSizeOverride == 0
-	if !m.compactTaskList() && (m.sourceFilter != "全部来源" || m.searchExpanded) {
+	if !m.taskBoard && !m.compactTaskList() && (m.sourceFilter != "全部来源" || m.searchExpanded) {
 		accessories := ui.Column(c.Key("result-filters")).FillWidth().Gap(taskResultsGap)
 		accessories.Children(func() {
 			m.sourceQuickFilters(c.Key("source-quick-filters"))
@@ -976,7 +1006,11 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 			m.fitTaskPage(c.Theme(), rows, viewportHeight)
 		}
 	}
-	m.taskTables(c.Key("tables"), m.pagedTaskRows(rows))
+	if m.taskBoard {
+		m.taskBoardResults(c.Key("board"), rows)
+	} else if len(rows) > 0 {
+		m.taskTables(c.Key("tables"), m.pagedTaskRows(rows))
+	}
 
 	if m.live != nil && problem == "" && len(rows) == 0 {
 		m.liveTaskEmptyState(c.Key("empty-tasks"))
@@ -1005,6 +1039,9 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 				}
 			}
 		})
+	}
+	if !m.taskBoard && len(rows) == 0 {
+		m.taskTables(c.Key("tables"), m.pagedTaskRows(rows))
 	}
 }
 
