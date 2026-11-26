@@ -39,6 +39,10 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 	result := common.WorkbenchTaskDetail{TaskID: id, Segment: segment}
 	switch segment {
 	case "fields", "description", "comments", "attachments", "links", "history":
+	case "top_fields":
+		if page != "" {
+			return result, common.Err("INVALID_ARGUMENT", "Task top fields do not accept a page cursor")
+		}
 	default:
 		return result, common.Err("INVALID_ARGUMENT", "Unknown detail segment")
 	}
@@ -74,7 +78,7 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 	}
 	version := task.NativeFields["source_version"]
 	connector := s.registeredConnector(scope.ConnectorID)
-	if connector.process != process {
+	if connector == nil || connector.process != process {
 		return result, common.Err("CONFLICT", "Connector release changed")
 	}
 	digest := connector.release.PackageDigest
@@ -84,11 +88,26 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 		sourceSegment = "fields"
 		digest += ":mapping:" + strconv.FormatInt(scope.MappingRevision, 10)
 	}
-	body, err := callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail,
-		protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID, Segment: sourceSegment, Page: page}, nil)
+	params := protocol.DetailParams{ScopeContext: scope.Context, SourceID: task.SourceKey, Number: task.NativeID, Segment: sourceSegment, Page: page}
+	var body protocol.DetailPage
+	if segment == "top_fields" {
+		if len(connector.description.TaskTopFields) == 0 {
+			result.Version, result.CapturedAt = version, time.Now().UTC()
+			return result, nil
+		}
+		params.Segment = "fields"
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		body.Version, result.TopFields, err = readConnectorTaskTopFields(ctx, process, params, connector.description.TaskTopFields)
+	} else {
+		body, err = callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail, params, nil)
+	}
 	if err != nil {
 		if current, currentErr := s.managedConnector(scope.ConnectorID); currentErr != nil || current != process {
 			return result, common.Err("CONFLICT", "Connector availability changed")
+		}
+		if _, ok := errors.AsType[*common.Error](err); ok {
+			return result, err
 		}
 		var problem *protocol.RPCError
 		if errors.As(err, &problem) && (problem.Data.Kind == protocol.AuthRequired || problem.Data.Kind == protocol.AccessDenied) {
@@ -147,6 +166,46 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 		return common.WorkbenchTaskDetail{}, err
 	}
 	return result, nil
+}
+
+const connectorTaskTopFieldsPageLimit = 16
+
+func readConnectorTaskTopFields(ctx context.Context, process *integrations.WorkbenchConnectorProcess,
+	params protocol.DetailParams, declarations []protocol.TaskTopField) (string, []common.WorkbenchTaskTopField, error) {
+	resolved := make(map[string]common.WorkbenchTaskTopField, len(declarations))
+	seen := make(map[string]bool, connectorTaskTopFieldsPageLimit)
+	var version string
+	for range connectorTaskTopFieldsPageLimit {
+		body, err := callWorkbenchConnector[protocol.DetailPage](ctx, process, common.ID(), protocol.TaskDetail, params, nil)
+		if err != nil {
+			return "", nil, err
+		}
+		if body.Version == "" || version != "" && body.Version != version {
+			return "", nil, common.Err("CONFLICT", "Connector task detail pages have inconsistent versions")
+		}
+		version = body.Version
+		next := body.NextPage
+		if next != "" && seen[next] {
+			return "", nil, common.Err("SOURCE_UNAVAILABLE", "Connector task detail repeated a page cursor")
+		}
+		for _, field := range connectorTaskTopFields(declarations, body.Fields) {
+			if _, exists := resolved[field.ID]; !exists {
+				resolved[field.ID] = field
+			}
+		}
+		if next == "" || len(resolved) == len(declarations) {
+			var fields []common.WorkbenchTaskTopField
+			for _, declaration := range declarations {
+				if field, ok := resolved[declaration.ID]; ok {
+					fields = append(fields, field)
+				}
+			}
+			return version, fields, nil
+		}
+		seen[next] = true
+		params.Page = next
+	}
+	return "", nil, common.Err("SOURCE_UNAVAILABLE", "Connector task detail exceeded the top fields page limit")
 }
 
 func connectorTaskTopFields(declarations []protocol.TaskTopField, fields map[string]protocol.FieldValue) []common.WorkbenchTaskTopField {

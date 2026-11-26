@@ -13,7 +13,7 @@ import (
 
 type workbenchTaskDetailsInput struct {
 	ID      string `path:"id" minLength:"1"`
-	Segment string `query:"segment" enum:"fields,description,comments,attachments,links,history" default:"fields"`
+	Segment string `query:"segment" doc:"Use top_fields for the initial task header. Ordinary fields and items remain paginated." enum:"fields,description,comments,attachments,links,history,top_fields" default:"fields"`
 	Page    string `query:"page" maxLength:"2048"`
 	ScopeID string `query:"scope_id"`
 }

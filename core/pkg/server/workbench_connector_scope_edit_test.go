@@ -18,11 +18,14 @@ import (
 	"github.com/alswl/apilot/core/pkg/common"
 )
 
-func TestConnectorScopeEdit(t *testing.T) {
+const scopeEditFixtureID = "synthetic-scope-edit"
+
+func openScopeEditFixture(t *testing.T, mode string) (uc01TestAPI, common.WorkbenchConnectorAuthorization, string) {
+	t.Helper()
 	t.Setenv("APILOT_DEV_CONNECTOR_MANIFEST", "")
 	packages, dir := t.TempDir(), t.TempDir()
-	const connector = "synthetic-scope-edit"
-	cmd := exec.Command("bash", "../../../scripts/build-scoped-connector-fixture.sh", packages, "0.1.0", connector, "scope-edit")
+	const connector = scopeEditFixtureID
+	cmd := exec.Command("bash", "../../../scripts/build-scoped-connector-fixture.sh", packages, "0.1.0", connector, mode)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build synthetic package: %v\n%s", err, out)
 	}
@@ -50,6 +53,13 @@ func TestConnectorScopeEdit(t *testing.T) {
 	if got := api.status(auth.ID, func(a common.WorkbenchConnectorAuthorization) bool { return a.Status != "waiting" }); got.Status != "authorized" {
 		t.Fatalf("authorization: %+v", got)
 	}
+	return api, auth, dir
+}
+
+func TestConnectorScopeEdit(t *testing.T) {
+	api, auth, dir := openScopeEditFixture(t, "scope-edit")
+	router := api.handler
+	const connector = scopeEditFixtureID
 	var saved common.WorkbenchConnectorSaveResult
 	api.call(http.MethodPut, "/connector-connections", common.WorkbenchConnectorSaveInput{
 		AuthorizationID: auth.ID, EndpointSchemaVersion: 1, ScopeSchemaVersion: 1,
@@ -238,5 +248,82 @@ func TestConnectorScopeEdit(t *testing.T) {
 		if candidate.ScopeID == scope && (candidate.LastRun == nil || candidate.LastRun.Mode != "full" || candidate.LastRun.Status != "success") {
 			t.Fatalf("edited scope did not full sync: %+v", candidate)
 		}
+	}
+}
+
+func TestConnectorTopFieldsPagination(t *testing.T) {
+	api, auth, dir := openScopeEditFixture(t, "scope-edit-paged")
+	var saved common.WorkbenchConnectorSaveResult
+	api.call(http.MethodPut, "/connector-connections", common.WorkbenchConnectorSaveInput{
+		AuthorizationID: auth.ID, EndpointSchemaVersion: 1, ScopeSchemaVersion: 1,
+		Scopes: []common.WorkbenchConnectorSelection{{ScopeType: protocol.ScopeSpace, Config: map[string]any{"target": "beta", "filter": "beta-only"}}},
+	}, &saved)
+	scope := saved.Scopes[0].ScopeID
+	uc01Wait(t, func() bool { return api.scopeTasks(scope).Total == 1 })
+	task := api.scopeTasks(scope).Items[0]
+	path := "/tasks/" + task.ID + "/detail?scope_id=" + scope
+	header := path + "&segment=top_fields"
+	var first, second, third common.WorkbenchTaskDetail
+	api.call(http.MethodGet, path+"&segment=fields", nil, &first)
+	if first.NextPage != "tier" || first.Fields["reporting_project"].Type != "" || len(first.TopFields) != 2 {
+		t.Fatalf("ordinary initial page: %+v", first)
+	}
+	api.call(http.MethodGet, path+"&segment=fields&page="+first.NextPage, nil, &second)
+	if second.NextPage != "reporting" || second.Fields["external_tier"].Type != protocol.FieldOption || len(second.TopFields) != 1 {
+		t.Fatalf("ordinary second page: %+v", second)
+	}
+	api.call(http.MethodGet, path+"&segment=fields&page="+second.NextPage, nil, &third)
+	if third.NextPage != "" || third.Fields["reporting_project"].Type != protocol.FieldOption || len(third.TopFields) != 1 {
+		t.Fatalf("ordinary third page: %+v", third)
+	}
+
+	var complete common.WorkbenchTaskDetail
+	api.call(http.MethodGet, header, nil, &complete)
+	want := []common.WorkbenchTaskTopField{
+		{TaskTopField: protocol.TaskTopField{ID: "reporting_project", Title: "Reporting project"}, Value: protocol.Value(protocol.FieldOption, protocol.Option{ID: "reporting", Label: "Task Reporting"})},
+		{TaskTopField: protocol.TaskTopField{ID: "external_tier", Title: "Tier"}, Value: protocol.Value(protocol.FieldOption, protocol.Option{ID: "tier-2", Label: "tier-2"})},
+		{TaskTopField: protocol.TaskTopField{ID: "flagged", Title: "Flagged"}, Value: protocol.Value(protocol.FieldBoolean, false)},
+		{TaskTopField: protocol.TaskTopField{ID: "estimate", Title: "Estimate"}, Value: protocol.Value(protocol.FieldNumber, 0)},
+	}
+	if !reflect.DeepEqual(complete.TopFields, want) || complete.Version != first.Version || complete.Segment != "top_fields" ||
+		complete.NextPage != "" || len(complete.Fields) != 0 || len(complete.Items) != 0 || complete.Cached {
+		t.Fatalf("aggregated header: %+v", complete)
+	}
+
+	modePath := filepath.Join(dir, "managed-connectors", scopeEditFixtureID, "top-fields-page-mode")
+	setMode := func(mode string) {
+		t.Helper()
+		if err := os.WriteFile(modePath, []byte(mode), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expectError := func(path string, status int, message string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, workbenchPath+path, nil)
+		req.Header.Set(common.WorkbenchAPIVersionHeader, common.WorkbenchAPIVersion)
+		response := httptest.NewRecorder()
+		api.handler.ServeHTTP(response, req)
+		if response.Code != status || !strings.Contains(response.Body.String(), message) || strings.Contains(response.Body.String(), `"top_fields":[`) {
+			t.Fatalf("GET %s: got %d %s, want %d %q", path, response.Code, response.Body.String(), status, message)
+		}
+	}
+	expectError(header+"&page=tier", http.StatusBadRequest, "do not accept a page cursor")
+	setMode("temporary")
+	var cached common.WorkbenchTaskDetail
+	api.call(http.MethodGet, header, nil, &cached)
+	if !cached.Cached || !reflect.DeepEqual(cached.TopFields, want) {
+		t.Fatalf("transient later page must fall back to complete aggregate: %+v", cached)
+	}
+	setMode("mixed")
+	expectError(header, http.StatusConflict, "inconsistent versions")
+	setMode("cycle")
+	expectError(header, http.StatusServiceUnavailable, "repeated a page cursor")
+	setMode("limit")
+	expectError(header, http.StatusServiceUnavailable, "exceeded the top fields page limit")
+	setMode("all-first")
+	var early common.WorkbenchTaskDetail
+	api.call(http.MethodGet, header, nil, &early)
+	if len(early.TopFields) != 5 || early.Cached || early.NextPage != "" {
+		t.Fatalf("all declarations on the first page should skip the unused cursor: %+v", early)
 	}
 }

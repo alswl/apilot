@@ -238,6 +238,7 @@ const (
 	Fields      GetWorkbenchTaskDetailParamsSegment = "fields"
 	History     GetWorkbenchTaskDetailParamsSegment = "history"
 	Links       GetWorkbenchTaskDetailParamsSegment = "links"
+	TopFields   GetWorkbenchTaskDetailParamsSegment = "top_fields"
 )
 
 // Valid indicates whether the value is a known member of the GetWorkbenchTaskDetailParamsSegment enum.
@@ -254,6 +255,8 @@ func (e GetWorkbenchTaskDetailParamsSegment) Valid() bool {
 	case History:
 		return true
 	case Links:
+		return true
+	case TopFields:
 		return true
 	default:
 		return false
@@ -1271,6 +1274,7 @@ type ListWorkbenchTasksParamsState string
 
 // GetWorkbenchTaskDetailParams defines parameters for GetWorkbenchTaskDetail.
 type GetWorkbenchTaskDetailParams struct {
+	// Segment Use top_fields for the initial task header. Ordinary fields and items remain paginated.
 	Segment *GetWorkbenchTaskDetailParamsSegment `form:"segment,omitempty" json:"segment,omitempty"`
 	Page    *string                              `form:"page,omitempty" json:"page,omitempty"`
 	ScopeId *string                              `form:"scope_id,omitempty" json:"scope_id,omitempty"`

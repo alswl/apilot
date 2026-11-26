@@ -534,15 +534,27 @@ segment. Example declaration:
 }
 ```
 
-For `GET /tasks/{task_id}/detail?segment=fields&scope_id={scope_id}`, the
-existing detail result adds an optional `top_fields` array in declaration
-order, drawn from the returned detail page. This uses the existing detail
-authorization, native task identity and scoped availability. Missing, null,
-or malformed values are omitted. Explicit false and zero are included. Values
-retain their protocol types. Option and account values include the original ID
-and use that ID as their display label when the label is empty. A Connector
-without declarations continues to return its existing detail shape. Example
-`top_fields` excerpt for the synthetic `beta-1`:
+For the initial task header, use
+`GET /tasks/{task_id}/detail?segment=top_fields&scope_id={scope_id}` without a
+`page` parameter. The result has `segment: "top_fields"`, a source
+`version`, and an optional `top_fields` array. Core follows the Connector's
+ordinary `fields` cursors until all declared values are resolved or the
+Connector ends the listing. The aggregate omits `fields`, `items`, and
+`next_page`. The ordinary `segment=fields` request still returns a single
+page, including the original page-local `top_fields` projection.
+
+The header uses the ordinary task detail authorization, native task identity,
+and scoped availability. Missing, null, or malformed values are omitted.
+Explicit false and zero are included. Values retain their protocol types.
+Option and account values include the original ID and use that ID as their
+display label when the label is empty. Without declarations, the header is
+empty and no detail RPC is issued.
+
+The host reads at most 16 pages within 30 seconds. A mixed page version
+returns 409. A repeated cursor or exceeded page count returns 503. These
+errors return no aggregate. If a page fails with a transient source error,
+the existing fallback may return a previously completed, still-current
+header with `cached: true`. Example header fields for synthetic `beta-1`:
 
 ```json
 {
@@ -565,8 +577,8 @@ publisher file only in the disposable data directory for each run.
 export GOTOOLCHAIN=go1.27.3 GOPROXY=off
 candidate_dir="$(mktemp -d)"
 go -C core build -o "$candidate_dir/apilot" ./cmd/apilot
-bash scripts/build-scoped-connector-fixture.sh "$candidate_dir" 0.1.0 synthetic-scope-edit scope-edit
-go -C core test ./pkg/server -run '^TestConnectorScopeEdit$' -count=1 -v
+bash scripts/build-scoped-connector-fixture.sh "$candidate_dir" 0.1.0 synthetic-scope-edit scope-edit-paged
+go -C core test ./pkg/server -run '^(TestConnectorScopeEdit|TestConnectorTopFieldsPagination)$' -count=1 -v
 ```
 
 The Core test starts an isolated in-process runtime and uses the signed
@@ -579,7 +591,7 @@ through the Core configuration and wraps the API body in `data` with `--json`.
 "$candidate_dir/apilot" --json workbench connector scope options "$scope_id" --revision 1 --field target --scope-type space --search beta
 "$candidate_dir/apilot" --json workbench connector scope preview "$scope_id" draft.json
 "$candidate_dir/apilot" --json workbench connector scope save "$scope_id" save.json
-"$candidate_dir/apilot" --json workbench task detail "$task_id" --segment fields --scope "$scope_id"
+"$candidate_dir/apilot" --json workbench task detail "$task_id" --segment top_fields --scope "$scope_id"
 ```
 
 Use the example draft for `draft.json`. For `save.json`, add the token
@@ -596,3 +608,9 @@ project for `beta-1` remains `Task Reporting` across the edit. In contrast,
 `alpha-1` has `Task Planning`, no tier, and a null estimate. Replay the first
 save and check for the stale revision. A file named `deny-scope-access` in this
 fixture's managed data directory makes access validation fail on demand.
+
+The paged fixture sends flag and estimate on the first page, tier on the
+second, and reporting project on the third. Check the header first and expect
+the declared order shown above in one response. An ordinary fields read still
+returns `next_page: "tier"`. The earlier `scope-edit` fixture mode remains
+available for an independent single-page comparison.

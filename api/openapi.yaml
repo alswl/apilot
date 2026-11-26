@@ -4765,11 +4765,13 @@ paths:
           schema:
             minLength: 1
             type: string
-        - explode: false
+        - description: Use top_fields for the initial task header. Ordinary fields and items remain paginated.
+          explode: false
           in: query
           name: segment
           schema:
             default: fields
+            description: Use top_fields for the initial task header. Ordinary fields and items remain paginated.
             enum:
               - fields
               - description
@@ -4777,6 +4779,7 @@ paths:
               - attachments
               - links
               - history
+              - top_fields
             type: string
         - explode: false
           in: query
