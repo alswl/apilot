@@ -87,7 +87,14 @@ func (m *mockup) moveSelection(delta int) {
 	if !m.taskBoard {
 		m.syncTaskPage(len(rows))
 	}
-	current := slices.IndexFunc(rows, func(index int) bool { return m.objects[index].ID == m.taskSelection })
+	current := -1
+	if m.taskBoard && m.inspector {
+		current = slices.Index(rows, m.selected)
+	}
+	if current < 0 {
+		// A detail outside the query has no position in the results.
+		current = slices.IndexFunc(rows, func(index int) bool { return m.objects[index].ID == m.taskSelection })
+	}
 	if current < 0 {
 		first, last := 0, len(rows)
 		if !m.taskBoard {
@@ -104,6 +111,10 @@ func (m *mockup) moveSelection(delta int) {
 
 func (m *mockup) selectTask(index int) {
 	m.taskBackStack = nil
+	if m.taskBoard && m.inspector {
+		m.openTask(index)
+		return
+	}
 	if m.taskBoard {
 		m.layout.revealSelection = true
 	} else {

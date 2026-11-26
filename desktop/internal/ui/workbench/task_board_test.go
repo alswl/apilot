@@ -264,3 +264,71 @@ func TestTaskPriorityNoneSortsWithMissingInBothLayouts(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskBoardDetailKeyboardKeepsReturnAnchor(t *testing.T) {
+	for _, tc := range []struct {
+		name, anchor, detail, want string
+		key                        ui.Key
+	}{
+		{"next from detail", "a", "b", "c", ui.KeyJ},
+		{"previous from detail", "a", "c", "b", ui.KeyK},
+		{"filtered-out uses anchor for next", "b", "outside", "c", ui.KeyJ},
+		{"filtered-out uses anchor for previous", "b", "outside", "a", ui.KeyK},
+		{"filtered-out without anchor starts at first", "", "outside", "a", ui.KeyJ},
+		{"filtered-out without anchor starts at last", "", "outside", "c", ui.KeyK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMockup()
+			m.useAdaptiveLayout()
+			m.taskBoard = true
+			m.objects = []sourceObject{
+				{ID: "a", Title: "Card Alpha", ConnectionID: "source", State: "open", Labels: []string{"matching"}},
+				{ID: "b", Title: "Card Bravo", ConnectionID: "source", State: "in_progress", Labels: []string{"matching"}},
+				{ID: "c", Title: "Card Charlie", ConnectionID: "source", State: "done", Labels: []string{"matching"}},
+				{ID: "outside", Title: "Outside task", ConnectionID: "source", State: "open"},
+			}
+			m.search, m.taskSelection = "#matching", tc.anchor
+			p := ui.NewTester(m.view, 880, 680)
+			target := slices.IndexFunc(m.objects, func(task sourceObject) bool { return task.ID == tc.detail })
+			p.Key(ui.Cmd, ui.KeyK)
+			p.Type(m.objects[target].Title)
+			p.Key(0, ui.KeyEnter)
+			if !m.inspector || m.currentTaskIndex() != target {
+				t.Fatalf("palette did not open %q", tc.detail)
+			}
+			p.Key(0, tc.key)
+			if !m.inspector || m.objects[m.currentTaskIndex()].ID != tc.want || m.taskSelection != tc.anchor {
+				t.Fatalf("detail=%q anchor=%q, want detail=%q anchor=%q", m.objects[m.currentTaskIndex()].ID, m.taskSelection, tc.want, tc.anchor)
+			}
+			p.Key(0, ui.KeyEscape)
+			if m.inspector || m.taskSelection != tc.anchor || m.search != "#matching" {
+				t.Fatalf("return lost the board anchor or query: selection=%q query=%q", m.taskSelection, m.search)
+			}
+			if anchor := m.currentTaskIndex(); anchor >= 0 && !p.Focused(m.objects[anchor].Title+" · source") {
+				t.Fatal("return should focus the original card")
+			}
+		})
+	}
+}
+
+func TestTaskBoardOpenFirstWithoutSelectionRestoresCardFocus(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.taskBoard = true
+	m.objects = []sourceObject{
+		{ID: "later", Title: "Alpha", State: "done", ConnectionID: "source"},
+		{ID: "first", Title: "Bravo", State: "open", ConnectionID: "source"},
+	}
+	p := ui.NewTester(m.view, 880, 680)
+	if m.taskSelection != "" {
+		t.Fatal("expected no initial selection")
+	}
+	p.Key(0, ui.KeyO)
+	if !m.inspector || m.currentTaskIndex() != 1 {
+		t.Fatal("o should open the first card in visual order")
+	}
+	p.Key(0, ui.KeyEscape)
+	if m.inspector || m.taskSelection != "first" || !p.Focused("Bravo · source") {
+		t.Fatalf("return should focus the first card, got %q", m.taskSelection)
+	}
+}

@@ -24,6 +24,9 @@ func (m *mockup) openCurrentTask() {
 		rows = m.pagedTaskRows(rows)
 	}
 	if len(rows) > 0 {
+		if m.taskBoard {
+			m.taskSelection = m.objects[rows[0]].ID
+		}
 		m.openFullTask(rows[0])
 	}
 }
