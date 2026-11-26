@@ -35,6 +35,10 @@ func scopedFixtureDescription(description *protocol.Description) {
 			{ID: "missing", Title: "Missing"},
 		}
 	}
+	if fixtureScopeMode == "scope-edit" {
+		description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target","filter"],"properties":{"target":{"type":"string"},"filter":{"type":"string","enum":["all","beta-only"]},"metadata":{"type":"object"}},"additionalProperties":false}`)
+		description.ScopeConfig.Fields["filter"] = protocol.ConfigField{Title: "Filter", Control: "select", DynamicOptions: true, DependsOn: []string{"target"}}
+	}
 	if fixtureScopeMode == "multi-endpoint2" {
 		description.EndpointConfig.Version = 2
 	}
@@ -129,6 +133,23 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		}
 		if fixtureScopeMode == "required-endpoint2" && !scopedEndpointVersionAccepted(p.EndpointConfig, p.EndpointSchemaVersion) {
 			return nil, badScope
+		}
+
+		if fixtureScopeMode == "scope-edit" && p.Field == "filter" {
+			var draft struct {
+				Target string `json:"target"`
+			}
+			if p.ConfigLevel != "scope" || p.Page != "" || json.Unmarshal(p.ScopeConfig, &draft) != nil ||
+				(draft.Target != "alpha" && draft.Target != "beta") {
+				return nil, badScope
+			}
+			result := protocol.ConfigOptions{Items: []protocol.ConfigOption{}}
+			for _, value := range []string{"all", "beta-only"} {
+				if strings.Contains(value, strings.ToLower(p.Search)) {
+					result.Items = append(result.Items, protocol.ConfigOption{Value: value, Label: value})
+				}
+			}
+			return result, nil
 		}
 
 		if p.Field != "target" {

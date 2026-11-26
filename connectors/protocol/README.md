@@ -445,9 +445,12 @@ The paths below are relative to `/v1/workbench`.
    the URL-encoded draft object as `scope_config`. The first page includes a
    separate `selected_option` for the saved value when the type matches. If
    the search result lacks its label, the response uses the ID as its label.
-   Forward `next_page` as `page` with the same search and draft. The optional
-   `connected_values` marks values already selected by sibling scopes of the
-   queried type. This request returns:
+   Forward `next_page` as `page` with the same search and draft. Edit lookups
+   omit `connected_values` and every item remains selectable. A sibling
+   scope can use the same filter, and even a shared target value does not
+   determine canonical identity. Save checks the validated `scope_ref`
+   within the saved Connector account and endpoint. Add Connection keeps
+   its existing hints. This edit request returns:
 
    ```json
    {
@@ -513,7 +516,15 @@ The paths below are relative to `/v1/workbench`.
    and annotations for overlapping source keys and hides confirmed departures.
    A failure before commit preserves the old configuration and cursor. Invalid
    config returns HTTP 400, access denial returns 403, and stale previews,
-   duplicate targets and active sync or writes return 409.
+   duplicate canonical scopes and active sync or writes return 409. A save
+   during an active sync returns `Wait for the active scope sync before saving`
+   before committing configuration and lets the run finish. The revision
+   check on sync publication separately protects against an outdated run
+   after a successful edit.
+
+   Boundary config is opaque JSON. Core preserves numeric tokens in the
+   scope read, preview and save responses. Automation should use `--json`
+   and decode numbers losslessly when round-tripping config.
 
 ### Task top fields
 
@@ -614,3 +625,28 @@ second, and reporting project on the third. Check the header first and expect
 the declared order shown above in one response. An ordinary fields read still
 returns `next_page: "tier"`. The earlier `scope-edit` fixture mode remains
 available for an independent single-page comparison.
+
+### Targeted shared-filter and precision reverify
+
+The single-page `scope-edit` fixture mode exposes a dynamic `filter` that
+depends on `target`. Use a separate disposable profile and build directory
+for this fixture. Keep the previously pinned `scope-edit-paged` package
+for the paired native comparison.
+
+```sh
+export GOTOOLCHAIN=go1.27.3 GOPROXY=off
+review_fixture="$(mktemp -d)"
+bash scripts/build-scoped-connector-fixture.sh "$review_fixture" 0.1.0 synthetic-scope-edit scope-edit
+go -C core test ./pkg/server -run '^TestConnectorScopeEdit$' -count=1 -v
+```
+
+With saved `space:alpha` and sibling `project:beta` using `filter=all`, query
+the first scope's edit options for `field=filter`, `scope_type=project` and
+`scope_config={"target":"alpha"}` (URL-encoded). The editable result has
+`items: [{"value":"all","label":"all"},{"value":"beta-only","label":"beta-only"}]`
+and omits `connected_values`. A preview for `project:beta` with `filter=beta-only`
+still resolves to the occupied canonical ref. Saving it returns HTTP 409
+and leaves the stored config intact. Preview, save and read back
+`space:beta` with `filter=beta-only` and
+`metadata: {"counter":9007199254740993}` to verify the unrounded numeric token
+in the wire responses.

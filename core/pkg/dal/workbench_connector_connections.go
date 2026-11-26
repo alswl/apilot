@@ -91,11 +91,11 @@ func (s *Store) WorkbenchConnectorEndpointConfig(connectorID, endpointRef, accou
 	return id, config, version, err
 }
 
-func (s *Store) WorkbenchConnectorSelectedValues(connectorID, endpointRef, accountRef, field, scopeType, excludingScopeID string) (map[string]bool, error) {
+func (s *Store) WorkbenchConnectorSelectedValues(connectorID, endpointRef, accountRef, field, scopeType string) (map[string]bool, error) {
 	rows, err := s.db.Query(`SELECT c.config -> '$.scope_config'
 		FROM workbench_connections c JOIN workbench_connector_connections p ON p.id=c.connector_connection_id
 		WHERE p.connector_id=? AND p.endpoint_ref=? AND p.account_ref=?
- AND coalesce(c.config ->> '$.scope_type','')=? AND c.id<>?`, connectorID, endpointRef, accountRef, scopeType, excludingScopeID)
+ AND coalesce(c.config ->> '$.scope_type','')=?`, connectorID, endpointRef, accountRef, scopeType)
 	if err != nil {
 		return nil, err
 	}

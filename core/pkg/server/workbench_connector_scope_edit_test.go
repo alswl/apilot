@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,8 +96,22 @@ func TestConnectorScopeEdit(t *testing.T) {
 	}
 	options = common.WorkbenchConnectorOptions{}
 	api.call(http.MethodGet, path+"/options?revision=1&field=target&scope_type=project&search=beta", nil, &options)
+	if len(options.Items) != 1 || options.Items[0].Value != "beta" || len(options.ConnectedValues) != 0 {
+		t.Fatalf("edit choices should leave canonical duplicate checks to save: %+v", options)
+	}
+	options = common.WorkbenchConnectorOptions{}
+	filterOptions := path + "/options?revision=1&field=filter&scope_type=project&scope_config=" + url.QueryEscape(`{"target":"alpha"}`)
+	api.call(http.MethodGet, filterOptions, nil, &options)
+	if !before.ConfigSchema.Fields["filter"].DynamicOptions || !slices.Equal(options.Items, []protocol.ConfigOption{
+		{Value: "all", Label: "all"}, {Value: "beta-only", Label: "beta-only"},
+	}) || len(options.ConnectedValues) != 0 {
+		t.Fatalf("project alpha must offer the filter 'all' already used by sibling project beta: %+v", options)
+	}
+	// The Add Connection endpoint keeps its existing selected-target hint.
+	options = common.WorkbenchConnectorOptions{}
+	api.call(http.MethodGet, "/connectors/"+connector+"/options?authorization_id="+auth.ID+"&field=target&scope_type=project&search=beta", nil, &options)
 	if !slices.Equal(options.ConnectedValues, []string{"beta"}) {
-		t.Fatalf("sibling selection should stay connected: %+v", options)
+		t.Fatalf("Add Connection lost its existing target hint: %+v", options)
 	}
 
 	expect := func(method, path string, input any, status int, fragment string) {
@@ -148,10 +163,33 @@ func TestConnectorScopeEdit(t *testing.T) {
 			t.Fatalf("failed request changed persisted scope: %+v", read)
 		}
 	}
-	draft := common.WorkbenchConnectorScopeDraft{Revision: before.Revision, ScopeType: protocol.ScopeSpace,
+	duplicate := common.WorkbenchConnectorScopeDraft{Revision: before.Revision, ScopeType: protocol.ScopeProject,
 		Config: map[string]any{"target": "beta", "filter": "beta-only"}, SchemaVersion: before.ConfigSchema.Version}
+	var duplicatePreview common.WorkbenchConnectorScopePreview
+	api.call(http.MethodPost, path+"/preview", duplicate, &duplicatePreview)
+	if duplicatePreview.After.ScopeRef != "project:beta" {
+		t.Fatalf("expected occupied canonical scope: %+v", duplicatePreview)
+	}
+	expect(http.MethodPut, path, common.WorkbenchConnectorScopeUpdate{WorkbenchConnectorScopeDraft: duplicate, PreviewToken: duplicatePreview.PreviewToken},
+		http.StatusConflict, "Another scope already uses this Connector target")
+	assertPrior()
+
+	draft := common.WorkbenchConnectorScopeDraft{Revision: before.Revision, ScopeType: protocol.ScopeSpace,
+		Config:        map[string]any{"target": "beta", "filter": "beta-only", "metadata": map[string]any{"counter": json.Number("9007199254740993")}},
+		SchemaVersion: before.ConfigSchema.Version}
+	assertExactCounter := func(wire json.RawMessage) {
+		t.Helper()
+		if !bytes.Contains(wire, []byte(`"counter":9007199254740993`)) {
+			t.Fatalf("Core lost the exact scope value on the wire: %s", wire)
+		}
+	}
 	var preview common.WorkbenchConnectorScopePreview
-	api.call(http.MethodPost, path+"/preview", draft, &preview)
+	var wire json.RawMessage
+	api.call(http.MethodPost, path+"/preview", draft, &wire)
+	assertExactCounter(wire)
+	if err := json.Unmarshal(wire, &preview); err != nil {
+		t.Fatal(err)
+	}
 	if !reflect.DeepEqual(preview.Before, before.Boundary) || preview.After.ScopeRef != "space:beta" ||
 		preview.After.Config["filter"] != "beta-only" || preview.PreviewToken == "" {
 		t.Fatalf("preview: %+v", preview)
@@ -209,7 +247,13 @@ func TestConnectorScopeEdit(t *testing.T) {
 	}
 
 	var updated common.WorkbenchConnectorScopeUpdateResult
-	api.call(http.MethodPut, path, update, &updated)
+	api.call(http.MethodPut, path, update, &wire)
+	assertExactCounter(wire)
+	if err := json.Unmarshal(wire, &updated); err != nil {
+		t.Fatal(err)
+	}
+	api.call(http.MethodGet, path, nil, &wire)
+	assertExactCounter(wire)
 	if updated.ScopeID != scope || updated.Revision != before.Revision+1 || updated.SyncStatus != "queued" ||
 		!reflect.DeepEqual(updated.Boundary, preview.After) {
 		t.Fatalf("saved scope: %+v", updated)

@@ -27,7 +27,7 @@ type workbenchManagedConnectorStore interface {
 	SaveWorkbenchConnectorConnection(common.WorkbenchConnectorConnection, []common.WorkbenchConnectorNewScope) (common.WorkbenchConnectorSaveResult, error)
 	WorkbenchConnectorConnection(string) (common.WorkbenchConnectorConnection, error)
 	WorkbenchConnectorEndpointConfig(string, string, string) (string, json.RawMessage, int, error)
-	WorkbenchConnectorSelectedValues(string, string, string, string, string, string) (map[string]bool, error)
+	WorkbenchConnectorSelectedValues(string, string, string, string, string) (map[string]bool, error)
 	ConfirmWorkbenchConnectorAccount(string, int64) error
 	WorkbenchConnectorScope(string) (common.WorkbenchConnectorStoredScope, error)
 	UpdateWorkbenchConnectorScope(common.WorkbenchConnectorStoredScope, common.WorkbenchConnectorBoundary, json.RawMessage) error
@@ -306,7 +306,7 @@ func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizati
 	if err != nil {
 		return out, err
 	}
-	connected, err := store.WorkbenchConnectorSelectedValues(id, account.EndpointRef, account.AccountRef, field, scopeType, "")
+	connected, err := store.WorkbenchConnectorSelectedValues(id, account.EndpointRef, account.AccountRef, field, scopeType)
 	if err != nil {
 		return out, err
 	}

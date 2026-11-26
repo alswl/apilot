@@ -103,14 +103,6 @@ func (s *Service) WorkbenchConnectorScopeOptions(ctx context.Context, id string,
 	if err := s.scopeEditCurrent(scope, connector); err != nil {
 		return common.WorkbenchConnectorOptions{}, err
 	}
-	store, err := s.managedConnectorStore()
-	if err != nil {
-		return out, err
-	}
-	connected, err := store.WorkbenchConnectorSelectedValues(scope.ConnectorID, options.EndpointRef, options.AccountRef, options.Field, options.ScopeType, id)
-	if err != nil {
-		return out, err
-	}
 	var selected string
 	if options.ScopeType == scope.ScopeType {
 		raw, _ := connectorBoundary(scope, schema).Config[options.Field].(json.RawMessage)
@@ -122,11 +114,6 @@ func (s *Service) WorkbenchConnectorScopeOptions(ctx context.Context, id string,
 			option = out.Items[i]
 		}
 		out.SelectedOption = &option
-	}
-	for _, item := range out.Items {
-		if connected[item.Value] {
-			out.ConnectedValues = append(out.ConnectedValues, item.Value)
-		}
 	}
 	return out, nil
 }
