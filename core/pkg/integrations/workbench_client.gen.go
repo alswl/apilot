@@ -83,6 +83,27 @@ func (e WorkbenchConnectionInputKind) Valid() bool {
 	}
 }
 
+// Defines values for WorkbenchConnectorScopeUpdateResultSyncStatus.
+const (
+	Queued         WorkbenchConnectorScopeUpdateResultSyncStatus = "queued"
+	SyncNotStarted WorkbenchConnectorScopeUpdateResultSyncStatus = "sync_not_started"
+	Unchanged      WorkbenchConnectorScopeUpdateResultSyncStatus = "unchanged"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchConnectorScopeUpdateResultSyncStatus enum.
+func (e WorkbenchConnectorScopeUpdateResultSyncStatus) Valid() bool {
+	switch e {
+	case Queued:
+		return true
+	case SyncNotStarted:
+		return true
+	case Unchanged:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SyncWorkbenchConnectorConnectionParamsMode.
 const (
 	SyncWorkbenchConnectorConnectionParamsModeAuto SyncWorkbenchConnectorConnectionParamsMode = "auto"
@@ -217,6 +238,7 @@ const (
 	Fields      GetWorkbenchTaskDetailParamsSegment = "fields"
 	History     GetWorkbenchTaskDetailParamsSegment = "history"
 	Links       GetWorkbenchTaskDetailParamsSegment = "links"
+	TopFields   GetWorkbenchTaskDetailParamsSegment = "top_fields"
 )
 
 // Valid indicates whether the value is a known member of the GetWorkbenchTaskDetailParamsSegment enum.
@@ -233,6 +255,8 @@ func (e GetWorkbenchTaskDetailParamsSegment) Valid() bool {
 	case History:
 		return true
 	case Links:
+		return true
+	case TopFields:
 		return true
 	default:
 		return false
@@ -509,6 +533,15 @@ type WorkbenchConnectorAuthorization struct {
 	VerificationUrl            *string   `json:"verification_url,omitempty"`
 }
 
+// WorkbenchConnectorBoundary defines model for WorkbenchConnectorBoundary.
+type WorkbenchConnectorBoundary struct {
+	Config        map[string]interface{} `json:"config"`
+	Label         string                 `json:"label"`
+	SchemaVersion int64                  `json:"schema_version"`
+	ScopeRef      string                 `json:"scope_ref"`
+	ScopeType     *string                `json:"scope_type,omitempty"`
+}
+
 // WorkbenchConnectorConnection defines model for WorkbenchConnectorConnection.
 type WorkbenchConnectorConnection struct {
 	AuthState    string `json:"auth_state"`
@@ -536,6 +569,7 @@ type WorkbenchConnectorOptions struct {
 	ConnectedValues *[]string       `json:"connected_values,omitempty"`
 	Items           *[]ConfigOption `json:"items"`
 	NextPage        *string         `json:"next_page,omitempty"`
+	SelectedOption  *ConfigOption   `json:"selected_option,omitempty"`
 }
 
 // WorkbenchConnectorOverview defines model for WorkbenchConnectorOverview.
@@ -580,6 +614,30 @@ type WorkbenchConnectorSaveResult struct {
 	Scopes       *[]WorkbenchConnectorScopeResult `json:"scopes"`
 }
 
+// WorkbenchConnectorScopeDraft defines model for WorkbenchConnectorScopeDraft.
+type WorkbenchConnectorScopeDraft struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchConnectorScopeDraft.json
+	Schema        *string                `json:"$schema,omitempty"`
+	Config        map[string]interface{} `json:"config"`
+	Revision      int64                  `json:"revision"`
+	SchemaVersion int64                  `json:"schema_version"`
+	ScopeType     *string                `json:"scope_type,omitempty"`
+}
+
+// WorkbenchConnectorScopeEdit defines model for WorkbenchConnectorScopeEdit.
+type WorkbenchConnectorScopeEdit struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchConnectorScopeEdit.json
+	Schema      *string                    `json:"$schema,omitempty"`
+	Boundary    WorkbenchConnectorBoundary `json:"boundary"`
+	Revision    int64                      `json:"revision"`
+	ScopeId     string                     `json:"scope_id"`
+	ScopeSchema ConfigSchema               `json:"scope_schema"`
+}
+
 // WorkbenchConnectorScopeOverview defines model for WorkbenchConnectorScopeOverview.
 type WorkbenchConnectorScopeOverview struct {
 	AccessState     string            `json:"access_state"`
@@ -596,6 +654,17 @@ type WorkbenchConnectorScopeOverview struct {
 	SnapshotVersion int64             `json:"snapshot_version"`
 }
 
+// WorkbenchConnectorScopePreview defines model for WorkbenchConnectorScopePreview.
+type WorkbenchConnectorScopePreview struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchConnectorScopePreview.json
+	Schema       *string                    `json:"$schema,omitempty"`
+	After        WorkbenchConnectorBoundary `json:"after"`
+	Before       WorkbenchConnectorBoundary `json:"before"`
+	PreviewToken string                     `json:"preview_token"`
+}
+
 // WorkbenchConnectorScopeResult defines model for WorkbenchConnectorScopeResult.
 type WorkbenchConnectorScopeResult struct {
 	ErrorKind *string `json:"error_kind,omitempty"`
@@ -604,6 +673,35 @@ type WorkbenchConnectorScopeResult struct {
 	ScopeRef  *string `json:"scope_ref,omitempty"`
 	Status    string  `json:"status"`
 }
+
+// WorkbenchConnectorScopeUpdate defines model for WorkbenchConnectorScopeUpdate.
+type WorkbenchConnectorScopeUpdate struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchConnectorScopeUpdate.json
+	Schema        *string                `json:"$schema,omitempty"`
+	Config        map[string]interface{} `json:"config"`
+	PreviewToken  string                 `json:"preview_token"`
+	Revision      int64                  `json:"revision"`
+	SchemaVersion int64                  `json:"schema_version"`
+	ScopeType     *string                `json:"scope_type,omitempty"`
+}
+
+// WorkbenchConnectorScopeUpdateResult defines model for WorkbenchConnectorScopeUpdateResult.
+type WorkbenchConnectorScopeUpdateResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchConnectorScopeUpdateResult.json
+	Schema      *string                                       `json:"$schema,omitempty"`
+	Boundary    WorkbenchConnectorBoundary                    `json:"boundary"`
+	Revision    int64                                         `json:"revision"`
+	ScopeId     string                                        `json:"scope_id"`
+	ScopeSchema ConfigSchema                                  `json:"scope_schema"`
+	SyncStatus  WorkbenchConnectorScopeUpdateResultSyncStatus `json:"sync_status"`
+}
+
+// WorkbenchConnectorScopeUpdateResultSyncStatus defines model for WorkbenchConnectorScopeUpdateResult.SyncStatus.
+type WorkbenchConnectorScopeUpdateResultSyncStatus string
 
 // WorkbenchConnectorSelection defines model for WorkbenchConnectorSelection.
 type WorkbenchConnectorSelection struct {
@@ -1002,16 +1100,17 @@ type WorkbenchTaskDetail struct {
 	// Schema A URL to the JSON Schema for this object.
 	//
 	// Examples: http://apilot/schemas/WorkbenchTaskDetail.json
-	Schema     *string                `json:"$schema,omitempty"`
-	Cached     bool                   `json:"cached"`
-	CapturedAt time.Time              `json:"captured_at"`
-	Fields     *map[string]FieldValue `json:"fields,omitempty"`
-	Items      *[]DetailItem          `json:"items,omitempty"`
-	NextPage   *string                `json:"next_page,omitempty"`
-	ScopeId    string                 `json:"scope_id"`
-	Segment    string                 `json:"segment"`
-	TaskId     string                 `json:"task_id"`
-	Version    string                 `json:"version"`
+	Schema     *string                  `json:"$schema,omitempty"`
+	Cached     bool                     `json:"cached"`
+	CapturedAt time.Time                `json:"captured_at"`
+	Fields     *map[string]FieldValue   `json:"fields,omitempty"`
+	Items      *[]DetailItem            `json:"items,omitempty"`
+	NextPage   *string                  `json:"next_page,omitempty"`
+	ScopeId    string                   `json:"scope_id"`
+	Segment    string                   `json:"segment"`
+	TaskId     string                   `json:"task_id"`
+	TopFields  *[]WorkbenchTaskTopField `json:"top_fields,omitempty"`
+	Version    string                   `json:"version"`
 }
 
 // WorkbenchTaskEvent defines model for WorkbenchTaskEvent.
@@ -1042,6 +1141,13 @@ type WorkbenchTaskResource struct {
 	Kind   string `json:"kind"`
 	TaskId string `json:"task_id"`
 	Title  string `json:"title"`
+}
+
+// WorkbenchTaskTopField defines model for WorkbenchTaskTopField.
+type WorkbenchTaskTopField struct {
+	Id    string     `json:"id"`
+	Title string     `json:"title"`
+	Value FieldValue `json:"value"`
 }
 
 // WorkbenchTaskWrite defines model for WorkbenchTaskWrite.
@@ -1078,6 +1184,16 @@ type SyncWorkbenchConnectorConnectionParams struct {
 
 // SyncWorkbenchConnectorConnectionParamsMode defines parameters for SyncWorkbenchConnectorConnection.
 type SyncWorkbenchConnectorConnectionParamsMode string
+
+// ListWorkbenchConnectorScopeConfigurationOptionsParams defines parameters for ListWorkbenchConnectorScopeConfigurationOptions.
+type ListWorkbenchConnectorScopeConfigurationOptionsParams struct {
+	Revision    int64   `form:"revision" json:"revision"`
+	ScopeType   *string `form:"scope_type,omitempty" json:"scope_type,omitempty"`
+	ScopeConfig *string `form:"scope_config,omitempty" json:"scope_config,omitempty"`
+	Field       string  `form:"field" json:"field"`
+	Search      *string `form:"search,omitempty" json:"search,omitempty"`
+	Page        *string `form:"page,omitempty" json:"page,omitempty"`
+}
 
 // ListWorkbenchConnectorOptionsParams defines parameters for ListWorkbenchConnectorOptions.
 type ListWorkbenchConnectorOptionsParams struct {
@@ -1158,6 +1274,7 @@ type ListWorkbenchTasksParamsState string
 
 // GetWorkbenchTaskDetailParams defines parameters for GetWorkbenchTaskDetail.
 type GetWorkbenchTaskDetailParams struct {
+	// Segment Use top_fields for the initial task header. Ordinary fields and items remain paginated.
 	Segment *GetWorkbenchTaskDetailParamsSegment `form:"segment,omitempty" json:"segment,omitempty"`
 	Page    *string                              `form:"page,omitempty" json:"page,omitempty"`
 	ScopeId *string                              `form:"scope_id,omitempty" json:"scope_id,omitempty"`
@@ -1183,6 +1300,12 @@ type StartWorkbenchConnectorAuthorizationJSONRequestBody = WorkbenchConnectorLog
 
 // SaveWorkbenchConnectorConnectionJSONRequestBody defines body for SaveWorkbenchConnectorConnection for application/json ContentType.
 type SaveWorkbenchConnectorConnectionJSONRequestBody = WorkbenchConnectorSaveInput
+
+// UpdateWorkbenchConnectorScopeConfigurationJSONRequestBody defines body for UpdateWorkbenchConnectorScopeConfiguration for application/json ContentType.
+type UpdateWorkbenchConnectorScopeConfigurationJSONRequestBody = WorkbenchConnectorScopeUpdate
+
+// PreviewWorkbenchConnectorScopeConfigurationJSONRequestBody defines body for PreviewWorkbenchConnectorScopeConfiguration for application/json ContentType.
+type PreviewWorkbenchConnectorScopeConfigurationJSONRequestBody = WorkbenchConnectorScopeDraft
 
 // ImportWorkbenchConnectorJSONRequestBody defines body for ImportWorkbenchConnector for application/json ContentType.
 type ImportWorkbenchConnectorJSONRequestBody = WorkbenchPluginImportInput
@@ -1460,6 +1583,44 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/workbench/connector-connections/{connection_id}/sync (the `SyncWorkbenchConnectorConnection` operationId).
 	SyncWorkbenchConnectorConnection(ctx context.Context, connectionId string, params *SyncWorkbenchConnectorConnectionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkbenchConnectorScopeConfiguration Read saved Connector scope configuration and current schema
+	//
+	// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration (the `GetWorkbenchConnectorScopeConfiguration` operationId).
+	GetWorkbenchConnectorScopeConfiguration(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateWorkbenchConnectorScopeConfigurationWithBody Save a previewed Connector scope change
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+	UpdateWorkbenchConnectorScopeConfigurationWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateWorkbenchConnectorScopeConfiguration Save a previewed Connector scope change
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+	UpdateWorkbenchConnectorScopeConfiguration(ctx context.Context, id string, body UpdateWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListWorkbenchConnectorScopeConfigurationOptions Read options for a saved Connector scope
+	//
+	// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration/options (the `ListWorkbenchConnectorScopeConfigurationOptions` operationId).
+	ListWorkbenchConnectorScopeConfigurationOptions(ctx context.Context, id string, params *ListWorkbenchConnectorScopeConfigurationOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PreviewWorkbenchConnectorScopeConfigurationWithBody Validate and preview a Connector scope change
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+	PreviewWorkbenchConnectorScopeConfigurationWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PreviewWorkbenchConnectorScopeConfiguration Validate and preview a Connector scope change
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+	PreviewWorkbenchConnectorScopeConfiguration(ctx context.Context, id string, body PreviewWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListWorkbenchConnectors List registered connectors
 	//
@@ -2153,6 +2314,104 @@ func (c *Client) GetWorkbenchConnectorConnection(ctx context.Context, connection
 // Corresponds with POST /v1/workbench/connector-connections/{connection_id}/sync (the `SyncWorkbenchConnectorConnection` operationId).
 func (c *Client) SyncWorkbenchConnectorConnection(ctx context.Context, connectionId string, params *SyncWorkbenchConnectorConnectionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSyncWorkbenchConnectorConnectionRequest(c.Server, connectionId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkbenchConnectorScopeConfiguration Read saved Connector scope configuration and current schema
+//
+// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration (the `GetWorkbenchConnectorScopeConfiguration` operationId).
+func (c *Client) GetWorkbenchConnectorScopeConfiguration(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkbenchConnectorScopeConfigurationRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateWorkbenchConnectorScopeConfigurationWithBody Save a previewed Connector scope change
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+func (c *Client) UpdateWorkbenchConnectorScopeConfigurationWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWorkbenchConnectorScopeConfigurationRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateWorkbenchConnectorScopeConfiguration Save a previewed Connector scope change
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+func (c *Client) UpdateWorkbenchConnectorScopeConfiguration(ctx context.Context, id string, body UpdateWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateWorkbenchConnectorScopeConfigurationRequest(c.Server, id, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListWorkbenchConnectorScopeConfigurationOptions Read options for a saved Connector scope
+//
+// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration/options (the `ListWorkbenchConnectorScopeConfigurationOptions` operationId).
+func (c *Client) ListWorkbenchConnectorScopeConfigurationOptions(ctx context.Context, id string, params *ListWorkbenchConnectorScopeConfigurationOptionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListWorkbenchConnectorScopeConfigurationOptionsRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PreviewWorkbenchConnectorScopeConfigurationWithBody Validate and preview a Connector scope change
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+func (c *Client) PreviewWorkbenchConnectorScopeConfigurationWithBody(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewWorkbenchConnectorScopeConfigurationRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PreviewWorkbenchConnectorScopeConfiguration Validate and preview a Connector scope change
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+func (c *Client) PreviewWorkbenchConnectorScopeConfiguration(ctx context.Context, id string, body PreviewWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPreviewWorkbenchConnectorScopeConfigurationRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3667,6 +3926,247 @@ func NewSyncWorkbenchConnectorConnectionRequest(server string, connectionId stri
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetWorkbenchConnectorScopeConfigurationRequest constructs an http.Request for the GetWorkbenchConnectorScopeConfiguration method
+func NewGetWorkbenchConnectorScopeConfigurationRequest(server string, id string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/connector-scopes/%s/configuration", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateWorkbenchConnectorScopeConfigurationRequest calls the generic UpdateWorkbenchConnectorScopeConfiguration builder with application/json body
+func NewUpdateWorkbenchConnectorScopeConfigurationRequest(server string, id string, body UpdateWorkbenchConnectorScopeConfigurationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateWorkbenchConnectorScopeConfigurationRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateWorkbenchConnectorScopeConfigurationRequestWithBody constructs an http.Request for the UpdateWorkbenchConnectorScopeConfiguration method, with any body, and a specified content type
+func NewUpdateWorkbenchConnectorScopeConfigurationRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/connector-scopes/%s/configuration", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewListWorkbenchConnectorScopeConfigurationOptionsRequest constructs an http.Request for the ListWorkbenchConnectorScopeConfigurationOptions method
+func NewListWorkbenchConnectorScopeConfigurationOptionsRequest(server string, id string, params *ListWorkbenchConnectorScopeConfigurationOptionsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/connector-scopes/%s/configuration/options", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "revision", params.Revision, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.ScopeType != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_type", *params.ScopeType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ScopeConfig != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "scope_config", *params.ScopeConfig, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", false, "field", params.Field, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Search != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Page != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "page", *params.Page, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPreviewWorkbenchConnectorScopeConfigurationRequest calls the generic PreviewWorkbenchConnectorScopeConfiguration builder with application/json body
+func NewPreviewWorkbenchConnectorScopeConfigurationRequest(server string, id string, body PreviewWorkbenchConnectorScopeConfigurationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPreviewWorkbenchConnectorScopeConfigurationRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewPreviewWorkbenchConnectorScopeConfigurationRequestWithBody constructs an http.Request for the PreviewWorkbenchConnectorScopeConfiguration method, with any body, and a specified content type
+func NewPreviewWorkbenchConnectorScopeConfigurationRequestWithBody(server string, id string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/connector-scopes/%s/configuration/preview", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -5532,6 +6032,48 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/workbench/connector-connections/{connection_id}/sync (the `SyncWorkbenchConnectorConnection` operationId).
 	SyncWorkbenchConnectorConnectionWithResponse(ctx context.Context, connectionId string, params *SyncWorkbenchConnectorConnectionParams, reqEditors ...RequestEditorFn) (*SyncWorkbenchConnectorConnectionResponse, error)
+
+	// GetWorkbenchConnectorScopeConfigurationWithResponse Read saved Connector scope configuration and current schema
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration (the `GetWorkbenchConnectorScopeConfiguration` operationId).
+	GetWorkbenchConnectorScopeConfigurationWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkbenchConnectorScopeConfigurationResponse, error)
+
+	// UpdateWorkbenchConnectorScopeConfigurationWithBodyWithResponse Save a previewed Connector scope change
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+	UpdateWorkbenchConnectorScopeConfigurationWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkbenchConnectorScopeConfigurationResponse, error)
+
+	// UpdateWorkbenchConnectorScopeConfigurationWithResponse Save a previewed Connector scope change
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+	UpdateWorkbenchConnectorScopeConfigurationWithResponse(ctx context.Context, id string, body UpdateWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkbenchConnectorScopeConfigurationResponse, error)
+
+	// ListWorkbenchConnectorScopeConfigurationOptionsWithResponse Read options for a saved Connector scope
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration/options (the `ListWorkbenchConnectorScopeConfigurationOptions` operationId).
+	ListWorkbenchConnectorScopeConfigurationOptionsWithResponse(ctx context.Context, id string, params *ListWorkbenchConnectorScopeConfigurationOptionsParams, reqEditors ...RequestEditorFn) (*ListWorkbenchConnectorScopeConfigurationOptionsResponse, error)
+
+	// PreviewWorkbenchConnectorScopeConfigurationWithBodyWithResponse Validate and preview a Connector scope change
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+	PreviewWorkbenchConnectorScopeConfigurationWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewWorkbenchConnectorScopeConfigurationResponse, error)
+
+	// PreviewWorkbenchConnectorScopeConfigurationWithResponse Validate and preview a Connector scope change
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+	PreviewWorkbenchConnectorScopeConfigurationWithResponse(ctx context.Context, id string, body PreviewWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewWorkbenchConnectorScopeConfigurationResponse, error)
 
 	// ListWorkbenchConnectorsWithResponse List registered connectors
 	//
@@ -7596,6 +8138,422 @@ func (r SyncWorkbenchConnectorConnectionResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SyncWorkbenchConnectorConnectionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetWorkbenchConnectorScopeConfigurationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchConnectorScopeEdit
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *ErrorModel
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetJSON200() *WorkbenchConnectorScopeEdit {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON401() *ErrorModel {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON403() *ErrorModel {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkbenchConnectorScopeConfigurationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkbenchConnectorScopeConfigurationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkbenchConnectorScopeConfigurationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkbenchConnectorScopeConfigurationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateWorkbenchConnectorScopeConfigurationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchConnectorScopeUpdateResult
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *ErrorModel
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetJSON200() *WorkbenchConnectorScopeUpdateResult {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON401() *ErrorModel {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON403() *ErrorModel {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateWorkbenchConnectorScopeConfigurationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListWorkbenchConnectorScopeConfigurationOptionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchConnectorOptions
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *ErrorModel
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetJSON200() *WorkbenchConnectorOptions {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON401() *ErrorModel {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON403() *ErrorModel {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListWorkbenchConnectorScopeConfigurationOptionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type PreviewWorkbenchConnectorScopeConfigurationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchConnectorScopePreview
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *ErrorModel
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetJSON200() *WorkbenchConnectorScopePreview {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON401() *ErrorModel {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON403() *ErrorModel {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PreviewWorkbenchConnectorScopeConfigurationResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9916,6 +10874,84 @@ func (c *ClientWithResponses) SyncWorkbenchConnectorConnectionWithResponse(ctx c
 	return ParseSyncWorkbenchConnectorConnectionResponse(rsp)
 }
 
+// GetWorkbenchConnectorScopeConfigurationWithResponse Read saved Connector scope configuration and current schema
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration (the `GetWorkbenchConnectorScopeConfiguration` operationId).
+func (c *ClientWithResponses) GetWorkbenchConnectorScopeConfigurationWithResponse(ctx context.Context, id string, reqEditors ...RequestEditorFn) (*GetWorkbenchConnectorScopeConfigurationResponse, error) {
+	rsp, err := c.GetWorkbenchConnectorScopeConfiguration(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkbenchConnectorScopeConfigurationResponse(rsp)
+}
+
+// UpdateWorkbenchConnectorScopeConfigurationWithBodyWithResponse Save a previewed Connector scope change
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+func (c *ClientWithResponses) UpdateWorkbenchConnectorScopeConfigurationWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateWorkbenchConnectorScopeConfigurationResponse, error) {
+	rsp, err := c.UpdateWorkbenchConnectorScopeConfigurationWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWorkbenchConnectorScopeConfigurationResponse(rsp)
+}
+
+// UpdateWorkbenchConnectorScopeConfigurationWithResponse Save a previewed Connector scope change
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /v1/workbench/connector-scopes/{id}/configuration (the `UpdateWorkbenchConnectorScopeConfiguration` operationId).
+func (c *ClientWithResponses) UpdateWorkbenchConnectorScopeConfigurationWithResponse(ctx context.Context, id string, body UpdateWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateWorkbenchConnectorScopeConfigurationResponse, error) {
+	rsp, err := c.UpdateWorkbenchConnectorScopeConfiguration(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateWorkbenchConnectorScopeConfigurationResponse(rsp)
+}
+
+// ListWorkbenchConnectorScopeConfigurationOptionsWithResponse Read options for a saved Connector scope
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/connector-scopes/{id}/configuration/options (the `ListWorkbenchConnectorScopeConfigurationOptions` operationId).
+func (c *ClientWithResponses) ListWorkbenchConnectorScopeConfigurationOptionsWithResponse(ctx context.Context, id string, params *ListWorkbenchConnectorScopeConfigurationOptionsParams, reqEditors ...RequestEditorFn) (*ListWorkbenchConnectorScopeConfigurationOptionsResponse, error) {
+	rsp, err := c.ListWorkbenchConnectorScopeConfigurationOptions(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListWorkbenchConnectorScopeConfigurationOptionsResponse(rsp)
+}
+
+// PreviewWorkbenchConnectorScopeConfigurationWithBodyWithResponse Validate and preview a Connector scope change
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+func (c *ClientWithResponses) PreviewWorkbenchConnectorScopeConfigurationWithBodyWithResponse(ctx context.Context, id string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PreviewWorkbenchConnectorScopeConfigurationResponse, error) {
+	rsp, err := c.PreviewWorkbenchConnectorScopeConfigurationWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewWorkbenchConnectorScopeConfigurationResponse(rsp)
+}
+
+// PreviewWorkbenchConnectorScopeConfigurationWithResponse Validate and preview a Connector scope change
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/connector-scopes/{id}/configuration/preview (the `PreviewWorkbenchConnectorScopeConfiguration` operationId).
+func (c *ClientWithResponses) PreviewWorkbenchConnectorScopeConfigurationWithResponse(ctx context.Context, id string, body PreviewWorkbenchConnectorScopeConfigurationJSONRequestBody, reqEditors ...RequestEditorFn) (*PreviewWorkbenchConnectorScopeConfigurationResponse, error) {
+	rsp, err := c.PreviewWorkbenchConnectorScopeConfiguration(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePreviewWorkbenchConnectorScopeConfigurationResponse(rsp)
+}
+
 // ListWorkbenchConnectorsWithResponse List registered connectors
 //
 // Returns a wrapper object for the known response body format(s).
@@ -11819,6 +12855,362 @@ func ParseSyncWorkbenchConnectorConnectionResponse(rsp *http.Response) (*SyncWor
 			return nil, err
 		}
 		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkbenchConnectorScopeConfigurationResponse parses an HTTP response from a GetWorkbenchConnectorScopeConfigurationWithResponse call
+func ParseGetWorkbenchConnectorScopeConfigurationResponse(rsp *http.Response) (*GetWorkbenchConnectorScopeConfigurationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkbenchConnectorScopeConfigurationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchConnectorScopeEdit
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateWorkbenchConnectorScopeConfigurationResponse parses an HTTP response from a UpdateWorkbenchConnectorScopeConfigurationWithResponse call
+func ParseUpdateWorkbenchConnectorScopeConfigurationResponse(rsp *http.Response) (*UpdateWorkbenchConnectorScopeConfigurationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateWorkbenchConnectorScopeConfigurationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchConnectorScopeUpdateResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListWorkbenchConnectorScopeConfigurationOptionsResponse parses an HTTP response from a ListWorkbenchConnectorScopeConfigurationOptionsWithResponse call
+func ParseListWorkbenchConnectorScopeConfigurationOptionsResponse(rsp *http.Response) (*ListWorkbenchConnectorScopeConfigurationOptionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListWorkbenchConnectorScopeConfigurationOptionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchConnectorOptions
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePreviewWorkbenchConnectorScopeConfigurationResponse parses an HTTP response from a PreviewWorkbenchConnectorScopeConfigurationWithResponse call
+func ParsePreviewWorkbenchConnectorScopeConfigurationResponse(rsp *http.Response) (*PreviewWorkbenchConnectorScopeConfigurationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PreviewWorkbenchConnectorScopeConfigurationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchConnectorScopePreview
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
 
 	}
 

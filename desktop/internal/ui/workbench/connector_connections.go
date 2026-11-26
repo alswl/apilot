@@ -104,6 +104,7 @@ func (m *mockup) connectorRelease(id string) *common.WorkbenchConnectorRelease {
 }
 
 type connectorLoginPanel struct {
+	edit                     *connectorScopeEditor
 	kind, parent             string
 	auth                     common.WorkbenchConnectorAuthorization
 	choices                  []protocol.ConfigOption
@@ -314,7 +315,7 @@ func (p *connectorLoginPanel) applyScopeResults(input common.WorkbenchConnectorS
 
 func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 	field := p.field()
-	if field == "" {
+	if field == "" || p.edit != nil && p.edit.stale {
 		return
 	}
 	if p.cancelQuery != nil {
@@ -342,6 +343,11 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 		if err != nil {
 			problem := common.ProtocolError(err)
 			p.problem = problem.Message
+			if p.edit != nil {
+				p.problem = ""
+				p.scopeEditError(err)
+				return
+			}
 			if problem.Code == "NOT_FOUND" || problem.Code == "CONFLICT" {
 				if m.connectorRecentAuthorization.ID == p.auth.ID {
 					m.connectorRecentAuthorization = common.WorkbenchConnectorAuthorization{}
@@ -355,11 +361,24 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 		}
 		p.problem = ""
 		p.next = value.NextPage
-		for _, connected := range value.ConnectedValues {
-			p.connected[connected] = true
-			delete(p.selected, connected)
+		if p.edit == nil {
+			for _, connected := range value.ConnectedValues {
+				p.connected[connected] = true
+				delete(p.selected, connected)
+			}
+		}
+		if p.edit != nil && value.SelectedOption != nil && !slices.ContainsFunc(value.Items, func(item protocol.ConfigOption) bool {
+			return item.Value == value.SelectedOption.Value
+		}) {
+			value.Items = append([]protocol.ConfigOption{*value.SelectedOption}, value.Items...)
 		}
 		for _, item := range value.Items {
+			if p.edit != nil {
+				key := [2]string{field, item.Value}
+				if p.edit.optionLabels[key] == "" || item.Label != item.Value {
+					p.edit.optionLabels[key] = item.Label
+				}
+			}
 			if !slices.ContainsFunc(p.choices, func(old protocol.ConfigOption) bool { return old.Value == item.Value }) {
 				p.choices = append(p.choices, item)
 			}
@@ -369,7 +388,11 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 	go func() {
 		defer cancel()
 		var result common.WorkbenchConnectorOptions
-		raw, err := remote.CallWorkbench(ctx, "workbench.connector.options", input)
+		method := "workbench.connector.options"
+		if p.edit != nil {
+			method = "workbench.connector.scope.options"
+		}
+		raw, err := remote.CallWorkbench(ctx, method, input)
 		if err == nil {
 			err = json.Unmarshal(raw, &result)
 		}
@@ -401,6 +424,9 @@ func (p *connectorLoginPanel) optionInput(page string) (map[string]any, string) 
 			return nil, tr("请输入有效的 JSON 对象")
 		}
 	}
+	if p.edit != nil && p.edit.legacyOptions {
+		scope = nil
+	}
 	if p.reuseEndpoint {
 		input["reuse_saved_endpoint"] = true
 		endpoint = nil
@@ -417,6 +443,12 @@ func (p *connectorLoginPanel) optionInput(page string) (map[string]any, string) 
 			return nil, fmt.Sprintf(tr("选项查询中每份配置最多 %d 字符。"), common.WorkbenchConnectorOptionsConfigLimit)
 		}
 		input[field] = string(raw)
+	}
+	if p.edit != nil {
+		delete(input, "authorization_id")
+		delete(input, "config_level")
+		delete(input, "reuse_saved_endpoint")
+		input["id"], input["revision"] = p.edit.id, p.edit.saved.Revision
 	}
 	if p.scopeType != "" && p.optionLevel != "endpoint" {
 		input["scope_type"] = p.scopeType
@@ -511,6 +543,10 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 	if p == nil {
 		return
 	}
+	if p.edit != nil {
+		m.connectorScopeEditDialog(c, p)
+		return
+	}
 	open := true
 	_, height := c.Size()
 	ui.Modal(c, &open, func() {
@@ -536,79 +572,7 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 						m.loadConnectorChoices(p, "")
 					}
 				}
-				if len(p.scopeTypes) > 1 && !p.finished() {
-					selected := slices.Index(p.scopeTypes, p.scopeType)
-					labels := make([]string, len(p.scopeTypes))
-					for i, kind := range p.scopeTypes {
-						labels[i] = tr("空间")
-						if kind == protocol.ScopeProject {
-							labels[i] = tr("项目")
-						}
-					}
-					if ui.Segmented(c.Key("scope-types"), &selected, labels...).Disabled(p.saving).Changed() && selected >= 0 && selected < len(p.scopeTypes) {
-						p.setScopeType(p.scopeTypes[selected])
-						m.loadConnectorChoices(p, "")
-					}
-				}
-				ui.Scroll(c.Key("scopes")).FillWidth().MaxHeight(max(160, min(height-250, 310))).Children(func() {
-					ui.Column(c).FillWidth().Gap(8).Children(func() {
-						if p.jsonDraft != nil && !p.finished() {
-							m.connectorJSONFields(c.Key("json-config"), p)
-						}
-						if p.form != nil && !p.finished() {
-							m.connectorDraftFields(c.Key("config"), p)
-						}
-						if (len(p.scopeTypes) != 0 || p.form != nil || p.jsonDraft != nil) && p.field() != "" && !p.finished() {
-							search := ui.TextInput(c.Key("search-scopes"), &p.search).Label(tr("搜索范围")).Placeholder(tr("搜索范围")).FillWidth().Disabled(p.saving)
-							if search.Changed() {
-								p.choices, p.next = nil, ""
-								clear(p.connected)
-								m.loadConnectorChoices(p, "")
-							}
-							if problem := p.searchLengthProblem(); problem != "" {
-								components.Muted(c.Key("search-length"), problem)
-							} else if p.busy && !p.saving {
-								components.StatusLabel(c.Key("loading-scopes"), components.Status{Text: tr("正在查找范围"), Loading: true, Color: c.Theme().TextMuted})
-							} else if len(p.choices) == 0 && p.problem == "" {
-								components.Muted(c.Key("no-scopes"), tr("没有符合条件的范围"))
-							}
-						}
-						optionKey := func(role, value string) *ui.Context {
-							return c.Key([5]string{role, p.scopeType, p.optionLevel, p.field(), value})
-						}
-						for _, choice := range p.choices {
-							if p.jsonDraft != nil {
-								if ui.Button(optionKey("option", choice.Value), choice.Label).Disabled(p.busy || p.saving || p.finished()).Clicked() {
-									p.jsonDraft.choose(p.optionLevel, p.optionField, choice.Value, p.reuseEndpoint)
-									p.activateOptions(connectorConfigField{})
-								}
-								continue
-							}
-							if p.form != nil && (p.optionLevel != "scope" || p.optionField != p.form.primary) {
-								if ui.Button(optionKey("option", choice.Value), choice.Label).Disabled(p.busy).Clicked() {
-									p.chooseDraftOption(choice.Value)
-									m.loadConnectorChoices(p, "")
-								}
-								continue
-							}
-							if p.connected[choice.Value] {
-								components.Muted(optionKey("connected", choice.Value), choice.Label+" · "+tr("已连接"))
-								continue
-							}
-							selected := p.selected[choice.Value]
-							if ui.Checkbox(optionKey("selection", choice.Value), &selected, choice.Label).Disabled(p.busy || p.finished()).Changed() {
-								if selected {
-									p.selected[choice.Value] = true
-								} else {
-									delete(p.selected, choice.Value)
-								}
-							}
-						}
-						if p.next != "" && ui.Button(optionKey("pagination", ""), tr("加载更多")).Disabled(p.busy || p.finished()).Clicked() {
-							m.loadConnectorChoices(p, p.next)
-						}
-					})
-				})
+				m.connectorScopeForm(c, p, height)
 				if p.jsonDraft == nil && (p.form == nil || p.form.primary != "") {
 					components.Muted(c.Key("selected-count"), fmt.Sprintf(tr("已选择 %d 项"), len(p.selected)))
 				}
@@ -674,6 +638,86 @@ func (m *mockup) connectorLoginDialog(c *ui.Context) {
 		}
 		m.connectorLogin = nil
 	}
+}
+
+func (m *mockup) connectorScopeForm(c *ui.Context, p *connectorLoginPanel, height float32) {
+	if len(p.scopeTypes) > 1 && !p.finished() {
+		selected := slices.Index(p.scopeTypes, p.scopeType)
+		labels := make([]string, len(p.scopeTypes))
+		for i, kind := range p.scopeTypes {
+			labels[i] = scopeTypeLabel(kind)
+		}
+		if ui.Segmented(c.Key("scope-types"), &selected, labels...).Disabled(p.saving).Changed() && selected >= 0 && selected < len(p.scopeTypes) {
+			p.setScopeType(p.scopeTypes[selected])
+			m.loadConnectorChoices(p, "")
+		}
+	}
+	ui.Scroll(c.Key("scopes")).FillWidth().MaxHeight(max(160, min(height-250, 310))).Children(func() {
+		ui.Column(c).FillWidth().Gap(8).Children(func() {
+			if p.jsonDraft != nil && !p.finished() {
+				m.connectorJSONFields(c.Key("json-config"), p)
+			}
+			if p.form != nil && !p.finished() {
+				m.connectorDraftFields(c.Key("config"), p)
+				if p.edit != nil {
+					connectorDraftTarget(c.Key("draft-target"), p)
+				}
+			}
+			if (len(p.scopeTypes) != 0 || p.form != nil || p.jsonDraft != nil) && p.field() != "" && !p.finished() {
+				search := ui.TextInput(c.Key("search-scopes"), &p.search).Label(tr("搜索范围")).Placeholder(tr("搜索范围")).FillWidth().Disabled(p.saving)
+				if search.Changed() {
+					p.choices, p.next = nil, ""
+					clear(p.connected)
+					m.loadConnectorChoices(p, "")
+				}
+				if problem := p.searchLengthProblem(); problem != "" {
+					components.Muted(c.Key("search-length"), problem)
+				} else if p.busy && !p.saving {
+					components.StatusLabel(c.Key("loading-scopes"), components.Status{Text: tr("正在查找范围"), Loading: true, Color: c.Theme().TextMuted})
+				} else if len(p.choices) == 0 && p.problem == "" {
+					components.Muted(c.Key("no-scopes"), tr("没有符合条件的范围"))
+				}
+			}
+			optionKey := func(role, value string) *ui.Context {
+				return c.Key([5]string{role, p.scopeType, p.optionLevel, p.field(), value})
+			}
+			for _, choice := range p.choices {
+				if p.edit != nil {
+					m.connectorEditOption(optionKey("edit-option", choice.Value), p, choice)
+					continue
+				}
+				if p.jsonDraft != nil {
+					if ui.Button(optionKey("option", choice.Value), choice.Label).Disabled(p.busy || p.saving || p.finished()).Clicked() {
+						p.jsonDraft.choose(p.optionLevel, p.optionField, choice.Value, p.reuseEndpoint)
+						p.activateOptions(connectorConfigField{})
+					}
+					continue
+				}
+				if p.form != nil && (p.optionLevel != "scope" || p.optionField != p.form.primary) {
+					if ui.Button(optionKey("option", choice.Value), choice.Label).Disabled(p.busy).Clicked() {
+						p.chooseDraftOption(choice.Value)
+						m.loadConnectorChoices(p, "")
+					}
+					continue
+				}
+				if p.connected[choice.Value] {
+					components.Muted(optionKey("connected", choice.Value), choice.Label+" · "+tr("已连接"))
+					continue
+				}
+				selected := p.selected[choice.Value]
+				if ui.Checkbox(optionKey("selection", choice.Value), &selected, choice.Label).Disabled(p.busy || p.finished()).Changed() {
+					if selected {
+						p.selected[choice.Value] = true
+					} else {
+						delete(p.selected, choice.Value)
+					}
+				}
+			}
+			if p.next != "" && ui.Button(optionKey("pagination", ""), tr("加载更多")).Disabled(p.busy || p.saving || p.finished()).Clicked() {
+				m.loadConnectorChoices(p, p.next)
+			}
+		})
+	})
 }
 
 func connectorStatus(value string) string {
@@ -837,6 +881,16 @@ func (m *mockup) managedScope(c *ui.Context, scope common.WorkbenchConnectorScop
 				write := conn.WriteEnabled
 				if ui.Checkbox(c.Key("write"), &write, tr("允许回写")).Disabled(disabled).Changed() {
 					m.toggleConnectorScopeWrite(conn, write)
+				}
+			}
+			if m.connectorDesktop() {
+				button := ui.Button(c.Key("edit-scope"), tr("配置同步范围")).Disabled(disabled || scope.AccessState == "auth_required")
+				if m.connectorScopeFocus == scope.ScopeID {
+					button.Focus()
+					m.connectorScopeFocus = ""
+				}
+				if button.Clicked() {
+					m.openConnectorScopeEdit(scope)
 				}
 			}
 			if ui.Button(c.Key("mapping"), tr("字段映射")).Disabled(disabled || scope.AccessState != "available").Clicked() {

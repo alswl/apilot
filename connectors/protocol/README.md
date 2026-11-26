@@ -391,3 +391,262 @@ go -C desktop test ./internal/ui/workbench -count=1 -run '^TestConnector011Deskt
 make check-workbench check-format
 make app
 ```
+
+## Editing an existing managed scope (#137)
+
+The Workbench API exposes the saved boundary and the current Connector scope
+schema. Use the **scope ID** from the connection's `scopes` array. All requests
+go to the existing user-owned Workbench Unix socket, with
+`X-Apilot-Workbench-Version: 1` and `Content-Type: application/json` for writes.
+The paths below are relative to `/v1/workbench`.
+
+1. `GET /connector-scopes/{id}/configuration` reads the edit state. For the
+   expanded synthetic fixture, a newly saved scope returns:
+
+   ```json
+   {
+     "scope_id": "SCOPE_ID",
+     "revision": 1,
+     "boundary": {
+       "scope_type": "space",
+       "scope_ref": "space:alpha",
+       "label": "Alpha",
+       "config": {"target":"alpha","filter":"all"},
+       "schema_version": 1
+     },
+     "scope_schema": {
+       "version": 1,
+       "schema": {
+         "type": "object",
+         "required": ["target","filter"],
+         "properties": {
+           "target": {"type":"string"},
+           "filter": {"type":"string","enum":["all","beta-only"]}
+         },
+         "additionalProperties": false
+       },
+       "fields": {
+         "target": {"title":"Target","control":"select","dynamic_options":true},
+         "filter": {"title":"Filter","control":"select"}
+       },
+       "types": ["project","space"]
+     }
+   }
+   ```
+
+   Keep the edit revision from this response. The stored schema version
+   describes the saved config. Use the current schema's version in the draft.
+   The host omits saved credential fields under the current schema. The edit
+   API accepts scope config only. It resolves account, endpoint, and credentials
+   from the saved connection.
+
+2. `GET /connector-scopes/{id}/configuration/options?revision=1&field=target&scope_type=space&search=beta`
+   searches with the saved account and endpoint. For a dependent field, pass
+   the URL-encoded draft object as `scope_config`. The first page includes a
+   separate `selected_option` for the saved value when the type matches. If
+   the search result lacks its label, the response uses the ID as its label.
+   Forward `next_page` as `page` with the same search and draft. Edit lookups
+   omit `connected_values` and every item remains selectable. A sibling
+   scope can use the same filter, and even a shared target value does not
+   determine canonical identity. Save checks the validated `scope_ref`
+   within the saved Connector account and endpoint. Add Connection keeps
+   its existing hints. This edit request returns:
+
+   ```json
+   {
+     "items": [{"value":"beta","label":"Beta"}],
+     "selected_option": {"value":"alpha","label":"alpha"}
+   }
+   ```
+
+   For a legacy Connector with no declared scope types, omit `scope_type`.
+   Development Connectors use the legacy option context and remain read-only
+   for source writes.
+
+3. `POST /connector-scopes/{id}/configuration/preview` validates the draft in
+   static and access modes through the existing `connection.validate` RPC.
+   Example request:
+
+   ```json
+   {"revision":1,"scope_type":"space","schema_version":1,"config":{"target":"beta","filter":"beta-only"}}
+   ```
+
+   Example response, with the token abbreviated:
+
+   ```json
+   {
+     "before":{"scope_type":"space","scope_ref":"space:alpha","label":"Alpha","schema_version":1,"config":{"target":"alpha","filter":"all"}},
+     "after":{"scope_type":"space","scope_ref":"space:beta","label":"Beta","schema_version":1,"config":{"target":"beta","filter":"beta-only"}},
+     "preview_token":"TOKEN_FROM_RESPONSE"
+   }
+   ```
+
+   The two boundaries describe the saved and proposed configuration. Membership
+   is reconciled through the next full sync.
+
+4. `PUT /connector-scopes/{id}/configuration` accepts the same draft and the
+   exact token from the preview response.
+
+   ```json
+   {"revision":1,"scope_type":"space","schema_version":1,"config":{"target":"beta","filter":"beta-only"},"preview_token":"TOKEN_FROM_RESPONSE"}
+   ```
+
+   A successful change returns the updated edit state:
+
+   ```json
+   {
+     "scope_id":"SCOPE_ID",
+     "revision":2,
+     "boundary":{"scope_type":"space","scope_ref":"space:beta","label":"Beta","schema_version":1,"config":{"target":"beta","filter":"beta-only"}},
+     "scope_schema":{
+       "version":1,
+       "schema":{"type":"object","required":["target","filter"],"properties":{"target":{"type":"string"},"filter":{"type":"string","enum":["all","beta-only"]}},"additionalProperties":false},
+       "fields":{"target":{"title":"Target","control":"select","dynamic_options":true},"filter":{"title":"Filter","control":"select"}},
+       "types":["project","space"]
+     },
+     "sync_status":"queued"
+   }
+   ```
+
+   `unchanged` means the boundary was already saved.
+   `sync_not_started` means the boundary committed and a full sync is required
+   via the regular sync path. During this interval the scope stays unavailable
+   for task actions. Poll GET `/connector-connections/{connection_id}` for the
+   scope's last run and access state. A successful full run reuses local IDs
+   and annotations for overlapping source keys and hides confirmed departures.
+   A failure before commit preserves the old configuration and cursor. Invalid
+   config returns HTTP 400, access denial returns 403, and stale previews,
+   duplicate canonical scopes and active sync or writes return 409. A save
+   during an active sync returns `Wait for the active scope sync before saving`
+   before committing configuration and lets the run finish. The revision
+   check on sync publication separately protects against an outdated run
+   after a successful edit.
+
+   Boundary config is opaque JSON. Core preserves numeric tokens in the
+   scope read, preview and save responses. Automation should use `--json`
+   and decode numbers losslessly when round-tripping config.
+
+### Task top fields
+
+A Connector can add an ordered `task_top_fields` array to its `describe`
+result. Each entry requires a unique, stable field ID and a display title.
+The ID is the key from that task's `tasks.detail` response for the `fields`
+segment. Example declaration:
+
+```json
+{
+  "task_top_fields": [
+    {"id":"reporting_project","title":"Reporting project"},
+    {"id":"external_tier","title":"Tier"},
+    {"id":"flagged","title":"Flagged"},
+    {"id":"estimate","title":"Estimate"},
+    {"id":"missing","title":"Missing"}
+  ]
+}
+```
+
+For the initial task header, use
+`GET /tasks/{task_id}/detail?segment=top_fields&scope_id={scope_id}` without a
+`page` parameter. The result has `segment: "top_fields"`, a source
+`version`, and an optional `top_fields` array. Core follows the Connector's
+ordinary `fields` cursors until all declared values are resolved or the
+Connector ends the listing. The aggregate omits `fields`, `items`, and
+`next_page`. The ordinary `segment=fields` request still returns a single
+page, including the original page-local `top_fields` projection.
+
+The header uses the ordinary task detail authorization, native task identity,
+and scoped availability. Missing, null, or malformed values are omitted.
+Explicit false and zero are included. Values retain their protocol types.
+Option and account values include the original ID and use that ID as their
+display label when the label is empty. Without declarations, the header is
+empty and no detail RPC is issued.
+
+The host reads at most 16 pages within 30 seconds. A mixed page version
+returns 409. A repeated cursor or exceeded page count returns 503. These
+errors return no aggregate. If a page fails with a transient source error,
+the existing fallback may return a previously completed, still-current
+header with `cached: true`. Example header fields for synthetic `beta-1`:
+
+```json
+{
+  "top_fields": [
+    {"id":"reporting_project","title":"Reporting project","value":{"type":"option","value":{"id":"reporting","label":"Task Reporting"}}},
+    {"id":"external_tier","title":"Tier","value":{"type":"option","value":{"id":"tier-2","label":"tier-2"}}},
+    {"id":"flagged","title":"Flagged","value":{"type":"boolean","value":false}},
+    {"id":"estimate","title":"Estimate","value":{"type":"number","value":0}}
+  ]
+}
+```
+
+### Fixed synthetic QA fixture and Core entry points
+
+Build once from the candidate and use the same `.apilotconnector` file and
+its generated `connector-publishers.json` for both GUI versions. Put the
+publisher file only in the disposable data directory for each run.
+
+```sh
+export GOTOOLCHAIN=go1.27.3 GOPROXY=off
+candidate_dir="$(mktemp -d)"
+go -C core build -o "$candidate_dir/apilot" ./cmd/apilot
+bash scripts/build-scoped-connector-fixture.sh "$candidate_dir" 0.1.0 synthetic-scope-edit scope-edit-paged
+go -C core test ./pkg/server -run '^(TestConnectorScopeEdit|TestConnectorTopFieldsPagination)$' -count=1 -v
+```
+
+The Core test starts an isolated in-process runtime and uses the signed
+fixture. With a separately running candidate runtime, set the same isolated
+`APILOT_DATA_DIR` for the CLI. The CLI resolves the Workbench Unix socket
+through the Core configuration and wraps the API body in `data` with `--json`.
+
+```sh
+"$candidate_dir/apilot" --json workbench connector scope show "$scope_id"
+"$candidate_dir/apilot" --json workbench connector scope options "$scope_id" --revision 1 --field target --scope-type space --search beta
+"$candidate_dir/apilot" --json workbench connector scope preview "$scope_id" draft.json
+"$candidate_dir/apilot" --json workbench connector scope save "$scope_id" save.json
+"$candidate_dir/apilot" --json workbench task detail "$task_id" --segment top_fields --scope "$scope_id"
+```
+
+Use the example draft for `draft.json`. For `save.json`, add the token
+returned by preview as `preview_token`. Both commands accept `-` for stdin.
+
+Create `space:alpha` with `filter=all` and confirm it contains `alpha-1` and
+`beta-1`. Optionally create the sibling `project:beta`. Save a local note on
+the space's `beta-1` and record its local ID. Edit the space to `space:beta` with
+`filter=beta-only`. Confirm a full sync leaves only `beta-1` in the edited
+scope, with the same ID and note. The sibling keeps its configuration and
+membership. With `filter=all`, `space:beta` would also contain `gamma-1`, so
+both the target and filter can be tested independently. The source reporting
+project for `beta-1` remains `Task Reporting` across the edit. In contrast,
+`alpha-1` has `Task Planning`, no tier, and a null estimate. Replay the first
+save and check for the stale revision. A file named `deny-scope-access` in this
+fixture's managed data directory makes access validation fail on demand.
+
+The paged fixture sends flag and estimate on the first page, tier on the
+second, and reporting project on the third. Check the header first and expect
+the declared order shown above in one response. An ordinary fields read still
+returns `next_page: "tier"`. The earlier `scope-edit` fixture mode remains
+available for an independent single-page comparison.
+
+### Targeted shared-filter and precision reverify
+
+The single-page `scope-edit` fixture mode exposes a dynamic `filter` that
+depends on `target`. Use a separate disposable profile and build directory
+for this fixture. Keep the previously pinned `scope-edit-paged` package
+for the paired native comparison.
+
+```sh
+export GOTOOLCHAIN=go1.27.3 GOPROXY=off
+review_fixture="$(mktemp -d)"
+bash scripts/build-scoped-connector-fixture.sh "$review_fixture" 0.1.0 synthetic-scope-edit scope-edit
+go -C core test ./pkg/server -run '^TestConnectorScopeEdit$' -count=1 -v
+```
+
+With saved `space:alpha` and sibling `project:beta` using `filter=all`, query
+the first scope's edit options for `field=filter`, `scope_type=project` and
+`scope_config={"target":"alpha"}` (URL-encoded). The editable result has
+`items: [{"value":"all","label":"all"},{"value":"beta-only","label":"beta-only"}]`
+and omits `connected_values`. A preview for `project:beta` with `filter=beta-only`
+still resolves to the occupied canonical ref. Saving it returns HTTP 409
+and leaves the stored config intact. Preview, save and read back
+`space:beta` with `filter=beta-only` and
+`metadata: {"counter":9007199254740993}` to verify the unrounded numeric token
+in the wire responses.

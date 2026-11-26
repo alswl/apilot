@@ -30,6 +30,14 @@ type connectorConfigForm struct {
 }
 
 func newConnectorConfigForm(plugin services.WorkbenchPlugin) *connectorConfigForm {
+	return buildConnectorConfigForm(plugin, false)
+}
+
+func buildConnectorConfigForm(plugin services.WorkbenchPlugin, exactNumbers bool) *connectorConfigForm {
+	decodeProperty := json.Unmarshal
+	if exactNumbers {
+		decodeProperty = decodeScopeEditJSON
+	}
 	if plugin.EndpointConfig == nil || plugin.ScopeConfig == nil {
 		return nil
 	}
@@ -68,7 +76,7 @@ func newConnectorConfigForm(plugin services.WorkbenchPlugin) *connectorConfigFor
 				ReadOnly  bool   `json:"readOnly"`
 				Default   any    `json:"default"`
 			}
-			if json.Unmarshal(schema.Properties[key], &property) != nil || property.WriteOnly || property.ReadOnly || property.Format == "password" {
+			if decodeProperty(schema.Properties[key], &property) != nil || property.WriteOnly || property.ReadOnly || property.Format == "password" {
 				return nil
 			}
 			field := connectorConfigField{key: key, kind: property.Type, level: config.level, meta: config.schema.Fields[key],
@@ -236,7 +244,7 @@ func (m *mockup) connectorDraftFields(c *ui.Context, p *connectorLoginPanel) {
 			changed = components.TextField(key, field.meta.Title, &text).Disabled(disabled).Changed()
 			if changed {
 				p.fieldDrafts[field.level+"."+field.key] = text
-				value = parseConfigField(field.kind, text)
+				value = p.parseDraftField(field.kind, text)
 			}
 		}
 		if changed {
@@ -265,6 +273,25 @@ func configFieldText(value any) string {
 		data, _ := json.Marshal(value)
 		return string(data)
 	}
+}
+
+func (p *connectorLoginPanel) parseDraftField(kind, text string) any {
+	if p.edit != nil {
+		if kind == "number" {
+			text = strings.TrimSpace(text)
+			if text != "" && (text[0] == '-' || text[0] >= '0' && text[0] <= '9') && json.Valid([]byte(text)) {
+				return json.Number(text)
+			}
+			return nil
+		}
+		if kind == "integer" {
+			if number, ok := parseConfigField(kind, text).(int64); ok {
+				return json.Number(strconv.FormatInt(number, 10))
+			}
+			return nil
+		}
+	}
+	return parseConfigField(kind, text)
 }
 
 func parseConfigField(kind, text string) any {

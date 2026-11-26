@@ -15,7 +15,7 @@ func init() {
 			}
 			return showWorkbench("workbench.task.detail", params)
 		}}
-	cmd.Flags().StringVar(&segment, "segment", "fields", "Detail segment")
+	cmd.Flags().StringVar(&segment, "segment", "fields", "Detail segment (top_fields reads the complete task header)")
 	cmd.Flags().StringVar(&scopeID, "scope", "", "Expected saved Connector scope ID")
 	cmd.Flags().StringVar(&page, "page", "", "Page key from the previous result")
 	workbenchTaskCmd.AddCommand(cmd)

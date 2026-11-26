@@ -215,6 +215,7 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 		ui.Scroll(scrollKey).Grow(1).MinHeight(0).FillWidth().TrackScroll(&thread.scroll).Children(func() {
 			ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
 				ui.Column(c).FillWidth().MaxWidth(760).Gap(12).Children(func() {
+					m.connectorTaskHeader(c.Key("connector-header"), object, true)
 					m.taskDescription(c.Key("description"), object)
 					m.taskPageProperties(c.Key("properties"), object)
 					m.taskDetailTabs(c.Key("body"), object, detail, thread)

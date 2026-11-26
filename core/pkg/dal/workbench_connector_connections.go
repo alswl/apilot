@@ -289,3 +289,50 @@ func (s *Store) ConfigureWorkbenchConnectorScope(id, name string, version int64,
 	}
 	return err
 }
+
+func (s *Store) UpdateWorkbenchConnectorScope(scope common.WorkbenchConnectorStoredScope, boundary common.WorkbenchConnectorBoundary, config json.RawMessage) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var occupied, busy bool
+	err = tx.QueryRow(`SELECT
+		EXISTS(SELECT 1 FROM workbench_connections WHERE connector_connection_id=? AND scope_ref=? AND id<>?),
+		EXISTS(SELECT 1 FROM workbench_task_writes WHERE connection_id=? AND phase IN ('accepted','dispatching'))`,
+		scope.ConnectionID, boundary.ScopeRef, scope.ScopeID, scope.ScopeID).Scan(&occupied, &busy)
+	if err != nil {
+		return err
+	}
+	if occupied {
+		return common.Err("CONFLICT", "Another scope already uses this Connector target")
+	}
+	if busy {
+		return common.Err("CONFLICT", "Wait for the active Connector write before saving")
+	}
+	result, err := tx.Exec(`UPDATE workbench_connections SET scope_ref=?,
+		config=json_set(config,'$.name',?,'$.scope_type',?,'$.scope_config',json(?),'$.scope_schema_version',?,'$.version',version+1),
+		version=version+1,config_revision=config_revision+1,snapshot_version=snapshot_version+1,
+		access_state='unknown',sync_checkpoint=NULL,last_full_success=NULL,last_success=NULL
+		WHERE id=? AND connector_connection_id=? AND config_revision=?
+		AND EXISTS(SELECT 1 FROM workbench_connector_connections p WHERE p.id=? AND p.auth_generation=? AND p.auth_state='authorized')`,
+		boundary.ScopeRef, boundary.Label, boundary.ScopeType, string(config), boundary.SchemaVersion,
+		scope.ScopeID, scope.ConnectionID, scope.ConfigRevision, scope.ConnectionID, scope.AuthGeneration)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return common.Err("STALE_REVISION", "Connector scope changed")
+	}
+	if _, err := tx.Exec("DELETE FROM workbench_task_detail_cache WHERE task_id IN (SELECT id FROM workbench_objects WHERE connection_id=?)", scope.ScopeID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE workbench_revision SET revision=revision+1"); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

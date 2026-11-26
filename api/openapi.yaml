@@ -556,6 +556,27 @@ components:
         - status
         - expires_at
       type: object
+    WorkbenchConnectorBoundary:
+      additionalProperties: false
+      properties:
+        config:
+          additionalProperties: {}
+          type: object
+        label:
+          type: string
+        schema_version:
+          format: int64
+          type: integer
+        scope_ref:
+          type: string
+        scope_type:
+          type: string
+      required:
+        - scope_ref
+        - label
+        - config
+        - schema_version
+      type: object
     WorkbenchConnectorConnection:
       additionalProperties: false
       properties:
@@ -614,6 +635,8 @@ components:
             - "null"
         next_page:
           type: string
+        selected_option:
+          $ref: "#/components/schemas/ConfigOption"
       required:
         - items
       type: object
@@ -717,6 +740,59 @@ components:
       required:
         - scopes
       type: object
+    WorkbenchConnectorScopeDraft:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchConnectorScopeDraft.json
+          format: uri
+          readOnly: true
+          type: string
+        config:
+          additionalProperties: {}
+          type: object
+        revision:
+          format: int64
+          minimum: 1
+          type: integer
+        schema_version:
+          format: int64
+          minimum: 1
+          type: integer
+        scope_type:
+          type: string
+      required:
+        - revision
+        - config
+        - schema_version
+      type: object
+    WorkbenchConnectorScopeEdit:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchConnectorScopeEdit.json
+          format: uri
+          readOnly: true
+          type: string
+        boundary:
+          $ref: "#/components/schemas/WorkbenchConnectorBoundary"
+        revision:
+          format: int64
+          type: integer
+        scope_id:
+          type: string
+        scope_schema:
+          $ref: "#/components/schemas/ConfigSchema"
+      required:
+        - scope_id
+        - revision
+        - boundary
+        - scope_schema
+      type: object
     WorkbenchConnectorScopeOverview:
       additionalProperties: false
       properties:
@@ -759,6 +835,27 @@ components:
         - mapping_revision
         - snapshot_version
       type: object
+    WorkbenchConnectorScopePreview:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchConnectorScopePreview.json
+          format: uri
+          readOnly: true
+          type: string
+        after:
+          $ref: "#/components/schemas/WorkbenchConnectorBoundary"
+        before:
+          $ref: "#/components/schemas/WorkbenchConnectorBoundary"
+        preview_token:
+          type: string
+      required:
+        - before
+        - after
+        - preview_token
+      type: object
     WorkbenchConnectorScopeResult:
       additionalProperties: false
       properties:
@@ -774,6 +871,70 @@ components:
           type: string
       required:
         - status
+      type: object
+    WorkbenchConnectorScopeUpdate:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchConnectorScopeUpdate.json
+          format: uri
+          readOnly: true
+          type: string
+        config:
+          additionalProperties: {}
+          type: object
+        preview_token:
+          minLength: 1
+          type: string
+        revision:
+          format: int64
+          minimum: 1
+          type: integer
+        schema_version:
+          format: int64
+          minimum: 1
+          type: integer
+        scope_type:
+          type: string
+      required:
+        - preview_token
+        - revision
+        - config
+        - schema_version
+      type: object
+    WorkbenchConnectorScopeUpdateResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchConnectorScopeUpdateResult.json
+          format: uri
+          readOnly: true
+          type: string
+        boundary:
+          $ref: "#/components/schemas/WorkbenchConnectorBoundary"
+        revision:
+          format: int64
+          type: integer
+        scope_id:
+          type: string
+        scope_schema:
+          $ref: "#/components/schemas/ConfigSchema"
+        sync_status:
+          enum:
+            - unchanged
+            - queued
+            - sync_not_started
+          type: string
+      required:
+        - sync_status
+        - scope_id
+        - revision
+        - boundary
+        - scope_schema
       type: object
     WorkbenchConnectorSelection:
       additionalProperties: false
@@ -1700,6 +1861,12 @@ components:
           type: string
         task_id:
           type: string
+        top_fields:
+          items:
+            $ref: "#/components/schemas/WorkbenchTaskTopField"
+          type:
+            - array
+            - "null"
         version:
           type: string
       required:
@@ -1770,6 +1937,20 @@ components:
         - title
         - body
         - task_id
+      type: object
+    WorkbenchTaskTopField:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        value:
+          $ref: "#/components/schemas/FieldValue"
+      required:
+        - value
+        - id
+        - title
       type: object
     WorkbenchTaskWrite:
       additionalProperties: false
@@ -3008,6 +3189,352 @@ paths:
       summary: Run sync for the scopes of one connection
       tags:
         - Sync
+  /v1/workbench/connector-scopes/{id}/configuration:
+    get:
+      operationId: getWorkbenchConnectorScopeConfiguration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchConnectorScopeEdit"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Read saved Connector scope configuration and current schema
+      tags:
+        - Connections
+    put:
+      operationId: updateWorkbenchConnectorScopeConfiguration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchConnectorScopeUpdate"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchConnectorScopeUpdateResult"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Save a previewed Connector scope change
+      tags:
+        - Connections
+  /v1/workbench/connector-scopes/{id}/configuration/options:
+    get:
+      operationId: listWorkbenchConnectorScopeConfigurationOptions
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: revision
+          required: true
+          schema:
+            format: int64
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: scope_type
+          schema:
+            type: string
+        - explode: false
+          in: query
+          name: scope_config
+          schema:
+            maxLength: 4096
+            type: string
+        - explode: false
+          in: query
+          name: field
+          required: true
+          schema:
+            maxLength: 100
+            minLength: 1
+            type: string
+        - explode: false
+          in: query
+          name: search
+          schema:
+            maxLength: 200
+            type: string
+        - explode: false
+          in: query
+          name: page
+          schema:
+            maxLength: 512
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchConnectorOptions"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Read options for a saved Connector scope
+      tags:
+        - Connections
+  /v1/workbench/connector-scopes/{id}/configuration/preview:
+    post:
+      operationId: previewWorkbenchConnectorScopeConfiguration
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            minLength: 1
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkbenchConnectorScopeDraft"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchConnectorScopePreview"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Validate and preview a Connector scope change
+      tags:
+        - Connections
   /v1/workbench/connectors:
     get:
       operationId: listWorkbenchConnectors
@@ -4238,11 +4765,13 @@ paths:
           schema:
             minLength: 1
             type: string
-        - explode: false
+        - description: Use top_fields for the initial task header. Ordinary fields and items remain paginated.
+          explode: false
           in: query
           name: segment
           schema:
             default: fields
+            description: Use top_fields for the initial task header. Ordinary fields and items remain paginated.
             enum:
               - fields
               - description
@@ -4250,6 +4779,7 @@ paths:
               - attachments
               - links
               - history
+              - top_fields
             type: string
         - explode: false
           in: query

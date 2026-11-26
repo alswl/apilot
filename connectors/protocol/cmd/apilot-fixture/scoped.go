@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +24,21 @@ func scopedFixtureDescription(description *protocol.Description) {
 	description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target"],"properties":{"target":{"type":"string"}},"additionalProperties":false}`)
 	description.ScopeConfig.Fields = map[string]protocol.ConfigField{"target": {Title: "Target", Control: "select", DynamicOptions: true}}
 	description.ScopeConfig.Types = []string{protocol.ScopeProject, protocol.ScopeSpace}
+	if scopedEditFixture() {
+		description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target","filter"],"properties":{"target":{"type":"string"},"filter":{"type":"string","enum":["all","beta-only"]}},"additionalProperties":false}`)
+		description.ScopeConfig.Fields["filter"] = protocol.ConfigField{Title: "Filter", Control: "select"}
+		description.TaskTopFields = []protocol.TaskTopField{
+			{ID: "reporting_project", Title: "Reporting project"},
+			{ID: "external_tier", Title: "Tier"},
+			{ID: "flagged", Title: "Flagged"},
+			{ID: "estimate", Title: "Estimate"},
+			{ID: "missing", Title: "Missing"},
+		}
+	}
+	if fixtureScopeMode == "scope-edit" {
+		description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target","filter"],"properties":{"target":{"type":"string"},"filter":{"type":"string","enum":["all","beta-only"]},"metadata":{"type":"object"}},"additionalProperties":false}`)
+		description.ScopeConfig.Fields["filter"] = protocol.ConfigField{Title: "Filter", Control: "select", DynamicOptions: true, DependsOn: []string{"target"}}
+	}
 	if fixtureScopeMode == "multi-endpoint2" {
 		description.EndpointConfig.Version = 2
 	}
@@ -119,6 +135,23 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 			return nil, badScope
 		}
 
+		if fixtureScopeMode == "scope-edit" && p.Field == "filter" {
+			var draft struct {
+				Target string `json:"target"`
+			}
+			if p.ConfigLevel != "scope" || p.Page != "" || json.Unmarshal(p.ScopeConfig, &draft) != nil ||
+				(draft.Target != "alpha" && draft.Target != "beta") {
+				return nil, badScope
+			}
+			result := protocol.ConfigOptions{Items: []protocol.ConfigOption{}}
+			for _, value := range []string{"all", "beta-only"} {
+				if strings.Contains(value, strings.ToLower(p.Search)) {
+					result.Items = append(result.Items, protocol.ConfigOption{Value: value, Label: value})
+				}
+			}
+			return result, nil
+		}
+
 		if p.Field != "target" {
 			return nil, badScope
 		}
@@ -131,6 +164,9 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 				return nil, badScope
 			}
 			options = []protocol.ConfigOption{{Value: "alpha", Label: "Alpha"}}
+			if scopedEditFixture() {
+				options = append(options, protocol.ConfigOption{Value: "beta", Label: "Beta"})
+			}
 		default:
 			return nil, badScope
 		}
@@ -161,6 +197,7 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		return nil, protocol.Problem(protocol.AuthRequired, "account", "Synthetic account unavailable")
 	}
 	var selection struct {
+		Filter   string                     `json:"filter"`
 		Target   string                     `json:"target"`
 		Board    string                     `json:"board"`
 		Metadata map[string]json.RawMessage `json:"metadata"`
@@ -187,8 +224,19 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		projects = []string{selection.Target}
 	case scope.ScopeType == protocol.ScopeSpace && selection.Target == "alpha" && fixtureScopeMode != "project":
 		projects = []string{"alpha", "beta"}
+	case scope.ScopeType == protocol.ScopeSpace && selection.Target == "beta" && scopedEditFixture():
+		projects = []string{"beta", "gamma"}
 	default:
 		return nil, badScope
+	}
+	if scopedEditFixture() {
+		switch selection.Filter {
+		case "all":
+		case "beta-only":
+			projects = slices.DeleteFunc(projects, func(project string) bool { return project != "beta" })
+		default:
+			return nil, badScope
+		}
 	}
 	ref := scope.ScopeType + ":" + selection.Target
 	if fixtureScopeMode == "renamed" {
@@ -198,6 +246,11 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		var p protocol.ValidateParams
 		if err := protocol.DecodeParams(req, &p); err != nil {
 			return nil, err
+		}
+		if scopedEditFixture() && p.Mode == "access" {
+			if _, err := os.Stat(filepath.Join(os.Getenv("APILOT_CONNECTOR_DATA_DIR"), "deny-scope-access")); err == nil {
+				return nil, protocol.Problem(protocol.AccessDenied, "scope", "Synthetic access validation denied")
+			}
 		}
 		if p.Mode == "static" && scope.ScopeRef == "" || p.Mode == "access" && scope.ScopeRef == ref {
 			return protocol.ValidatedScope{ScopeRef: ref, EndpointRef: scopedEndpoint, Label: map[string]string{"alpha": "Alpha", "beta": "Beta"}[selection.Target]}, nil
@@ -271,6 +324,9 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		}
 		record := scopedRecord(p.SourceID)
 		if req.Method == protocol.TaskDetail {
+			if fixtureScopeMode == "scope-edit-paged" && p.Segment == "fields" {
+				return scopedTopFieldsFixturePage(p, record)
+			}
 			return fixtureDetailPage(p, record)
 		}
 		return protocol.ConnectorEditMetadataResult{EditMetadataResult: fixtureEditMetadata(record), Observation: &protocol.DetailPage{Version: record.SourceVersion, Fields: record.Fields}}, nil
@@ -300,6 +356,18 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 func scopedRecord(project string) protocol.SourceRecord {
 	record := fixtureCurrent(project, "1")
 	record.SourceID = project
+	if scopedEditFixture() {
+		record.Number = project + "-1"
+		record.Fields["reporting_project"] = protocol.Value(protocol.FieldOption, protocol.Option{ID: "reporting", Label: "Task Reporting"})
+		record.Fields["external_tier"] = protocol.Value(protocol.FieldOption, map[string]string{"id": "tier-2"})
+		record.Fields["flagged"] = protocol.Value(protocol.FieldBoolean, false)
+		record.Fields["estimate"] = protocol.Value(protocol.FieldNumber, 0)
+		if project == "alpha" {
+			record.Fields["reporting_project"] = protocol.Value(protocol.FieldOption, protocol.Option{ID: "planning", Label: "Task Planning"})
+			record.Fields["estimate"] = protocol.Value(protocol.FieldNumber, nil)
+			delete(record.Fields, "external_tier")
+		}
+	}
 	return record
 }
 
@@ -319,4 +387,49 @@ func scopedEndpointVersionAccepted(config json.RawMessage, version int) bool {
 		return len(fields) == 0
 	}
 	return version == 2 && string(fields["region"]) == `"east"`
+}
+
+func scopedEditFixture() bool {
+	return fixtureScopeMode == "scope-edit" || fixtureScopeMode == "scope-edit-paged"
+}
+
+func scopedTopFieldsFixturePage(p protocol.DetailParams, record protocol.SourceRecord) (any, *protocol.RPCError) {
+	page := protocol.DetailPage{Version: record.SourceVersion, Fields: map[string]protocol.FieldValue{}}
+	mode, _ := os.ReadFile(filepath.Join(os.Getenv("APILOT_CONNECTOR_DATA_DIR"), "top-fields-page-mode"))
+	if string(mode) == "limit" {
+		page.NextPage = p.Page + "x"
+		return page, nil
+	}
+	switch p.Page {
+	case "":
+		if string(mode) == "all-first" {
+			page.Fields = record.Fields
+			page.Fields["missing"] = protocol.Value(protocol.FieldText, "Resolved")
+			page.NextPage = "unneeded"
+			break
+		}
+		page.Fields = record.Fields
+		delete(page.Fields, "reporting_project")
+		delete(page.Fields, "external_tier")
+		page.NextPage = "tier"
+	case "tier":
+		if string(mode) == "temporary" {
+			return nil, protocol.Problem(protocol.Temporary, "object", "Synthetic detail unavailable")
+		}
+		if string(mode) == "mixed" {
+			page.Version += "-changed"
+		}
+		if value, ok := record.Fields["external_tier"]; ok {
+			page.Fields["external_tier"] = value
+		}
+		page.NextPage = "reporting"
+	case "reporting":
+		page.Fields["reporting_project"] = record.Fields["reporting_project"]
+		if string(mode) == "cycle" {
+			page.NextPage = "tier"
+		}
+	default:
+		return nil, protocol.Problem(protocol.InvalidConfig, "object", "Unknown synthetic detail page")
+	}
+	return page, nil
 }
