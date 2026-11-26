@@ -162,3 +162,105 @@ func TestTaskBoardSavedLayoutAndObsidianPriority(t *testing.T) {
 		t.Fatalf("saved view round trip: %+v", m.viewState())
 	}
 }
+
+func TestTaskBoardReturnFromRelatedAndPaletteDetails(t *testing.T) {
+	for _, entry := range []string{"related", "palette"} {
+		t.Run(entry, func(t *testing.T) {
+			m := newMockup()
+			m.useAdaptiveLayout()
+			m.taskBoard = true
+			m.layout.detailHidden = true
+			m.objects[0].State = "done"
+			m.objects[1].State = "open"
+			m.search = "验证老订单退款"
+			p := ui.NewTester(m.view, 880, 680)
+			click(t, p, "向右浏览看板")
+			x := m.taskBoardScroll.X
+			label := m.sourceText(m.objects[0].Title) + " · " + m.taskSourceDescription(m.objects[0]) + " · 优先级 高 · 截止日 11 月 20 日"
+			click(t, p, label)
+			if entry == "related" {
+				p.Scroll(500, 460, 0, 470)
+				click(t, p, "回复客户退款结论")
+			} else {
+				click(t, p, "返回看板")
+				m.showPalette(false)
+				m.keyboard.query = m.sourceText(m.objects[1].Title)
+				p.Frame()
+				click(t, p, m.sourceText(m.objects[1].Title))
+			}
+			if !m.inspector || !m.layout.detailExpanded || m.currentTaskIndex() != 1 {
+				t.Fatal("expected the second task detail")
+			}
+			click(t, p, "返回看板")
+			if m.inspector || m.taskSelection != m.objects[0].ID || m.taskBoardScroll.X != x || !p.Focused(label) || m.search != "验证老订单退款" {
+				t.Fatalf("board origin lost: selection=%q scroll=%v want=%v focused=%t search=%q", m.taskSelection, m.taskBoardScroll.X, x, p.Focused(label), m.search)
+			}
+		})
+	}
+}
+
+func TestTaskBoardKeyboardUsesColumnOrder(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.taskBoard = true
+	m.objects = []sourceObject{
+		{ID: "unknown", Title: "A", State: "unknown"}, {ID: "done", Title: "B", State: "done"},
+		{ID: "open-last", Title: "C", State: "open"}, {ID: "progress", Title: "D", State: "in_progress"},
+		{ID: "open-first", Title: "E", State: "open"}, {ID: "cancelled", Title: "F", State: "cancelled"},
+	}
+	m.taskSort = ui.SortOrder{Column: "title", Descending: true}
+	p := ui.NewTester(m.view, 880, 680)
+	for _, step := range []struct {
+		keys string
+		id   string
+	}{
+		{"gg", "open-first"}, {"j", "open-last"}, {"j", "progress"}, {"j", "done"},
+		{"k", "progress"}, {"G", "unknown"}, {"k", "cancelled"},
+	} {
+		for _, key := range step.keys {
+			switch key {
+			case 'g':
+				p.Key(0, ui.KeyG)
+			case 'G':
+				p.Key(ui.Shift, ui.KeyG)
+			case 'j':
+				p.Key(0, ui.KeyJ)
+			case 'k':
+				p.Key(0, ui.KeyK)
+			}
+		}
+		if m.taskSelection != step.id {
+			t.Fatalf("%s selected %q, want %q", step.keys, m.taskSelection, step.id)
+		}
+	}
+}
+
+func TestTaskPriorityNoneSortsWithMissingInBothLayouts(t *testing.T) {
+	m := newMockup()
+	zero, high := 0, 5
+	m.objects = []sourceObject{
+		{ID: "missing", Title: "Absent"},
+		{ID: "none", Title: "None", Kind: obsidianTasks, NativeFields: map[string]string{"priority": "none"}},
+		{ID: "high", Title: "High", Kind: obsidianTasks, Priority: &high, NativeFields: map[string]string{"priority": "high"}},
+		{ID: "zero", Title: "Zero", Priority: &zero},
+	}
+	for _, board := range []bool{false, true} {
+		m.taskBoard = board
+		for _, descending := range []bool{false, true} {
+			m.taskSort = ui.SortOrder{Column: "priority", Descending: descending}
+			want := []int{3, 2, 0, 1}
+			if descending {
+				want = []int{2, 3, 0, 1}
+			}
+			if got := m.taskRows(); !slices.Equal(got, want) {
+				t.Fatalf("board=%t descending=%t sort=%v want=%v", board, descending, got, want)
+			}
+		}
+	}
+	for query, want := range map[string][]int{"priority:=high": {2}, "priority:=none": {1}} {
+		m.search = query
+		if got := m.taskRows(); !slices.Equal(got, want) {
+			t.Fatalf("%s: got %v", query, got)
+		}
+	}
+}

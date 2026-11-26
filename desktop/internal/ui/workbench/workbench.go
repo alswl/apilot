@@ -686,7 +686,8 @@ func (m *mockup) openTask(index int) {
 	if m.page != tasksPage {
 		m.fullTask = false
 	}
-	if m.page == tasksPage {
+	// The board keeps its card selected while a different task is in detail.
+	if m.page == tasksPage && !m.taskBoard {
 		m.taskSelection = m.objects[index].ID
 	}
 }
@@ -810,9 +811,12 @@ func (m *mockup) taskRows() []int {
 			order = dateA.Compare(dateB)
 		case "priority":
 			rank := map[string]int{"最低": 1, "低": 2, "普通": 3, "中": 4, "高": 5, "最高": 6, "lowest": 1, "low": 2, "normal": 3, "medium": 4, "high": 5, "highest": 6}
-			priorityA, priorityB := taskPriorityValue(a), taskPriorityValue(b)
+			priorityA, priorityB := taskDisplayPriority(a), taskDisplayPriority(b)
 			if (priorityA == "") != (priorityB == "") {
 				return priorityA != ""
+			}
+			if priorityA == "" {
+				return false
 			}
 			valueA, valueB := rank[priorityA], rank[priorityB]
 			if a.Priority != nil {

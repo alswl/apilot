@@ -59,6 +59,9 @@ func (m *mockup) focusTaskConnectionEntry(focus func()) {
 }
 
 func (m *mockup) closeInspector() {
+	if m.taskBoard {
+		m.layout.detailExpanded, m.layout.revealSelection = false, false
+	}
 	m.layout.detailReturnHidden = false
 	m.taskBackStack = nil
 	m.inspector, m.editingDue, m.fullTask = false, false, false
@@ -77,7 +80,7 @@ func (m *mockup) openSearch() {
 }
 
 func (m *mockup) moveSelection(delta int) {
-	rows := m.taskRows()
+	rows := m.taskNavigationRows()
 	if len(rows) == 0 {
 		return
 	}
@@ -139,7 +142,7 @@ func (m *mockup) activeCommands() []command {
 		}
 	}
 	if m.page == tasksPage {
-		rows := m.taskRows()
+		rows := m.taskNavigationRows()
 		if m.taskSelection != "" || len(rows) > 0 || m.inspector {
 			items = append(items, command{"task.open", tr("打开完整任务"), m.openCurrentTask})
 		}

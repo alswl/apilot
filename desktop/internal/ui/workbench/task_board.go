@@ -55,6 +55,19 @@ func (m *mockup) taskBoardColumns(rows []int) [len(taskBoardStates)][]int {
 	return columns
 }
 
+func (m *mockup) taskNavigationRows() []int {
+	rows := m.taskRows()
+	if !m.taskBoard {
+		return rows
+	}
+	columns := m.taskBoardColumns(rows)
+	ordered := make([]int, 0, len(rows))
+	for _, column := range columns {
+		ordered = append(ordered, column...)
+	}
+	return ordered
+}
+
 func (m *mockup) taskBoardSort(c *ui.Context) {
 	var options []string
 	selected := taskColumns[0].Title
@@ -147,10 +160,7 @@ func (m *mockup) taskBoardResults(c *ui.Context, rows []int) {
 func (m *mockup) taskBoardCard(c *ui.Context, index int) {
 	task := m.objects[index]
 	title, source := m.sourceText(task.Title), m.taskSourceDescription(task)
-	priority, due := taskPriorityValue(task), taskDueValue(task)
-	if priority == "none" || priority == "无优先级" {
-		priority = ""
-	}
+	priority, due := taskDisplayPriority(task), taskDueValue(task)
 	label := title + " · " + source
 	if priority != "" {
 		label += " · " + tr("优先级") + " " + taskPriorityLabel(priority)
@@ -193,6 +203,7 @@ func (m *mockup) taskBoardCard(c *ui.Context, index int) {
 		m.layout.revealSelection = false
 	}
 	if card.Clicked() {
+		m.taskSelection = task.ID
 		m.openFullTask(index)
 		m.layout.revealSelection = false
 		c.Invalidate()

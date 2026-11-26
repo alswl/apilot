@@ -19,7 +19,7 @@ func (m *mockup) openCurrentTask() {
 		m.openFullTask(index)
 		return
 	}
-	rows := m.taskRows()
+	rows := m.taskNavigationRows()
 	if !m.taskBoard {
 		rows = m.pagedTaskRows(rows)
 	}
