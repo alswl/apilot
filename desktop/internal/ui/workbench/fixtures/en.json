@@ -787,5 +787,15 @@
   "Resolve": "Resolve",
   "Resolution": "Resolution",
   "关闭为不计划处理": "Close as not planned",
-  "解决结果": "Resolution"
+  "解决结果": "Resolution",
+  "配置同步范围": "Configure Sync Scope",
+  "确认同步范围": "Confirm Sync Scope",
+  "正在读取范围配置": "Reading scope configuration",
+  "当前范围": "Current scope",
+  "新范围": "New scope",
+  "返回编辑": "Back to Editing",
+  "确认并保存": "Confirm and Save",
+  "预览更改": "Preview Changes",
+  "范围已保存。请立即同步。": "Scope saved. Sync now to refresh tasks.",
+  "无法读取关键来源字段": "Could not read task header fields"
 }

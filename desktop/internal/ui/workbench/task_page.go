@@ -124,12 +124,17 @@ func (m *mockup) taskPageTitle(c *ui.Context, o *sourceObject) {
 		if o.Mode == "mock" {
 			components.Muted(c.Key("source-mode"), tr("模拟数据"))
 		}
+		sourceLabel := tr("来源")
+		if m.live != nil && m.isManagedConnector(o.Kind) {
+			sourceLabel = tr("同步范围")
+		}
 		ui.Column(c.Key("overview")).FillWidth().MaxWidth(360).Children(func() {
 			components.PropertyGrid(c, []components.Property{
 				{ID: "status", Title: tr("状态"), Value: m.taskStateLabel(*o)},
-				{ID: "source", Title: tr("来源"), Value: tr(m.connectionName(o.ConnectionID))},
+				{ID: "source", Title: sourceLabel, Value: tr(m.connectionName(o.ConnectionID))},
 			}, 2)
 		})
+		m.connectorTaskHeader(c.Key("connector-header"), o, false)
 	})
 }
 

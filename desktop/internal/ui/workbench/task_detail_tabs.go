@@ -22,7 +22,7 @@ type taskComment struct {
 }
 
 type taskDetailUI struct {
-	connectorDetail                                 *connectorTaskDetailState
+	connectorDetail, connectorHeader                *connectorTaskDetailState
 	tab                                             int
 	draft                                           string
 	labelInput, labelProblem, labelOriginal         string

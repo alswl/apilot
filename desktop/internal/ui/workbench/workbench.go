@@ -36,6 +36,7 @@ type mockup struct {
 	connectorParents                                          []common.WorkbenchConnectorOverview
 	expandedConnectors                                        map[string]bool
 	connectorLogin                                            *connectorLoginPanel
+	connectorScopeFocus                                       string
 	connectorRecentAuthorization                              common.WorkbenchConnectorAuthorization
 	connectorMapping                                          *connectorMappingPanel
 	connectorRuns                                             *connectorRunPanel
