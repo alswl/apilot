@@ -12,12 +12,12 @@ import (
 const defaultTaskPageSize = 10
 
 type taskPageCriteria struct {
-	view, query, status, source, grouping string
-	sort                                  ui.SortOrder
+	view, query, status, source, sourceID, grouping string
+	sort                                            ui.SortOrder
 }
 
 func (m *mockup) paginationCriteria() taskPageCriteria {
-	return taskPageCriteria{m.taskView, m.search, m.statusFilter, m.sourceFilter, m.taskGrouping, m.taskSort}
+	return taskPageCriteria{m.taskView, m.search, m.statusFilter, m.sourceFilter, m.sourceFilterID, m.taskGrouping, m.taskSort}
 }
 
 func (m *mockup) taskPages(total int) int {

@@ -46,7 +46,7 @@ func tr(message string) string {
 	return message
 }
 
-func localizedSelect(c *ui.Context, value *string, options []string, width float32) {
+func localizedSelect(c *ui.Context, value *string, options []string, width float32) ui.Element {
 	labels := make([]string, len(options))
 	for i, option := range options {
 		labels[i] = tr(option)
@@ -63,4 +63,5 @@ func localizedSelect(c *ui.Context, value *string, options []string, width float
 			*value = options[i]
 		}
 	}
+	return element
 }

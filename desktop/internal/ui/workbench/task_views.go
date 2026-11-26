@@ -19,6 +19,7 @@ type taskViewState struct {
 	WatchOnly                       bool
 	Page, PageSize                  int
 	PageSizeOverride                int
+	Board                           bool `json:"board,omitempty"`
 }
 
 type savedTaskView struct {
@@ -29,13 +30,15 @@ type savedTaskView struct {
 
 func (m *mockup) viewState() taskViewState {
 	source, sourceID := m.taskViewSource()
-	return taskViewState{Query: m.search, Status: m.statusFilter, Source: source, SourceID: sourceID, Grouping: m.taskGrouping, Sort: m.taskSort, Columns: maps.Clone(m.taskColumnsHidden), TableLayout: cloneTaskTableLayout(m.taskTable.Columns), WatchOnly: m.taskWatchOnly, Page: m.taskPageIndex, PageSize: m.taskPageSize, PageSizeOverride: m.taskPageSizeOverride}
+	return taskViewState{Query: m.search, Status: m.statusFilter, Source: source, SourceID: sourceID, Grouping: m.taskGrouping, Sort: m.taskSort, Columns: maps.Clone(m.taskColumnsHidden), TableLayout: cloneTaskTableLayout(m.taskTable.Columns), WatchOnly: m.taskWatchOnly, Page: m.taskPageIndex, PageSize: m.taskPageSize, PageSizeOverride: m.taskPageSizeOverride, Board: m.taskBoard}
 }
 
 func (m *mockup) restoreView(state taskViewState) {
 	m.search, m.statusFilter, m.sourceFilter, m.taskGrouping = state.Query, state.Status, m.resolveTaskViewSource(state.Source, state.SourceID), state.Grouping
 	m.sourceFilterID = state.SourceID
 	m.taskWatchOnly = state.WatchOnly
+	m.taskBoard = state.Board && m.unifiedTasks()
+	m.taskBoardScroll = ui.ScrollState{}
 	m.taskSort, m.taskColumnsHidden = state.Sort, maps.Clone(state.Columns)
 	m.taskTable.Columns = cloneTaskTableLayout(state.TableLayout)
 	m.taskPageIndex, m.taskPageSize = state.Page, state.PageSize
@@ -145,7 +148,7 @@ func (m *mockup) taskViewChanged() bool {
 	sourceChanged := current.SourceID != baseline.SourceID || (current.SourceID == "" && current.Source != baseline.Source)
 	return current.Query != baseline.Query || current.Status != baseline.Status || sourceChanged ||
 		current.Grouping != baseline.Grouping || current.Sort != baseline.Sort || current.WatchOnly != baseline.WatchOnly ||
-		current.PageSizeOverride != baseline.PageSizeOverride || !maps.Equal(current.Columns, baseline.Columns) ||
+		current.Board != baseline.Board || current.PageSizeOverride != baseline.PageSizeOverride || !maps.Equal(current.Columns, baseline.Columns) ||
 		!slices.Equal(current.TableLayout.Order, baseline.TableLayout.Order) || !maps.Equal(current.TableLayout.Widths, baseline.TableLayout.Widths)
 }
 
@@ -189,14 +192,19 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 				m.selectTaskView(chosen)
 			}
 		})
-		display := components.IconToggle(c.Key("display"), "slider.horizontal.3", tr("显示选项"), m.taskDisplayOpen)
-		if display.Clicked() {
-			m.taskDisplayOpen = !m.taskDisplayOpen
+		if m.unifiedTasks() {
+			m.taskLayoutControl(c.Key("layout"))
 		}
-		if compact {
-			m.taskControlsPopover(c.Key("display-panel"), display, &m.taskDisplayOpen, func() {
-				m.taskDisplayOptions(c.Key("display-options"))
-			})
+		if !m.taskBoard {
+			display := components.IconToggle(c.Key("display"), "slider.horizontal.3", tr("显示选项"), m.taskDisplayOpen)
+			if display.Clicked() {
+				m.taskDisplayOpen = !m.taskDisplayOpen
+			}
+			if compact {
+				m.taskControlsPopover(c.Key("display-panel"), display, &m.taskDisplayOpen, func() {
+					m.taskDisplayOptions(c.Key("display-options"))
+				})
+			}
 		}
 		label := "保存视图"
 		current := m.currentSavedView()
@@ -232,7 +240,7 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 		components.Muted(c.Key("save-error"), tr("无法保存视图"))
 	}
 	ui.Divider(c)
-	if m.taskDisplayOpen && !compact {
+	if !m.taskBoard && m.taskDisplayOpen && !compact {
 		m.taskDisplayOptions(c.Key("display-options"))
 	}
 }
@@ -409,7 +417,7 @@ func (m *mockup) taskTables(c *ui.Context, rows []int) {
 	}
 	m.taskTable.Sort = &m.taskSort
 	m.taskTable.HeaderMenu = m.taskColumnMenu
-	result := components.GroupedTables(c, &m.taskTable, m.taskGroupTables, columns, groups, m.taskSelection, m.restoreTaskFocus, m.layout.revealSelection)
+	result := components.GroupedTables(c, &m.taskTable, m.taskGroupTables, columns, groups, m.taskSelection, len(rows) > 0 && m.restoreTaskFocus, m.layout.revealSelection)
 	m.layout.revealSelection = false
 	if m.unifiedTasks() && result.SelectedID != "" && result.SelectedID != m.taskSelection {
 		m.closeInspector()

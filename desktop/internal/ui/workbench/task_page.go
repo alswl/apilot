@@ -19,8 +19,12 @@ func (m *mockup) openCurrentTask() {
 		m.openFullTask(index)
 		return
 	}
-	if page := m.pagedTaskRows(m.taskRows()); len(page) > 0 {
-		m.openFullTask(page[0])
+	rows := m.taskRows()
+	if !m.taskBoard {
+		rows = m.pagedTaskRows(rows)
+	}
+	if len(rows) > 0 {
+		m.openFullTask(rows[0])
 	}
 }
 
@@ -35,7 +39,7 @@ func (m *mockup) showTaskDetail(index int) {
 	previous := m.taskSelection
 	m.openTask(index)
 	m.fullTask = true
-	if !m.locateTaskPage(m.taskRows(), index) {
+	if !m.taskBoard && !m.locateTaskPage(m.taskRows(), index) {
 		m.taskSelection = previous
 	}
 	if m.unifiedTasks() {
@@ -44,6 +48,9 @@ func (m *mockup) showTaskDetail(index int) {
 		m.restoreTaskFocus = false
 		m.layout.focusDetail = true
 		m.layout.revealSelection = true
+		if m.taskBoard {
+			m.layout.detailExpanded = true
+		}
 	}
 }
 

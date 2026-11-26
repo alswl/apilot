@@ -103,7 +103,7 @@ func (m *mockup) layoutWorkspace(c *ui.Context, width float32) {
 			availableHeight -= layoutBriefSize + 1
 		}
 		m.layout.listHeight = availableHeight
-		if m.layout.detailHidden {
+		if m.layout.detailHidden || m.taskBoard {
 			m.layout.listWidth = width
 			m.layoutTaskList(c.Key("list-only"))
 			return
@@ -151,6 +151,10 @@ func (m *mockup) detailToggle(c *ui.Context) {
 func (m *mockup) layoutTaskList(c *ui.Context) {
 	ui.Column(c).Fill().MinWidth(0).MinHeight(0).Padding(12).Gap(8).Children(func() {
 		m.taskListControls(c.Key("controls"))
+		if m.taskBoard {
+			m.taskListResults(c.Key("board-results"), 0)
+			return
+		}
 		scroll := ui.Scroll(c.Key("tasks")).Grow(1).MinHeight(0).FillWidth().TrackScroll(&m.pageScroll[tasksPage])
 		scroll.Children(func() {
 			ui.Column(c).FillWidth().Gap(taskResultsGap).Children(func() {
@@ -190,13 +194,21 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 		object := &m.objects[index]
 		m.taskBackLink(c.Key("return-to-source"))
 		ui.Row(c.Key("title-row")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			if m.taskBoard && m.layout.detailExpanded {
+				if components.IconButton(c.Key("back-to-board"), "chevron.left", tr("返回看板"), false).Clicked() {
+					m.leaveTaskDetail()
+					c.Invalidate()
+				}
+			}
 			title := ui.Text(c.Key("title"), m.sourceText(object.Title)).FontSize(18).FontWeight(600).SingleLine().Ellipsis("…").
 				Tooltip(m.sourceText(object.Title)).Focusable().Grow(1).MinWidth(0)
 			if m.layout.focusDetail {
 				title.Focus()
 				m.layout.focusDetail = false
 			}
-			m.detailSizeButton(c.Key("detail-size"))
+			if !m.taskBoard {
+				m.detailSizeButton(c.Key("detail-size"))
+			}
 		})
 		ui.Row(c.Key("actions")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
 			caption := displayTaskID(*object) + " · " + m.taskStateLabel(*object)
