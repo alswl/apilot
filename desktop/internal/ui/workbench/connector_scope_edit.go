@@ -19,10 +19,11 @@ type connectorScopeEditor struct {
 	draft              common.WorkbenchConnectorScopeDraft
 	preview            *common.WorkbenchConnectorScopePreview
 	legacyOptions      bool
+	optionLabels       map[[2]string]string
 }
 
 func (m *mockup) openConnectorScopeEdit(scope common.WorkbenchConnectorScopeOverview) {
-	p := &connectorLoginPanel{edit: &connectorScopeEditor{id: scope.ScopeID, label: scope.Label}, busy: true,
+	p := &connectorLoginPanel{edit: &connectorScopeEditor{id: scope.ScopeID, label: scope.Label, optionLabels: map[[2]string]string{}}, busy: true,
 		selected: map[string]bool{}, connected: map[string]bool{}, fieldDrafts: map[string]string{}, reuseEndpoint: true}
 	m.connectorLogin = p
 	m.readConnectorScopeEdit(p)
@@ -98,6 +99,28 @@ func (p *connectorLoginPanel) scopeEditDraft() (common.WorkbenchConnectorScopeDr
 	}
 	draft.Config = maps.Clone(p.form.scope)
 	return draft, true
+}
+
+func connectorDraftTarget(c *ui.Context, p *connectorLoginPanel) {
+	if p.form == nil || p.form.primary == "" {
+		return
+	}
+	field := p.form.primary
+	value, ok := p.form.scope[field].(string)
+	if !ok || value == "" || (p.field() == field && slices.ContainsFunc(p.choices, func(choice protocol.ConfigOption) bool {
+		return choice.Value == value && !p.connected[value]
+	})) {
+		return
+	}
+	label := p.edit.optionLabels[[2]string{field, value}]
+	if label == "" {
+		label = value
+	}
+	title := p.scopeConfig.Fields[field].Title
+	if title == "" {
+		title = field
+	}
+	components.PropertyGrid(c, []components.Property{{ID: field, Title: title, Value: label}}, 1)
 }
 
 func (m *mockup) connectorEditOption(c *ui.Context, p *connectorLoginPanel, choice protocol.ConfigOption) {

@@ -369,6 +369,12 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 			value.Items = append([]protocol.ConfigOption{*value.SelectedOption}, value.Items...)
 		}
 		for _, item := range value.Items {
+			if p.edit != nil {
+				key := [2]string{field, item.Value}
+				if p.edit.optionLabels[key] == "" || item.Label != item.Value {
+					p.edit.optionLabels[key] = item.Label
+				}
+			}
 			if !slices.ContainsFunc(p.choices, func(old protocol.ConfigOption) bool { return old.Value == item.Value }) {
 				p.choices = append(p.choices, item)
 			}
@@ -414,6 +420,9 @@ func (p *connectorLoginPanel) optionInput(page string) (map[string]any, string) 
 			return nil, tr("请输入有效的 JSON 对象")
 		}
 	}
+	if p.edit != nil && p.edit.legacyOptions {
+		scope = nil
+	}
 	if p.reuseEndpoint {
 		input["reuse_saved_endpoint"] = true
 		endpoint = nil
@@ -436,9 +445,6 @@ func (p *connectorLoginPanel) optionInput(page string) (map[string]any, string) 
 		delete(input, "config_level")
 		delete(input, "reuse_saved_endpoint")
 		input["id"], input["revision"] = p.edit.id, p.edit.saved.Revision
-		if p.edit.legacyOptions {
-			delete(input, "scope_config")
-		}
 	}
 	if p.scopeType != "" && p.optionLevel != "endpoint" {
 		input["scope_type"] = p.scopeType
@@ -652,6 +658,9 @@ func (m *mockup) connectorScopeForm(c *ui.Context, p *connectorLoginPanel, heigh
 			}
 			if p.form != nil && !p.finished() {
 				m.connectorDraftFields(c.Key("config"), p)
+				if p.edit != nil {
+					connectorDraftTarget(c.Key("draft-target"), p)
+				}
 			}
 			if (len(p.scopeTypes) != 0 || p.form != nil || p.jsonDraft != nil) && p.field() != "" && !p.finished() {
 				search := ui.TextInput(c.Key("search-scopes"), &p.search).Label(tr("搜索范围")).Placeholder(tr("搜索范围")).FillWidth().Disabled(p.saving)
