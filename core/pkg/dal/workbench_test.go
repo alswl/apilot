@@ -335,3 +335,79 @@ func TestWorkbenchScopeResetRemovesHistoricalAttemptPaths(t *testing.T) {
 	}
 	t.Fatal("connection missing")
 }
+
+func TestWorkbenchObsidianTaskFieldsMigration(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "data.db")
+	legacy, err := openAtSchema(path, 17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer legacy.Close()
+	vault := common.WorkbenchConnection{ID: "vault", Kind: common.WorkbenchObsidianTasks, Version: 1}
+	if err := legacy.SaveWorkbench(vault, false); err != nil {
+		t.Fatal(err)
+	}
+	obsidian := common.WorkbenchTask{
+		ID: "obsidian", ConnectionID: vault.ID, Kind: vault.Kind, SourceKey: "task:obsidian",
+		State: "open", TargetVersion: "original",
+		NativeFields: map[string]string{"due": "2027-03-20", "priority": "medium"},
+	}
+	noPriority := common.WorkbenchTask{
+		ID: "no-priority", ConnectionID: vault.ID, Kind: vault.Kind, SourceKey: "task:no-priority",
+		State: "open", NativeFields: map[string]string{"priority": "none"},
+	}
+	localPriority := 3
+	local := common.WorkbenchTask{
+		ID: "local", ConnectionID: common.DefaultWorkbenchLocalID, Kind: common.WorkbenchLocal,
+		SourceKey: "local", State: "open", DueDate: "2027-03-30", Priority: &localPriority,
+	}
+	now := time.Now()
+	if err := legacy.RecordWorkbench(vault, nil, nil, []common.WorkbenchTask{obsidian, noPriority}, &now); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.RecordWorkbench(common.WorkbenchConnection{ID: local.ConnectionID, Kind: local.Kind, Version: 1}, nil, nil, []common.WorkbenchTask{local}, &now); err != nil {
+		t.Fatal(err)
+	}
+	before, err := legacy.WorkbenchPage(common.WorkbenchQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if _, err := store.WorkbenchPage(common.WorkbenchQuery{Limit: 1, Revision: before.Revision}); err == nil || common.ProtocolError(err).Code != "STALE_REVISION" {
+		t.Fatalf("old revision should be stale after migration: %v", err)
+	}
+	got, err := store.WorkbenchObject(obsidian.ID)
+	if err != nil || got.ID != obsidian.ID || got.SourceKey != obsidian.SourceKey || got.TargetVersion != obsidian.TargetVersion ||
+		got.DueDate != "2027-03-20" || got.Priority == nil || *got.Priority != 4 ||
+		got.NativeFields["due"] != "2027-03-20" || got.NativeFields["priority"] != "medium" {
+		t.Fatalf("migrated Obsidian task: %+v, %v", got, err)
+	}
+	got, err = store.WorkbenchObject(noPriority.ID)
+	if err != nil || got.DueDate != "" || got.Priority != nil || got.NativeFields["priority"] != "none" {
+		t.Fatalf("Obsidian task with no priority: %+v, %v", got, err)
+	}
+	for _, order := range []struct {
+		field string
+		ids   []string
+	}{
+		{"due_date", []string{obsidian.ID, local.ID, noPriority.ID}},
+		{"priority", []string{local.ID, obsidian.ID, noPriority.ID}},
+	} {
+		for offset, id := range order.ids {
+			page, err := store.WorkbenchPage(common.WorkbenchQuery{
+				Sort: order.field, Limit: 1, Offset: offset, Revision: before.Revision + 1,
+			})
+			if err != nil || page.Total != len(order.ids) || len(page.Items) != 1 || page.Items[0].ID != id {
+				t.Fatalf("sort %s offset %d: want %s, got %+v, %v", order.field, offset, id, page, err)
+			}
+		}
+	}
+}

@@ -498,7 +498,15 @@ func TestReconcileRejectsAfterStopAdmission(t *testing.T) {
 
 func TestObsidianTargetVersionSeparatesIdentityFromLocation(t *testing.T) {
 	task := common.WorkbenchTask{ID: "task", Kind: common.WorkbenchObsidianTasks, NativeID: "native", Title: "Task", State: "open", Locator: "old.md:1", NativeFields: map[string]string{"path": "old.md", "file": "old.md", "line": "1", "section": "Old", "heading_path": "[\"Old\"]", "checkbox": " "}}
+	task.NativeFields["due"] = "2027-03-20"
+	task.NativeFields["priority"] = "medium"
 	version := workbenchTaskTargetVersion(task)
+	legacyFingerprint := workbenchFingerprint(task)
+	rank := 4
+	task.DueDate, task.Priority = "2027-03-20", &rank
+	if workbenchTaskTargetVersion(task) != version || !workbenchTaskMatchesTarget(task, legacyFingerprint) {
+		t.Fatal("normalized fields invalidated an existing edit target")
+	}
 	moved := task
 	moved.Locator = "new.md:42"
 	moved.NativeFields = maps.Clone(task.NativeFields)
@@ -514,7 +522,10 @@ func TestObsidianTargetVersionSeparatesIdentityFromLocation(t *testing.T) {
 	if workbenchTaskTargetVersion(moved) == version {
 		t.Fatal("source status change did not invalidate task target")
 	}
-	if !workbenchTaskMatchesTarget(task, workbenchFingerprint(task)) {
-		t.Fatal("legacy target version was rejected")
+	moved = task
+	moved.NativeFields = maps.Clone(task.NativeFields)
+	moved.NativeFields["due"] = "2027-03-21"
+	if workbenchTaskMatchesTarget(moved, version) || workbenchTaskMatchesTarget(moved, legacyFingerprint) {
+		t.Fatal("source due date change did not invalidate the edit target")
 	}
 }

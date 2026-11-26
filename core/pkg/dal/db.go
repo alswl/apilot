@@ -63,7 +63,10 @@ var workbenchConnectorEndpointConfigSchema string
 //go:embed migrations/017_workbench_connector_managed.sql
 var workbenchConnectorManagedSchema string
 
-var migrations = []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema, workbenchConnectorSyncSchema, workbenchTaskProjectionSchema, workbenchTaskDetailsSchema, workbenchSyncRetryBucketSchema, workbenchConnectorEndpointConfigSchema, workbenchConnectorManagedSchema}
+//go:embed migrations/018_workbench_obsidian_task_fields.sql
+var workbenchObsidianTaskFieldsSchema string
+
+var migrations = []string{schema, observerSchema, workbenchSchema, workbenchLocalSchema, workbenchPluginSchema, workbenchSyncSchema, workbenchMetadataSchema, workbenchGitHubSchema, workbenchGitHubWritePermissionSchema, workbenchGitHubPollSchema, workbenchGitHubRateSchema, workbenchConnectorSyncSchema, workbenchTaskProjectionSchema, workbenchTaskDetailsSchema, workbenchSyncRetryBucketSchema, workbenchConnectorEndpointConfigSchema, workbenchConnectorManagedSchema, workbenchObsidianTaskFieldsSchema}
 
 type Store struct{ db *sql.DB }
 

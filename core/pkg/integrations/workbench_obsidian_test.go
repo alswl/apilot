@@ -155,6 +155,10 @@ func TestWorkbenchObsidianTaskMetadataFormats(t *testing.T) {
 	if len(tasks) != 2 || tasks[0].Title != "Ship" || tasks[1].Title != "Review" {
 		t.Fatalf("unexpected tasks: %+v", tasks)
 	}
+	if tasks[0].DueDate != "2026-11-23" || tasks[0].Priority == nil || *tasks[0].Priority != 5 ||
+		tasks[1].DueDate != "" || tasks[1].Priority == nil || *tasks[1].Priority != 1 {
+		t.Fatalf("unexpected normalized metadata: %+v", tasks)
+	}
 	for index, fields := range []map[string]string{
 		{"file": "Release.md", "path": "Projects/Release.md", "section": "Release", "line": "2",
 			"recurrence": "every week on Monday", "due": "2026-11-23", "created": "2026-11-19",

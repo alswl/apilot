@@ -21,6 +21,9 @@ var wbInlineField = regexp.MustCompile(`(?i)\[(created|start|scheduled|due|compl
 var wbTaskID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 var wbTaskDependencies = regexp.MustCompile(`^[A-Za-z0-9_-]+(?:,\s*[A-Za-z0-9_-]+)*$`)
 var wbPriorities = map[rune]string{'🔺': "highest", '⏫': "high", '🔼': "medium", '🔽': "low", '⏬': "lowest"}
+
+// Keep the priority order used by the Workbench list and migration 018.
+var wbPriorityRanks = map[string]int{"lowest": 1, "low": 2, "normal": 3, "medium": 4, "high": 5, "highest": 6}
 var wbDateKeys = map[rune]string{'📅': "due", '⏳': "scheduled", '🛫': "start", '✅': "done", '➕': "created", '❌': "cancelled"}
 
 func scanWorkbenchMarkdown(content string, visit func(int, string)) {
@@ -159,7 +162,15 @@ func parseWorkbenchNote(c common.WorkbenchConnection, notePath, content string) 
 		if id != "" {
 			key = "task:" + id
 		}
-		out = append(out, common.WorkbenchTask{SourceKey: key, NativeID: id, Title: title, State: state, Locator: fmt.Sprintf("%s:%d", notePath, i+1), Labels: tags, Summary: body, NativeFields: fields})
+		task := common.WorkbenchTask{
+			SourceKey: key, NativeID: id, Title: title, State: state,
+			Locator: fmt.Sprintf("%s:%d", notePath, i+1), Labels: tags,
+			Summary: body, NativeFields: fields, DueDate: fields["due"],
+		}
+		if rank, ok := wbPriorityRanks[fields["priority"]]; ok {
+			task.Priority = &rank
+		}
+		out = append(out, task)
 	})
 	return out
 }
@@ -180,9 +191,7 @@ func setWorkbenchTaskField(fields map[string]string, key, value string) bool {
 		}
 	case "priority":
 		value = strings.ToLower(value)
-		switch value {
-		case "highest", "high", "medium", "normal", "low", "lowest", "none":
-		default:
+		if _, ok := wbPriorityRanks[value]; !ok && value != "none" {
 			return false
 		}
 	case "on_completion":
