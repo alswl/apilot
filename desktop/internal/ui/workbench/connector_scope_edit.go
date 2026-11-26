@@ -129,7 +129,7 @@ func (m *mockup) connectorEditOption(c *ui.Context, p *connectorLoginPanel, choi
 		return
 	}
 	if p.jsonDraft != nil {
-		if ui.Button(c, choice.Label).Disabled(p.busy).Clicked() {
+		if ui.Button(c, choice.Label).Disabled(p.busy || p.saving).Clicked() {
 			p.jsonDraft.choose(p.optionLevel, p.field(), choice.Value, true)
 		}
 		return
@@ -139,7 +139,7 @@ func (m *mockup) connectorEditOption(c *ui.Context, p *connectorLoginPanel, choi
 			continue
 		}
 		selected := p.form.scope[field.key] == choice.Value
-		if ui.Checkbox(c, &selected, choice.Label).Disabled(p.busy).Changed() {
+		if ui.Checkbox(c, &selected, choice.Label).Disabled(p.busy || p.saving).Changed() {
 			if selected {
 				p.updateDraft(field, choice.Value)
 			} else {

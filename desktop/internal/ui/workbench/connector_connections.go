@@ -712,7 +712,7 @@ func (m *mockup) connectorScopeForm(c *ui.Context, p *connectorLoginPanel, heigh
 					}
 				}
 			}
-			if p.next != "" && ui.Button(optionKey("pagination", ""), tr("加载更多")).Disabled(p.busy || p.finished()).Clicked() {
+			if p.next != "" && ui.Button(optionKey("pagination", ""), tr("加载更多")).Disabled(p.busy || p.saving || p.finished()).Clicked() {
 				m.loadConnectorChoices(p, p.next)
 			}
 		})
