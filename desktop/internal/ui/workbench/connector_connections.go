@@ -315,7 +315,7 @@ func (p *connectorLoginPanel) applyScopeResults(input common.WorkbenchConnectorS
 
 func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 	field := p.field()
-	if field == "" {
+	if field == "" || p.edit != nil && p.edit.stale {
 		return
 	}
 	if p.cancelQuery != nil {
@@ -344,6 +344,8 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 			problem := common.ProtocolError(err)
 			p.problem = problem.Message
 			if p.edit != nil {
+				p.problem = ""
+				p.scopeEditError(err)
 				return
 			}
 			if problem.Code == "NOT_FOUND" || problem.Code == "CONFLICT" {
@@ -359,9 +361,11 @@ func (m *mockup) loadConnectorChoices(p *connectorLoginPanel, page string) {
 		}
 		p.problem = ""
 		p.next = value.NextPage
-		for _, connected := range value.ConnectedValues {
-			p.connected[connected] = true
-			delete(p.selected, connected)
+		if p.edit == nil {
+			for _, connected := range value.ConnectedValues {
+				p.connected[connected] = true
+				delete(p.selected, connected)
+			}
 		}
 		if p.edit != nil && value.SelectedOption != nil && !slices.ContainsFunc(value.Items, func(item protocol.ConfigOption) bool {
 			return item.Value == value.SelectedOption.Value
@@ -641,10 +645,7 @@ func (m *mockup) connectorScopeForm(c *ui.Context, p *connectorLoginPanel, heigh
 		selected := slices.Index(p.scopeTypes, p.scopeType)
 		labels := make([]string, len(p.scopeTypes))
 		for i, kind := range p.scopeTypes {
-			labels[i] = tr("空间")
-			if kind == protocol.ScopeProject {
-				labels[i] = tr("项目")
-			}
+			labels[i] = scopeTypeLabel(kind)
 		}
 		if ui.Segmented(c.Key("scope-types"), &selected, labels...).Disabled(p.saving).Changed() && selected >= 0 && selected < len(p.scopeTypes) {
 			p.setScopeType(p.scopeTypes[selected])

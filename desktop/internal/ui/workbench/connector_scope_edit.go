@@ -1,8 +1,10 @@
 package workbench
 
 import (
+	"bytes"
 	"encoding/json"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -19,7 +21,42 @@ type connectorScopeEditor struct {
 	draft              common.WorkbenchConnectorScopeDraft
 	preview            *common.WorkbenchConnectorScopePreview
 	legacyOptions      bool
+	stale, reading     bool
+	notice             string
 	optionLabels       map[[2]string]string
+}
+
+func decodeScopeEditJSON(raw []byte, out any) error {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	return decoder.Decode(out)
+}
+
+func connectorScopeRequest[T any](m *mockup, method string, input any, finish func(T, error)) {
+	connectorUIRequest(m, method, input, func(raw json.RawMessage, err error) {
+		var value T
+		if err == nil {
+			err = decodeScopeEditJSON(raw, &value)
+		}
+		finish(value, err)
+	})
+}
+
+func editableScopeType(saved common.WorkbenchConnectorScopeEdit) string {
+	if saved.Boundary.ScopeType == "" && len(saved.ConfigSchema.Types) == 1 {
+		return saved.ConfigSchema.Types[0]
+	}
+	return saved.Boundary.ScopeType
+}
+
+func (p *connectorLoginPanel) scopeEditError(err error) {
+	problem := common.ProtocolError(err)
+	p.edit.problem = problem.Message
+	if problem.Code == "STALE_REVISION" {
+		p.edit.stale = true
+		p.edit.preview = nil
+		p.edit.problem = tr("同步范围已更改。请重新读取后再预览。")
+	}
 }
 
 func (m *mockup) openConnectorScopeEdit(scope common.WorkbenchConnectorScopeOverview) {
@@ -31,19 +68,62 @@ func (m *mockup) openConnectorScopeEdit(scope common.WorkbenchConnectorScopeOver
 
 func (m *mockup) readConnectorScopeEdit(p *connectorLoginPanel) {
 	edit := p.edit
-	p.busy, edit.problem = true, ""
-	connectorUIRequest(m, "workbench.connector.scope.show", map[string]string{"id": edit.id}, func(value common.WorkbenchConnectorScopeEdit, err error) {
-		if m.connectorLogin != p || (err == nil && value.ScopeID != edit.id) {
+	reloading := edit.saved.Revision != 0
+	old := edit.saved
+	oldType := p.scopeType
+	oldTexts := maps.Clone(p.fieldDrafts)
+	var oldConfig map[string]any
+	var rawDraft string
+	if p.form != nil {
+		oldConfig = maps.Clone(p.form.scope)
+	} else if p.jsonDraft != nil {
+		rawDraft = p.jsonDraft.scope
+		oldConfig, _ = connectorJSONObject(rawDraft)
+	}
+	p.queryGeneration++
+	if p.cancelQuery != nil {
+		p.cancelQuery()
+		p.cancelQuery = nil
+	}
+	p.busy, p.saving, edit.reading, edit.problem = true, true, true, ""
+	connectorScopeRequest(m, "workbench.connector.scope.show", map[string]string{"id": edit.id}, func(value common.WorkbenchConnectorScopeEdit, err error) {
+		if m.connectorLogin != p {
 			return
 		}
-		p.busy = false
+		p.busy, p.saving, edit.reading = false, false, false
 		if err != nil {
-			edit.problem = common.ProtocolError(err).Message
+			p.scopeEditError(err)
+			return
+		}
+		if value.ScopeID != edit.id {
+			edit.problem = tr("无法读取范围配置")
 			return
 		}
 		edit.saved = value
+		edit.label = value.Boundary.Label
+		edit.stale, edit.preview, edit.notice = false, nil, ""
+		p.problem = ""
 		p.scopeConfig = &edit.saved.ConfigSchema
-		p.scopeType, p.scopeTypes = value.Boundary.ScopeType, value.ConfigSchema.Types
+		p.scopeType, p.scopeTypes = editableScopeType(value), value.ConfigSchema.Types
+		config := maps.Clone(value.Boundary.Config)
+		if config == nil {
+			config = map[string]any{}
+		}
+		sameSchema := reflect.DeepEqual(old.ConfigSchema, value.ConfigSchema)
+		if reloading {
+			if oldType != editableScopeType(old) && (oldType == "" && len(p.scopeTypes) == 0 || slices.Contains(p.scopeTypes, oldType)) {
+				p.scopeType = oldType
+			}
+			edit.notice = tr("已重新读取范围。请检查草稿并再次预览。")
+			if !sameSchema {
+				edit.notice = tr("范围规则已更改。仅保留兼容的草稿值，请检查后再次预览。")
+			}
+			rebaseScopeConfig(config, oldConfig, old, value, sameSchema)
+		}
+		p.fieldDrafts = map[string]string{}
+		p.jsonDraft = nil
+		p.activateOptions(connectorConfigField{})
+
 		plugin := services.WorkbenchPlugin{ScopeConfig: p.scopeConfig}
 		if conn := m.connectionByID(edit.id); conn != nil {
 			for _, current := range m.livePlugins {
@@ -57,16 +137,19 @@ func (m *mockup) readConnectorScopeEdit(p *connectorLoginPanel) {
 		if plugin.EndpointConfig == nil {
 			plugin.EndpointConfig = &protocol.ConfigSchema{Schema: json.RawMessage(`{"type":"object"}`)}
 		}
-		p.form = newConnectorConfigForm(plugin)
+		p.form = buildConnectorConfigForm(plugin, true)
 		if p.form == nil {
 			p.jsonDraft = newConnectorJSONDraft(plugin)
-			raw, _ := json.MarshalIndent(value.Boundary.Config, "", "  ")
+			raw, _ := json.MarshalIndent(config, "", "  ")
 			p.jsonDraft.scope = string(raw)
+			if reloading && sameSchema && oldConfig == nil && rawDraft != "" {
+				p.jsonDraft.scope = rawDraft
+			}
 		} else {
 			p.form.reuseEndpoint = true
-			p.form.scope = maps.Clone(value.Boundary.Config)
-			if p.form.scope == nil {
-				p.form.scope = map[string]any{}
+			p.form.scope = config
+			if reloading && sameSchema && oldType == p.scopeType {
+				p.fieldDrafts = oldTexts
 			}
 			p.activatePrimary()
 		}
@@ -74,6 +157,33 @@ func (m *mockup) readConnectorScopeEdit(p *connectorLoginPanel) {
 			m.loadConnectorChoices(p, "")
 		}
 	})
+}
+
+func rebaseScopeConfig(target, draft map[string]any, old, latest common.WorkbenchConnectorScopeEdit, sameSchema bool) {
+	if draft == nil {
+		return
+	}
+	var oldSchema, newSchema struct {
+		Properties map[string]json.RawMessage
+	}
+	_ = json.Unmarshal(old.ConfigSchema.Schema, &oldSchema)
+	_ = json.Unmarshal(latest.ConfigSchema.Schema, &newSchema)
+	compatible := func(key string) bool {
+		return sameSchema || len(newSchema.Properties[key]) != 0 && bytes.Equal(oldSchema.Properties[key], newSchema.Properties[key])
+	}
+	for key := range old.Boundary.Config {
+		if _, present := draft[key]; !present && compatible(key) {
+			delete(target, key)
+		}
+	}
+	for key, value := range draft {
+		current, _ := json.Marshal(value)
+		prior, _ := json.Marshal(old.Boundary.Config[key])
+		if !bytes.Equal(current, prior) && compatible(key) &&
+			common.ConnectorConfigAllowsOrdinaryValues(&latest.ConfigSchema, map[string]any{key: value}) {
+			target[key] = value
+		}
+	}
 }
 
 func (p *connectorLoginPanel) scopeEditDraft() (common.WorkbenchConnectorScopeDraft, bool) {
@@ -93,7 +203,7 @@ func (p *connectorLoginPanel) scopeEditDraft() (common.WorkbenchConnectorScopeDr
 		return draft, false
 	}
 	for _, field := range p.form.fields {
-		if text := p.fieldDrafts[field.level+"."+field.key]; strings.TrimSpace(text) != "" && parseConfigField(field.kind, text) == nil {
+		if text := p.fieldDrafts[field.level+"."+field.key]; strings.TrimSpace(text) != "" && p.parseDraftField(field.kind, text) == nil {
 			return draft, false
 		}
 	}
@@ -124,10 +234,6 @@ func connectorDraftTarget(c *ui.Context, p *connectorLoginPanel) {
 }
 
 func (m *mockup) connectorEditOption(c *ui.Context, p *connectorLoginPanel, choice protocol.ConfigOption) {
-	if p.connected[choice.Value] {
-		components.Muted(c, choice.Label+" · "+tr("已连接"))
-		return
-	}
 	if p.jsonDraft != nil {
 		if ui.Button(c, choice.Label).Disabled(p.busy || p.saving).Clicked() {
 			p.jsonDraft.choose(p.optionLevel, p.field(), choice.Value, true)
@@ -151,16 +257,19 @@ func (m *mockup) connectorEditOption(c *ui.Context, p *connectorLoginPanel, choi
 }
 
 func (m *mockup) previewConnectorScopeEdit(p *connectorLoginPanel, draft common.WorkbenchConnectorScopeDraft) {
+	if p.edit.stale || p.saving {
+		return
+	}
 	p.saving, p.edit.problem = true, ""
 	p.edit.draft = draft
 	input := map[string]any{"id": p.edit.id, "body": draft}
-	connectorUIRequest(m, "workbench.connector.scope.preview", input, func(value common.WorkbenchConnectorScopePreview, err error) {
+	connectorScopeRequest(m, "workbench.connector.scope.preview", input, func(value common.WorkbenchConnectorScopePreview, err error) {
 		if m.connectorLogin != p {
 			return
 		}
 		p.saving = false
 		if err != nil {
-			p.edit.problem = common.ProtocolError(err).Message
+			p.scopeEditError(err)
 			return
 		}
 		p.edit.preview = &value
@@ -169,20 +278,20 @@ func (m *mockup) previewConnectorScopeEdit(p *connectorLoginPanel, draft common.
 
 func (m *mockup) confirmConnectorScopeEdit(p *connectorLoginPanel) {
 	edit := p.edit
-	if p.saving || edit.preview == nil || edit.preview.PreviewToken == "" {
+	if p.saving || edit.stale || edit.preview == nil || edit.preview.PreviewToken == "" {
 		return
 	}
 	p.saving, edit.problem = true, ""
 	input := map[string]any{"id": edit.id, "body": common.WorkbenchConnectorScopeUpdate{
 		WorkbenchConnectorScopeDraft: edit.draft, PreviewToken: edit.preview.PreviewToken,
 	}}
-	connectorUIRequest(m, "workbench.connector.scope.save", input, func(value common.WorkbenchConnectorScopeUpdateResult, err error) {
+	connectorScopeRequest(m, "workbench.connector.scope.save", input, func(value common.WorkbenchConnectorScopeUpdateResult, err error) {
 		if m.connectorLogin != p {
 			return
 		}
 		p.saving = false
 		if err != nil {
-			edit.problem = common.ProtocolError(err).Message
+			p.scopeEditError(err)
 			return
 		}
 		m.connectorLogin = nil
@@ -224,6 +333,9 @@ func (m *mockup) connectorScopeEditDialog(c *ui.Context, p *connectorLoginPanel)
 			if p.problem != "" && p.problem != p.searchLengthProblem() && edit.preview == nil {
 				components.Muted(c.Key("options-error"), p.problem)
 			}
+			if edit.notice != "" && edit.preview == nil {
+				components.Muted(c.Key("notice"), edit.notice)
+			}
 			if edit.problem != "" {
 				components.Muted(c.Key("problem"), edit.problem)
 			}
@@ -237,10 +349,14 @@ func (m *mockup) connectorScopeEditDialog(c *ui.Context, p *connectorLoginPanel)
 					}
 					return
 				}
-				if ui.Button(c.Key("cancel"), tr("取消")).Disabled(p.saving).Clicked() {
+				if ui.Button(c.Key("cancel"), tr("取消")).Disabled(p.saving && !edit.reading).Clicked() {
 					open = false
 				}
-				if edit.saved.Revision == 0 && !p.busy {
+				if edit.stale {
+					if ui.PrimaryButton(c.Key("reload"), tr("重新读取范围")).Disabled(p.busy || p.saving).Clicked() {
+						m.readConnectorScopeEdit(p)
+					}
+				} else if edit.saved.Revision == 0 && !p.busy {
 					if ui.PrimaryButton(c.Key("retry"), tr("重试")).Clicked() {
 						m.readConnectorScopeEdit(p)
 					}
@@ -250,7 +366,7 @@ func (m *mockup) connectorScopeEditDialog(c *ui.Context, p *connectorLoginPanel)
 			})
 		})
 	})
-	if !open && !p.saving {
+	if !open && (!p.saving || edit.reading) {
 		if edit.preview != nil {
 			edit.preview, edit.problem = nil, ""
 		} else {
@@ -280,6 +396,8 @@ func connectorEditBoundary(c *ui.Context, title string, boundary common.Workbenc
 		label := boundary.Label
 		if kind := scopeTypeLabel(boundary.ScopeType); kind != "" {
 			label += " · " + kind
+		} else if len(schema.Types) != 0 {
+			label += " · " + tr("未记录类型")
 		}
 		components.Body(c.Key("boundary"), label)
 		for _, key := range slices.Sorted(maps.Keys(boundary.Config)) {

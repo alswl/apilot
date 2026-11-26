@@ -102,6 +102,9 @@ func (m *mockup) connectorTaskHeader(c *ui.Context, task *sourceObject, showScop
 	if !state.loading && !state.loaded {
 		m.loadConnectorTaskSegment(task.ID, state, "")
 	}
+	if state.loading {
+		components.StatusLabel(c.Key("loading"), components.Status{Text: tr("正在读取关键来源字段"), Loading: true, Color: c.Theme().TextMuted})
+	}
 	if len(state.page.TopFields) > 0 {
 		fields := make([]components.Property, 0, len(state.page.TopFields)+1)
 		if showScope {

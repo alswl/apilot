@@ -797,5 +797,12 @@
   "确认并保存": "Confirm and Save",
   "预览更改": "Preview Changes",
   "范围已保存。请立即同步。": "Scope saved. Sync now to refresh tasks.",
-  "无法读取关键来源字段": "Could not read task header fields"
+  "无法读取关键来源字段": "Could not read task header fields",
+  "同步范围已更改。请重新读取后再预览。": "The sync scope changed. Reload it before previewing.",
+  "无法读取范围配置": "Could not read scope configuration",
+  "已重新读取范围。请检查草稿并再次预览。": "Scope reloaded. Review your draft and preview again.",
+  "范围规则已更改。仅保留兼容的草稿值，请检查后再次预览。": "Scope rules changed. Compatible draft values were kept. Review them and preview again.",
+  "重新读取范围": "Reload Scope",
+  "正在读取关键来源字段": "Reading task header fields",
+  "未记录类型": "Type not recorded"
 }
