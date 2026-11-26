@@ -863,6 +863,33 @@ func (m *mockup) taskListControls(c *ui.Context) {
 			})
 		}
 	})
+	m.activeTaskFilters(c.Key("active-filters"), compact)
+}
+
+func (m *mockup) activeTaskFilters(c *ui.Context, compact bool) {
+	showStatus := compact && m.statusFilter != "" && m.statusFilter != "全部状态"
+	showSource := m.sourceFilter != "" && m.sourceFilter != "全部来源"
+	if !showStatus && !showSource {
+		return
+	}
+	ui.Row(c).FillWidth().Gap(12).AlignItems(ui.Center).Children(func() {
+		if showStatus {
+			status := fmt.Sprintf(tr("状态：%s"), tr(m.statusFilter))
+			components.DataText(c.Key("status"), status).SingleLine().Shrink(0)
+		}
+		if showSource {
+			color := c.Theme().Text
+			var source string
+			if m.taskSourceUnavailable() {
+				source = tr("所选来源不可用")
+				color = c.Theme().Warning
+			} else {
+				source = fmt.Sprintf(tr("来源：%s"), m.sourceText(m.sourceFilter))
+			}
+			components.DataText(c.Key("source"), source).TextColor(color).
+				SingleLine().Ellipsis("…").MinWidth(0).Grow(1).Tooltip(source)
+		}
+	})
 }
 
 func (m *mockup) taskFilterSelects(c *ui.Context) {
@@ -933,9 +960,6 @@ func (m *mockup) taskListResults(c *ui.Context, viewportHeight float32) {
 	}
 	if m.liveError {
 		components.Muted(c.Key("live-error"), tr("无法读取工作台数据"))
-	}
-	if m.taskSourceUnavailable() {
-		components.StatusLabel(c.Key("source-unavailable"), components.Status{Text: tr("所选来源不可用"), Icon: "exclamationmark.circle", Color: c.Theme().Warning})
 	}
 	rows := m.taskRows()
 	filtered := m.search != "" || m.statusFilter != "全部状态" || m.sourceFilter != "全部来源" || m.taskWatchOnly

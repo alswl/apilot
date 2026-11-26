@@ -19,7 +19,7 @@ const (
 type taskViewportGeometry struct {
 	windowHeight, listWidth, stackShare float32
 	views                               int
-	source                              string
+	source, status                      string
 	stacked, detailHidden               bool
 	displayOptions, searchFields, tags  bool
 }
@@ -161,7 +161,7 @@ func (m *mockup) layoutTaskList(c *ui.Context) {
 		_, height := c.Size()
 		geometry := taskViewportGeometry{
 			windowHeight: height, listWidth: m.layout.listWidth, stackShare: m.layout.stackShare, views: len(m.savedTaskViews),
-			source: m.sourceFilter, stacked: m.layout.stacked, detailHidden: m.layout.detailHidden, displayOptions: m.taskDisplayOpen, searchFields: m.searchExpanded, tags: m.showChangeTags,
+			source: m.sourceFilter, status: m.statusFilter, stacked: m.layout.stacked, detailHidden: m.layout.detailHidden, displayOptions: m.taskDisplayOpen, searchFields: m.searchExpanded, tags: m.showChangeTags,
 		}
 		if geometry != m.layout.taskViewport {
 			m.layout.taskViewport = geometry
