@@ -30,7 +30,8 @@ func CallWorkbenchHTTPContext(ctx context.Context, socket, method string, params
 	}
 	timeout := 3 * time.Second
 	switch method {
-	case "workbench.connection.save", "workbench.connector.connection.save", "workbench.connector.options", "workbench.plugin.import", "workbench.plugin.set":
+	case "workbench.connection.save", "workbench.connector.connection.save", "workbench.connector.options", "workbench.plugin.import", "workbench.plugin.set",
+		"workbench.connector.scope.options", "workbench.connector.scope.preview", "workbench.connector.scope.save":
 		timeout = 40 * time.Second
 	case "workbench.github.authorization.start":
 		timeout = 20 * time.Second
@@ -120,6 +121,25 @@ func requestWorkbenchHTTP(ctx context.Context, client *Client, method string, pa
 			return nil, common.Err("INVALID_ARGUMENT", "Connector ID is required")
 		}
 		return client.ListWorkbenchConnectorOptions(ctx, in.ID, &in.ListWorkbenchConnectorOptionsParams)
+	case "workbench.connector.scope.show", "workbench.connector.scope.options", "workbench.connector.scope.preview", "workbench.connector.scope.save":
+		var in struct {
+			ID   string          `json:"id"`
+			Body json.RawMessage `json:"body"`
+			ListWorkbenchConnectorScopeConfigurationOptionsParams
+		}
+		if json.Unmarshal(input, &in) != nil || in.ID == "" {
+			return nil, common.Err("INVALID_ARGUMENT", "Scope ID is required")
+		}
+		switch method {
+		case "workbench.connector.scope.show":
+			return client.GetWorkbenchConnectorScopeConfiguration(ctx, in.ID)
+		case "workbench.connector.scope.options":
+			return client.ListWorkbenchConnectorScopeConfigurationOptions(ctx, in.ID, &in.ListWorkbenchConnectorScopeConfigurationOptionsParams)
+		case "workbench.connector.scope.preview":
+			return client.PreviewWorkbenchConnectorScopeConfigurationWithBody(ctx, in.ID, "application/json", bytes.NewReader(in.Body))
+		default:
+			return client.UpdateWorkbenchConnectorScopeConfigurationWithBody(ctx, in.ID, "application/json", bytes.NewReader(in.Body))
+		}
 	case "workbench.connector.auth-status", "workbench.connector.cancel-login", "workbench.connector.connection.show", "workbench.connector.connection.remove", "workbench.connector.connection.sync":
 		var in struct {
 			ID string `json:"id"`

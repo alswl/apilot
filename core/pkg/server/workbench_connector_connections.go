@@ -36,6 +36,7 @@ type workbenchConnectorOptionsInput struct {
 }
 
 func registerWorkbenchConnectorHTTP(api huma.API, s *services.Service) {
+	registerWorkbenchConnectorScopeEditHTTP(api, s)
 	const auth = workbenchPath + "/connector-authorizations"
 	const connections = workbenchPath + "/connector-connections"
 	registerWorkbench(api, http.MethodPost, auth, "startWorkbenchConnectorAuthorization", "Start Connector browser login", "Connectors", []int{400, 404, 409},
@@ -99,5 +100,55 @@ func registerWorkbenchConnectorHTTP(api huma.API, s *services.Service) {
 		func(in *workbenchConnectorSyncInput) (workbenchItems[common.WorkbenchConnectorScopeResult], error) {
 			items, err := s.StartWorkbenchConnectorSync(in.ConnectionID, in.Mode == "full")
 			return workbenchItems[common.WorkbenchConnectorScopeResult]{items}, err
+		})
+}
+
+type workbenchConnectorScopeOptionsInput struct {
+	ID        string `path:"id" minLength:"1"`
+	Revision  int64  `query:"revision" required:"true" minimum:"1"`
+	ScopeType string `query:"scope_type"`
+	Config    string `query:"scope_config" maxLength:"4096"`
+	Field     string `query:"field" required:"true" minLength:"1" maxLength:"100"`
+	Search    string `query:"search" maxLength:"200"`
+	Page      string `query:"page" maxLength:"512"`
+}
+
+type workbenchConnectorScopeBody[T any] struct {
+	ID   string `path:"id" minLength:"1"`
+	Body T
+}
+
+func registerWorkbenchConnectorScopeEditHTTP(api huma.API, s *services.Service) {
+	const path = workbenchPath + "/connector-scopes/{id}/configuration"
+	statuses := []int{400, 401, 403, 404, 409, 429, 503}
+	registerWorkbench(api, http.MethodGet, path, "getWorkbenchConnectorScopeConfiguration", "Read saved Connector scope configuration and current schema", "Connections", statuses,
+		func(in *workbenchID) (common.WorkbenchConnectorScopeEdit, error) {
+			return s.WorkbenchConnectorScopeEdit(in.ID)
+		})
+	registerWorkbenchContext(api, http.MethodGet, path+"/options", "listWorkbenchConnectorScopeConfigurationOptions", "Read options for a saved Connector scope", "Connections", statuses,
+		func(ctx context.Context, in *workbenchConnectorScopeOptionsInput) (common.WorkbenchConnectorOptions, error) {
+			ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+			defer cancel()
+			draft := protocol.OptionsParams{Field: in.Field, Search: in.Search, Page: in.Page, ScopeType: in.ScopeType}
+			if in.Config != "" {
+				var object map[string]json.RawMessage
+				if json.Unmarshal([]byte(in.Config), &object) != nil || object == nil {
+					return common.WorkbenchConnectorOptions{}, common.Err("INVALID_ARGUMENT", "Scope configuration must be an object")
+				}
+				draft.ScopeConfig = json.RawMessage(in.Config)
+			}
+			return s.WorkbenchConnectorScopeOptions(ctx, in.ID, in.Revision, draft)
+		})
+	registerWorkbenchContext(api, http.MethodPost, path+"/preview", "previewWorkbenchConnectorScopeConfiguration", "Validate and preview a Connector scope change", "Connections", statuses,
+		func(ctx context.Context, in *workbenchConnectorScopeBody[common.WorkbenchConnectorScopeDraft]) (common.WorkbenchConnectorScopePreview, error) {
+			ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+			defer cancel()
+			return s.PreviewWorkbenchConnectorScope(ctx, in.ID, in.Body)
+		})
+	registerWorkbenchContext(api, http.MethodPut, path, "updateWorkbenchConnectorScopeConfiguration", "Save a previewed Connector scope change", "Connections", statuses,
+		func(ctx context.Context, in *workbenchConnectorScopeBody[common.WorkbenchConnectorScopeUpdate]) (common.WorkbenchConnectorScopeUpdateResult, error) {
+			ctx, cancel := context.WithTimeout(ctx, 35*time.Second)
+			defer cancel()
+			return s.UpdateWorkbenchConnectorScope(ctx, in.ID, in.Body)
 		})
 }

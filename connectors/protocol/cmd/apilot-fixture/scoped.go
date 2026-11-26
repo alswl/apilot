@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +24,17 @@ func scopedFixtureDescription(description *protocol.Description) {
 	description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target"],"properties":{"target":{"type":"string"}},"additionalProperties":false}`)
 	description.ScopeConfig.Fields = map[string]protocol.ConfigField{"target": {Title: "Target", Control: "select", DynamicOptions: true}}
 	description.ScopeConfig.Types = []string{protocol.ScopeProject, protocol.ScopeSpace}
+	if fixtureScopeMode == "scope-edit" {
+		description.ScopeConfig.Schema = json.RawMessage(`{"type":"object","required":["target","filter"],"properties":{"target":{"type":"string"},"filter":{"type":"string","enum":["all","beta-only"]}},"additionalProperties":false}`)
+		description.ScopeConfig.Fields["filter"] = protocol.ConfigField{Title: "Filter", Control: "select"}
+		description.TaskTopFields = []protocol.TaskTopField{
+			{ID: "reporting_project", Title: "Reporting project"},
+			{ID: "external_tier", Title: "Tier"},
+			{ID: "flagged", Title: "Flagged"},
+			{ID: "estimate", Title: "Estimate"},
+			{ID: "missing", Title: "Missing"},
+		}
+	}
 	if fixtureScopeMode == "multi-endpoint2" {
 		description.EndpointConfig.Version = 2
 	}
@@ -131,6 +143,9 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 				return nil, badScope
 			}
 			options = []protocol.ConfigOption{{Value: "alpha", Label: "Alpha"}}
+			if fixtureScopeMode == "scope-edit" {
+				options = append(options, protocol.ConfigOption{Value: "beta", Label: "Beta"})
+			}
 		default:
 			return nil, badScope
 		}
@@ -161,6 +176,7 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		return nil, protocol.Problem(protocol.AuthRequired, "account", "Synthetic account unavailable")
 	}
 	var selection struct {
+		Filter   string                     `json:"filter"`
 		Target   string                     `json:"target"`
 		Board    string                     `json:"board"`
 		Metadata map[string]json.RawMessage `json:"metadata"`
@@ -187,8 +203,19 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		projects = []string{selection.Target}
 	case scope.ScopeType == protocol.ScopeSpace && selection.Target == "alpha" && fixtureScopeMode != "project":
 		projects = []string{"alpha", "beta"}
+	case scope.ScopeType == protocol.ScopeSpace && selection.Target == "beta" && fixtureScopeMode == "scope-edit":
+		projects = []string{"beta", "gamma"}
 	default:
 		return nil, badScope
+	}
+	if fixtureScopeMode == "scope-edit" {
+		switch selection.Filter {
+		case "all":
+		case "beta-only":
+			projects = slices.DeleteFunc(projects, func(project string) bool { return project != "beta" })
+		default:
+			return nil, badScope
+		}
 	}
 	ref := scope.ScopeType + ":" + selection.Target
 	if fixtureScopeMode == "renamed" {
@@ -198,6 +225,11 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 		var p protocol.ValidateParams
 		if err := protocol.DecodeParams(req, &p); err != nil {
 			return nil, err
+		}
+		if fixtureScopeMode == "scope-edit" && p.Mode == "access" {
+			if _, err := os.Stat(filepath.Join(os.Getenv("APILOT_CONNECTOR_DATA_DIR"), "deny-scope-access")); err == nil {
+				return nil, protocol.Problem(protocol.AccessDenied, "scope", "Synthetic access validation denied")
+			}
 		}
 		if p.Mode == "static" && scope.ScopeRef == "" || p.Mode == "access" && scope.ScopeRef == ref {
 			return protocol.ValidatedScope{ScopeRef: ref, EndpointRef: scopedEndpoint, Label: map[string]string{"alpha": "Alpha", "beta": "Beta"}[selection.Target]}, nil
@@ -300,6 +332,18 @@ func scopedFixture(ctx context.Context, req protocol.Request, _ protocol.Notify)
 func scopedRecord(project string) protocol.SourceRecord {
 	record := fixtureCurrent(project, "1")
 	record.SourceID = project
+	if fixtureScopeMode == "scope-edit" {
+		record.Number = project + "-1"
+		record.Fields["reporting_project"] = protocol.Value(protocol.FieldOption, protocol.Option{ID: "reporting", Label: "Task Reporting"})
+		record.Fields["external_tier"] = protocol.Value(protocol.FieldOption, map[string]string{"id": "tier-2"})
+		record.Fields["flagged"] = protocol.Value(protocol.FieldBoolean, false)
+		record.Fields["estimate"] = protocol.Value(protocol.FieldNumber, 0)
+		if project == "alpha" {
+			record.Fields["reporting_project"] = protocol.Value(protocol.FieldOption, protocol.Option{ID: "planning", Label: "Task Planning"})
+			record.Fields["estimate"] = protocol.Value(protocol.FieldNumber, nil)
+			delete(record.Fields, "external_tier")
+		}
+	}
 	return record
 }
 

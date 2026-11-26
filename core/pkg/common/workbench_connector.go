@@ -97,7 +97,8 @@ type WorkbenchConnectorAuthorization struct {
 
 type WorkbenchConnectorOptions struct {
 	protocol.ConfigOptions
-	ConnectedValues []string `json:"connected_values,omitempty"`
+	ConnectedValues []string               `json:"connected_values,omitempty"`
+	SelectedOption  *protocol.ConfigOption `json:"selected_option,omitempty"`
 }
 
 type WorkbenchConnectorSelection struct {
@@ -147,7 +148,13 @@ type WorkbenchConnectorScopeOverview struct {
 	LastRun *WorkbenchSyncRun `json:"last_run,omitempty"`
 }
 
+type WorkbenchTaskTopField struct {
+	protocol.TaskTopField
+	Value protocol.FieldValue `json:"value"`
+}
+
 type WorkbenchTaskDetail struct {
+	TopFields  []WorkbenchTaskTopField        `json:"top_fields,omitempty"`
 	TaskID     string                         `json:"task_id"`
 	ScopeID    string                         `json:"scope_id"`
 	Segment    string                         `json:"segment"`
@@ -205,4 +212,60 @@ type WorkbenchSyncUsage struct {
 	DurationMS      int64  `json:"duration_ms"`
 	RateLimits      int    `json:"rate_limits"`
 	PartialRuns     int    `json:"partial_runs"`
+}
+
+type WorkbenchConnectorBoundary struct {
+	ScopeType     string         `json:"scope_type,omitempty"`
+	ScopeRef      string         `json:"scope_ref"`
+	Label         string         `json:"label"`
+	Config        map[string]any `json:"config"`
+	SchemaVersion int            `json:"schema_version"`
+}
+
+type WorkbenchConnectorScopeEdit struct {
+	ScopeID      string                     `json:"scope_id"`
+	Revision     int64                      `json:"revision"`
+	Boundary     WorkbenchConnectorBoundary `json:"boundary"`
+	ConfigSchema protocol.ConfigSchema      `json:"scope_schema"`
+}
+
+type WorkbenchConnectorScopeDraft struct {
+	Revision      int64          `json:"revision" minimum:"1"`
+	ScopeType     string         `json:"scope_type,omitempty"`
+	Config        map[string]any `json:"config"`
+	SchemaVersion int            `json:"schema_version" minimum:"1"`
+}
+
+type WorkbenchConnectorScopePreview struct {
+	Before       WorkbenchConnectorBoundary `json:"before"`
+	After        WorkbenchConnectorBoundary `json:"after"`
+	PreviewToken string                     `json:"preview_token"`
+}
+
+type WorkbenchConnectorScopeUpdate struct {
+	WorkbenchConnectorScopeDraft
+	PreviewToken string `json:"preview_token" minLength:"1"`
+}
+
+type WorkbenchConnectorScopeUpdateResult struct {
+	WorkbenchConnectorScopeEdit
+	SyncStatus string `json:"sync_status" enum:"unchanged,queued,sync_not_started"`
+}
+
+func (in *WorkbenchConnectorScopeDraft) UnmarshalJSON(data []byte) error {
+	type draft WorkbenchConnectorScopeDraft
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	return decoder.Decode((*draft)(in))
+}
+
+func (in *WorkbenchConnectorScopeUpdate) UnmarshalJSON(data []byte) error {
+	var token struct {
+		PreviewToken string `json:"preview_token"`
+	}
+	if err := json.Unmarshal(data, &token); err != nil {
+		return err
+	}
+	in.PreviewToken = token.PreviewToken
+	return json.Unmarshal(data, &in.WorkbenchConnectorScopeDraft)
 }

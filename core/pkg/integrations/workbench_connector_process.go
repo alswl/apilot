@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -62,10 +63,21 @@ func (p *WorkbenchConnectorProcess) Describe(ctx context.Context) (protocol.Desc
 	m := p.pkg.Manifest
 	if json.Unmarshal(result, &description) != nil || description.ConnectorID != m.ConnectorID ||
 		description.ReleaseVersion != m.ReleaseVersion || !slices.Equal(description.ProtocolVersions, m.ProtocolVersions) ||
-		!validConnectorSchema(description.EndpointConfig) || !validConnectorSchema(description.ScopeConfig) || !validScopeTypes(description.ScopeConfig.Types) || len(description.EndpointConfig.Types) != 0 {
+		!validConnectorSchema(description.EndpointConfig) || !validConnectorSchema(description.ScopeConfig) || !validScopeTypes(description.ScopeConfig.Types) || len(description.EndpointConfig.Types) != 0 || !validTaskTopFields(description.TaskTopFields) {
 		return protocol.Description{}, ErrWorkbenchConnectorProtocol
 	}
 	return description, nil
+}
+
+func validTaskTopFields(fields []protocol.TaskTopField) bool {
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		if strings.TrimSpace(field.ID) == "" || strings.TrimSpace(field.Title) == "" || seen[field.ID] {
+			return false
+		}
+		seen[field.ID] = true
+	}
+	return true
 }
 
 func validScopeTypes(types []string) bool {

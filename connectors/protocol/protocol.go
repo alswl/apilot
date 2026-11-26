@@ -32,6 +32,12 @@ type Description struct {
 	SyncRateLimitBuckets map[string][]string `json:"sync_rate_limit_buckets,omitempty"`
 	EndpointConfig       ConfigSchema        `json:"endpoint_config"`
 	ScopeConfig          ConfigSchema        `json:"scope_config"`
+	TaskTopFields        []TaskTopField      `json:"task_top_fields,omitempty"`
+}
+
+type TaskTopField struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
 }
 
 type ConfigSchema struct {

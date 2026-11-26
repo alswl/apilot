@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/url"
 	"strconv"
@@ -133,6 +134,9 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 		}
 	}
 	result.Version, result.Fields, result.Items, result.NextPage = body.Version, body.Fields, body.Items, body.NextPage
+	if segment == "fields" {
+		result.TopFields = connectorTaskTopFields(connector.description.TaskTopFields, body.Fields)
+	}
 	result.CapturedAt = time.Now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -143,4 +147,64 @@ func (s *Service) WorkbenchConnectorTaskDetail(ctx context.Context, id, segment,
 		return common.WorkbenchTaskDetail{}, err
 	}
 	return result, nil
+}
+
+func connectorTaskTopFields(declarations []protocol.TaskTopField, fields map[string]protocol.FieldValue) []common.WorkbenchTaskTopField {
+	var result []common.WorkbenchTaskTopField
+	for _, declaration := range declarations {
+		field, ok := fields[declaration.ID]
+		if !ok || !json.Valid(field.Value) || string(field.Value) == "null" {
+			continue
+		}
+		switch field.Type {
+		case protocol.FieldOption, protocol.FieldAccount, protocol.FieldOptions, protocol.FieldAccounts:
+			many := field.Type == protocol.FieldOptions || field.Type == protocol.FieldAccounts
+			options := make([]protocol.Option, 1)
+			if many {
+				if json.Unmarshal(field.Value, &options) != nil {
+					continue
+				}
+			} else if json.Unmarshal(field.Value, &options[0]) != nil {
+				continue
+			}
+			valid := true
+			for i := range options {
+				if options[i].ID == "" {
+					valid = false
+					break
+				}
+				if options[i].Label == "" {
+					options[i].Label = options[i].ID
+				}
+			}
+			if !valid {
+				continue
+			}
+			if many {
+				field = protocol.Value(field.Type, options)
+			} else {
+				field = protocol.Value(field.Type, options[0])
+			}
+		case protocol.FieldBoolean:
+			var value bool
+			if json.Unmarshal(field.Value, &value) != nil {
+				continue
+			}
+		case protocol.FieldNumber:
+			if field.Value[0] != '-' && (field.Value[0] < '0' || field.Value[0] > '9') {
+				continue
+			}
+		case protocol.FieldDateTime:
+			var value time.Time
+			if json.Unmarshal(field.Value, &value) != nil {
+				continue
+			}
+		default:
+			if !protocol.ValidFieldValue(field) {
+				continue
+			}
+		}
+		result = append(result, common.WorkbenchTaskTopField{TaskTopField: declaration, Value: field})
+	}
+	return result
 }

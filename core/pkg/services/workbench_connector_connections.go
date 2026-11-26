@@ -27,9 +27,10 @@ type workbenchManagedConnectorStore interface {
 	SaveWorkbenchConnectorConnection(common.WorkbenchConnectorConnection, []common.WorkbenchConnectorNewScope) (common.WorkbenchConnectorSaveResult, error)
 	WorkbenchConnectorConnection(string) (common.WorkbenchConnectorConnection, error)
 	WorkbenchConnectorEndpointConfig(string, string, string) (string, json.RawMessage, int, error)
-	WorkbenchConnectorSelectedValues(string, string, string, string, string) (map[string]bool, error)
+	WorkbenchConnectorSelectedValues(string, string, string, string, string, string) (map[string]bool, error)
 	ConfirmWorkbenchConnectorAccount(string, int64) error
 	WorkbenchConnectorScope(string) (common.WorkbenchConnectorStoredScope, error)
+	UpdateWorkbenchConnectorScope(common.WorkbenchConnectorStoredScope, common.WorkbenchConnectorBoundary, json.RawMessage) error
 	WorkbenchConnectorOverviews(string) ([]common.WorkbenchConnectorOverview, error)
 	DeleteWorkbenchConnectorConnection(string) error
 	RecoverWorkbenchConnectorRuns() error
@@ -305,7 +306,7 @@ func (s *Service) WorkbenchConnectorOptions(ctx context.Context, id, authorizati
 	if err != nil {
 		return out, err
 	}
-	connected, err := store.WorkbenchConnectorSelectedValues(id, account.EndpointRef, account.AccountRef, field, scopeType)
+	connected, err := store.WorkbenchConnectorSelectedValues(id, account.EndpointRef, account.AccountRef, field, scopeType, "")
 	if err != nil {
 		return out, err
 	}
@@ -385,10 +386,7 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 		}
 		params := protocol.ScopeContext{AccountRef: account.AccountRef, EndpointRef: account.EndpointRef, EndpointConfig: rawEndpoint, ScopeConfig: rawScope,
 			EndpointSchemaVersion: endpointVersion, ScopeSchemaVersion: in.ScopeSchemaVersion, ScopeType: selection.ScopeType}
-		scope, err := callWorkbenchConnector[protocol.ValidatedScope](ctx, process, common.ID(), protocol.Validate, protocol.ValidateParams{ScopeContext: params, Mode: "static"}, nil)
-		if err == nil && (scope.ScopeRef == "" || scope.EndpointRef != account.EndpointRef || scope.Label == "") {
-			err = integrations.ErrWorkbenchConnectorProtocol
-		}
+		scope, err := validateConnectorScope(ctx, process, params, "static")
 		if err == nil {
 			if first, ok := seen[scope.ScopeRef]; ok {
 				repeated[i] = first
@@ -397,10 +395,7 @@ func (s *Service) SaveWorkbenchConnectorConnection(ctx context.Context, in commo
 			seen[scope.ScopeRef] = i
 			params.ScopeRef = scope.ScopeRef
 			var access protocol.ValidatedScope
-			access, err = callWorkbenchConnector[protocol.ValidatedScope](ctx, process, common.ID(), protocol.Validate, protocol.ValidateParams{ScopeContext: params, Mode: "access"}, nil)
-			if err == nil && (access.ScopeRef != scope.ScopeRef || access.EndpointRef != account.EndpointRef || access.Label == "") {
-				err = integrations.ErrWorkbenchConnectorProtocol
-			}
+			access, err = validateConnectorScope(ctx, process, params, "access")
 			if err == nil {
 				scope = access
 			}
