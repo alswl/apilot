@@ -12,6 +12,7 @@ import (
 
 	"cel.dev/cel-go/cel"
 	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/egoist/mygo/ui"
 )
 
 func TestTaskQueryViewMigrationAndConflicts(t *testing.T) {
@@ -167,4 +168,82 @@ func TestTaskQueryAutomaticPageKeepsAnchor(t *testing.T) {
 	if m.fitCustomQueryPage(180, false) || m.queryInput(view).Limit != 50 {
 		t.Fatal("automatic sizing replaced an explicit page size")
 	}
+}
+
+func TestTaskQueryConversionShowsDifferenceIDs(t *testing.T) {
+	items := []common.WorkbenchQueryItem{
+		{Task: common.WorkbenchTask{ID: "added-z"}},
+		{Task: common.WorkbenchTask{ID: "common"}},
+		{Task: common.WorkbenchTask{ID: "added-a"}},
+	}
+	comparison := taskQueryComparison([]string{"removed-z", "common", "removed-a"}, items)
+	for _, want := range []string{"原查询 3 项，CEL 3 项，新增 2 项，移除 2 项", "新增任务 ID\nadded-a\nadded-z", "移除任务 ID\nremoved-a\nremoved-z"} {
+		if !strings.Contains(comparison, want) {
+			t.Fatalf("missing %q: %q", want, comparison)
+		}
+	}
+	if strings.Contains(comparison, "common") {
+		t.Fatalf("shared tasks are not differences: %q", comparison)
+	}
+	m := newFramework()
+	m.taskView = "converted"
+	m.customQuery.conversion = map[string]taskQueryConversion{m.taskView: {}}
+	m.customQuery.comparison = comparison
+	p := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).FillWidth().Children(func() { m.customQueryControls(c, taskQueryView{}) })
+	}, 680, 580)
+	if !p.HasText("added-a") || !p.HasText("removed-z") {
+		t.Fatal("comparison panel does not expose the differing IDs")
+	}
+}
+
+func TestTaskQueryFieldDeleteRequiresConfirmation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "task-views.v2.json")
+	field := common.WorkbenchQueryField{ID: "points", Name: "Points", Key: "points", Type: "number"}
+	cfg := taskQueryConfig{SchemaVersion: 2, Revision: 1, Timezone: "UTC", Fields: []common.WorkbenchQueryField{field},
+		Views: []savedTaskView{
+			{ID: "query", Name: "Query reference", Query: &taskQueryView{Engine: "cel", Environment: 1, Dependencies: []string{field.ID}}},
+			{ID: "board", Name: "Board reference", Query: &taskQueryView{Engine: "cel", Environment: 1, Board: common.WorkbenchQueryDisplay{SumBy: field.ID}}},
+		},
+	}
+	if _, err := writeTaskQueryConfig(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	m := newFramework()
+	m.customQuery.path = path
+	m.adoptTaskQueryConfig(cfg)
+	m.customQuery.field, m.customQuery.fieldID, m.customQuery.fieldsOpen = &field, field.ID, true
+	p := ui.NewTester(m.queryFieldsDialog, 880, 680)
+	click(t, p, "删除")
+	for _, label := range []string{"删除字段「Points」？", "Query reference", "Board reference"} {
+		if !p.HasText(label) {
+			t.Fatalf("missing confirmation content: %q", label)
+		}
+	}
+	assertStored := func(revision int64, fields int) {
+		t.Helper()
+		actual, err := readTaskQueryConfig(path)
+		if err != nil || actual.Revision != revision || len(actual.Fields) != fields {
+			t.Fatalf("stored configuration: %+v, %v", actual, err)
+		}
+	}
+	assertStored(1, 1)
+	click(t, p, "取消")
+
+	// Use the same transaction as editing the affected saved views.
+	if err := m.updateTaskQueryConfig(func(cfg *taskQueryConfig) error {
+		cfg.Views[0].Query.Dependencies = nil
+		cfg.Views[1].Query.Board.SumBy = ""
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	p.Frame()
+	click(t, p, "删除")
+	assertStored(2, 1)
+	if !p.HasText("没有已保存的视图引用此字段") {
+		t.Fatal("missing no-references confirmation")
+	}
+	click(t, p, "确认删除")
+	assertStored(3, 0)
 }

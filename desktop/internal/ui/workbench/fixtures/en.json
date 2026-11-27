@@ -1,4 +1,10 @@
 {
+  "新增任务 ID": "Added task IDs",
+  "移除任务 ID": "Removed task IDs",
+  "删除字段「%s」？": "Delete field “%s”?",
+  "没有已保存的视图引用此字段": "No saved views reference this field",
+  "确认删除": "Confirm deletion",
+  "配置已替换，但未能同步目录：%s": "Settings were replaced, but the directory could not be synced: %s",
   "无优先级": "No priority",
   "共 1 项": "1 task",
   "排序字段": "Sort field",

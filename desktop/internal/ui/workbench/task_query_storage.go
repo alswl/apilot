@@ -12,6 +12,7 @@ import (
 
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/integrations"
+	"github.com/alswl/apilot/desktop/internal/platform"
 )
 
 type taskQueryChip struct {
@@ -41,21 +42,6 @@ type taskQueryConfig struct {
 }
 
 var errTaskQueryConfigChanged = errors.New("task view configuration changed")
-
-func workspaceTimezone() string {
-	if zone, err := os.Readlink("/etc/localtime"); err == nil {
-		if _, name, ok := strings.Cut(zone, "zoneinfo/"); ok {
-			if _, err := time.LoadLocation(name); err == nil {
-				return name
-			}
-		}
-	}
-	name := time.Local.String()
-	if _, err := time.LoadLocation(name); err == nil && name != "Local" {
-		return name
-	}
-	return "UTC"
-}
 
 func readTaskQueryConfig(path string) (taskQueryConfig, error) {
 	data, err := os.ReadFile(path)
@@ -130,7 +116,7 @@ func bootTaskQueryConfig(path string) (taskQueryConfig, error) {
 	for i := range views {
 		views[i].Query = &taskQueryView{Engine: "legacy-v1"}
 	}
-	cfg = taskQueryConfig{SchemaVersion: 2, Revision: 1, Timezone: workspaceTimezone(), Fields: []common.WorkbenchQueryField{}, Views: append([]savedTaskView{}, views...)}
+	cfg = taskQueryConfig{SchemaVersion: 2, Revision: 1, Timezone: platform.Timezone(), Fields: []common.WorkbenchQueryField{}, Views: append([]savedTaskView{}, views...)}
 	if _, err := writeTaskQueryConfig(path, cfg); err != nil {
 		return taskQueryConfig{}, err
 	}
@@ -169,11 +155,13 @@ func (m *mockup) updateTaskQueryConfig(change func(*taskQueryConfig) error) erro
 	cfg.Revision++
 	replaced, err := writeTaskQueryConfig(q.path, cfg)
 	if err == nil {
+		q.syncWarning = ""
 		m.adoptTaskQueryConfig(cfg)
 	} else if replaced {
 		if actual, readErr := readTaskQueryConfig(q.path); readErr == nil {
 			m.adoptTaskQueryConfig(actual)
 			if actual.Revision == cfg.Revision {
+				q.syncWarning = fmt.Sprintf(tr("配置已替换，但未能同步目录：%s"), err)
 				return nil
 			}
 		}
@@ -191,12 +179,8 @@ func validateTaskQueryReferences(cfg taskQueryConfig) error {
 		if view.Query == nil || view.Query.Engine != "cel" {
 			continue
 		}
-		ids := slices.Clone(view.Query.Dependencies)
-		for _, display := range []common.WorkbenchQueryDisplay{view.Query.List, view.Query.Board} {
-			ids = append(ids, display.Fields...)
-			ids = append(ids, display.GroupBy, display.ColumnBy, display.SwimlaneBy, display.SortBy, display.SumBy, display.SliceBy)
-		}
-		for _, id := range ids {
+
+		for _, id := range taskQueryViewFieldIDs(*view.Query) {
 			if id != "" && !strings.HasPrefix(id, "task.") && !strings.HasPrefix(id, "native.") && !fields[id] {
 				problem := fmt.Sprintf("%s · %s", view.Name, id)
 				if !slices.Contains(problems, problem) {
@@ -209,6 +193,25 @@ func validateTaskQueryReferences(cfg taskQueryConfig) error {
 		return errors.New(tr("字段仍被视图使用") + "\n" + strings.Join(problems, "\n"))
 	}
 	return nil
+}
+
+func taskQueryViewFieldIDs(view taskQueryView) []string {
+	ids := slices.Clone(view.Dependencies)
+	for _, display := range []common.WorkbenchQueryDisplay{view.List, view.Board} {
+		ids = append(ids, display.Fields...)
+		ids = append(ids, display.GroupBy, display.ColumnBy, display.SwimlaneBy, display.SortBy, display.SumBy, display.SliceBy)
+	}
+	return ids
+}
+
+func taskQueryFieldReferences(cfg taskQueryConfig, fieldID string) []savedTaskView {
+	var references []savedTaskView
+	for _, view := range cfg.Views {
+		if view.Query != nil && view.Query.Engine == "cel" && slices.Contains(taskQueryViewFieldIDs(*view.Query), fieldID) {
+			references = append(references, view)
+		}
+	}
+	return references
 }
 
 func putTaskQueryView(cfg *taskQueryConfig, view savedTaskView) error {

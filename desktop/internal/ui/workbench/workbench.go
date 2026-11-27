@@ -851,6 +851,9 @@ func (m *mockup) tasks(c *ui.Context) {
 func (m *mockup) taskListControls(c *ui.Context) {
 	compact := m.compactTaskList()
 	m.taskViewBar(c.Key("task-views"))
+	if warning := m.customQuery.syncWarning; warning != "" {
+		components.StatusLabel(c.Key("sync-warning"), components.Status{Text: warning, Icon: "exclamationmark.circle", Color: c.Theme().Warning})
+	}
 	if view := m.activeTaskQuery(); view != nil {
 		m.customQueryControls(c.Key("custom-query-controls"), *view)
 		return

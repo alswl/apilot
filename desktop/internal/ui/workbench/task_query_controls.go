@@ -321,7 +321,13 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 			components.Muted(c.Key("legacy-query"), conversion.original)
 		}
 		if q.comparison != "" {
-			components.Muted(c.Key("comparison"), q.comparison)
+			summary, ids, _ := strings.Cut(q.comparison, "\n")
+			components.Muted(c.Key("comparison"), summary)
+			if ids != "" {
+				ui.Scroll(c.Key("comparison-ids")).FillWidth().Height(72).Children(func() {
+					components.Body(c.Key("ids"), ids).FillWidth()
+				})
+			}
 		} else if q.result != nil && !q.loading {
 			components.Muted(c.Key("comparison-stale"), tr("快照已更改，请重新开始转换"))
 		}

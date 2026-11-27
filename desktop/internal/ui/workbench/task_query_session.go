@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
@@ -38,7 +39,7 @@ type taskQueryWorkspace struct {
 	selectPageEdge                                                     int
 	immediate                                                          bool
 	autoLimit                                                          int
-	path, problem                                                      string
+	path, problem, syncWarning                                         string
 	config                                                             taskQueryConfig
 	drafts                                                             map[string]taskQueryView
 	browsing                                                           map[string]taskQueryBrowsing
@@ -60,6 +61,7 @@ type taskQueryWorkspace struct {
 	previewCancel                                                      context.CancelFunc
 	previewSequence                                                    uint64
 	fieldProblem                                                       string
+	fieldDelete                                                        bool
 }
 
 func (m *mockup) activeTaskQuery() *taskQueryView {
@@ -412,19 +414,35 @@ func (m *mockup) queryTabAction(action string) {
 }
 
 func taskQueryComparison(old []string, items []common.WorkbenchQueryItem) string {
+	oldIDs := make(map[string]bool, len(old))
 	newIDs := make(map[string]bool, len(items))
+	for _, id := range old {
+		oldIDs[id] = true
+	}
 	for _, item := range items {
 		newIDs[item.Task.ID] = true
 	}
-	removed, shared := 0, 0
-	for _, id := range old {
-		if newIDs[id] {
-			shared++
-		} else {
-			removed++
+	var added, removed []string
+	for id := range newIDs {
+		if !oldIDs[id] {
+			added = append(added, id)
 		}
 	}
-	return fmt.Sprintf(tr("原查询 %d 项，CEL %d 项，新增 %d 项，移除 %d 项"), len(old), len(items), len(items)-shared, removed)
+	for id := range oldIDs {
+		if !newIDs[id] {
+			removed = append(removed, id)
+		}
+	}
+	slices.Sort(added)
+	slices.Sort(removed)
+	summary := fmt.Sprintf(tr("原查询 %d 项，CEL %d 项，新增 %d 项，移除 %d 项"), len(oldIDs), len(newIDs), len(added), len(removed))
+	if len(added) > 0 {
+		summary += "\n" + tr("新增任务 ID") + "\n" + strings.Join(added, "\n")
+	}
+	if len(removed) > 0 {
+		summary += "\n" + tr("移除任务 ID") + "\n" + strings.Join(removed, "\n")
+	}
+	return summary
 }
 
 func (m *mockup) queryPagePosition() (page, pages int) {

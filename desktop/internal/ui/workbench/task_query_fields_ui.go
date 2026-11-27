@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -35,14 +36,22 @@ func (m *mockup) queryFieldsDialog(c *ui.Context) {
 				if ui.Button(c.Key("done"), tr("完成")).Clicked() {
 					q.fieldsOpen = false
 				}
+			} else if q.fieldDelete {
+				m.queryFieldDeleteConfirmation(c.Key("delete-confirmation"), *q.field)
 			} else {
 				m.queryFieldEditor(c.Key("editor"), q.field)
+			}
+			if q.syncWarning != "" {
+				components.Muted(c.Key("sync-warning"), q.syncWarning)
 			}
 			if q.fieldProblem != "" {
 				components.Muted(c.Key("problem"), q.fieldProblem)
 			}
 		})
 	})
+	if !q.fieldsOpen {
+		q.fieldDelete = false
+	}
 }
 
 func (m *mockup) queryFieldEditor(c *ui.Context, draft *common.WorkbenchQueryField) {
@@ -81,20 +90,52 @@ func (m *mockup) queryFieldEditor(c *ui.Context, draft *common.WorkbenchQueryFie
 			m.previewQueryField(*draft, false)
 		}
 		if q.fieldID != "" && ui.Button(c.Key("delete"), tr("删除")).Clicked() {
-			err := m.updateTaskQueryConfig(func(cfg *taskQueryConfig) error {
-				cfg.Fields = slices.DeleteFunc(cfg.Fields, func(field common.WorkbenchQueryField) bool { return field.ID == draft.ID })
-				return nil
-			})
-			m.setTaskQueryProblem(err)
-			if err == nil {
-				q.field = nil
-				m.invalidateTaskQuery()
-			}
+			q.fieldDelete = true
 		}
 		if ui.PrimaryButton(c.Key("save"), tr("保存")).Disabled(strings.TrimSpace(draft.Name) == "" || strings.TrimSpace(draft.Key) == "").Clicked() {
 			m.previewQueryField(*draft, true)
 		}
 	})
+}
+
+func (m *mockup) queryFieldDeleteConfirmation(c *ui.Context, field common.WorkbenchQueryField) {
+	q := &m.customQuery
+	references := taskQueryFieldReferences(q.config, field.ID)
+	if index := slices.IndexFunc(q.config.Fields, func(candidate common.WorkbenchQueryField) bool { return candidate.ID == field.ID }); index >= 0 {
+		field = q.config.Fields[index]
+	}
+	components.Heading(c.Key("title"), fmt.Sprintf(tr("删除字段「%s」？"), field.Name))
+	if len(references) > 0 {
+		components.Muted(c.Key("notice"), tr("字段仍被视图使用"))
+		ui.Scroll(c.Key("references")).FillWidth().MaxHeight(180).Children(func() {
+			ui.Column(c).FillWidth().Gap(4).Children(func() {
+				for _, view := range references {
+					components.Body(c.Key(view.ID), view.Name)
+				}
+			})
+		})
+	} else {
+		components.Muted(c.Key("notice"), tr("没有已保存的视图引用此字段"))
+	}
+	ui.Row(c.Key("actions")).Gap(8).Justify(ui.End).Children(func() {
+		if ui.Button(c.Key("cancel"), tr("取消")).AutoFocus().Clicked() {
+			q.fieldDelete = false
+		}
+		if ui.Button(c.Key("confirm"), tr("确认删除")).Disabled(len(references) > 0).Clicked() {
+			err := m.updateTaskQueryConfig(func(cfg *taskQueryConfig) error {
+				cfg.Fields = slices.DeleteFunc(cfg.Fields, func(candidate common.WorkbenchQueryField) bool { return candidate.ID == field.ID })
+				return nil
+			})
+			m.setTaskQueryProblem(err)
+			if err == nil {
+				q.field, q.fieldDelete = nil, false
+				m.invalidateTaskQuery()
+			}
+		}
+	})
+	if q.problem != "" {
+		components.Muted(c.Key("store-problem"), q.problem)
+	}
 }
 
 func queryMappingSelect(c *ui.Context, value *string, ids, labels []string, label string, disabled bool) bool {

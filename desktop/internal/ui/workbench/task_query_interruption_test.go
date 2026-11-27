@@ -6,7 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/egoist/mygo/ui"
 )
 
 func TestTaskQueryConfigWriteInterruption(t *testing.T) {
@@ -102,5 +105,39 @@ func TestTaskQueryConfigWriteInterruption(t *testing.T) {
 				t.Fatal("restart changed previously published bytes")
 			}
 		})
+	}
+}
+
+func TestTaskQueryConfigDirectorySyncWarning(t *testing.T) {
+	if os.Getenv("APILOT_TEST_TASK_VIEW_OVERLAY") != "1" {
+		t.Skip("requires scripts/test-task-view-write-interruption.py")
+	}
+	path := filepath.Join(t.TempDir(), "task-views.v2.json")
+	initial, err := bootTaskQueryConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newFramework()
+	m.customQuery.path = path
+	m.adoptTaskQueryConfig(initial)
+	t.Setenv("APILOT_TEST_TASK_VIEW_DIRECTORY_SYNC", "1")
+	m.customQuery.dialog, m.customQuery.name = "new", "Created once"
+	if !m.applyQueryTabAction() {
+		t.Fatalf("replacement was not adopted: %s", m.customQuery.problem)
+	}
+	saved, err := readTaskQueryConfig(path)
+	if err != nil || saved.Revision != initial.Revision+1 || len(saved.Views) != 1 ||
+		saved.Views[0].Name != "Created once" || m.taskView != saved.Views[0].ID ||
+		m.customQuery.config.Revision != saved.Revision {
+		t.Fatalf("unexpected disk or UI state: %+v, selected=%q, %v", saved, m.taskView, err)
+	}
+	warning := m.customQuery.syncWarning
+	m.useAdaptiveLayout()
+	if !strings.Contains(warning, "injected directory sync failure") || !ui.NewTester(m.view, 880, 680).HasText(warning) {
+		t.Fatalf("missing visible persistence warning: %q", warning)
+	}
+	reopened, err := bootTaskQueryConfig(path)
+	if err != nil || reopened.Revision != saved.Revision || len(reopened.Views) != 1 || reopened.Views[0].ID != m.taskView {
+		t.Fatalf("restart did not retain exactly one replacement: %+v, %v", reopened, err)
 	}
 }
