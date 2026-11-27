@@ -33,6 +33,7 @@ func (m *mockup) taskLayoutControl(c *ui.Context) {
 	})
 	if segments.Track.Changed() {
 		m.taskBoard = selected == 1
+		m.customQuery.page = 0
 		m.taskDisplayOpen = false
 		m.closeInspector()
 		m.restoreTaskFocus = false
@@ -57,7 +58,7 @@ func (m *mockup) taskBoardColumns(rows []int) [len(taskBoardStates)][]int {
 
 func (m *mockup) taskNavigationRows() []int {
 	rows := m.taskRows()
-	if !m.taskBoard {
+	if !m.taskBoard || m.activeTaskQuery() != nil {
 		return rows
 	}
 	columns := m.taskBoardColumns(rows)

@@ -23,9 +23,10 @@ type taskViewState struct {
 }
 
 type savedTaskView struct {
-	ID    string        `json:"id"`
-	Name  string        `json:"name"`
-	State taskViewState `json:"state"`
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	State taskViewState  `json:"state"`
+	Query *taskQueryView `json:"query,omitempty"`
 }
 
 func (m *mockup) viewState() taskViewState {
@@ -156,8 +157,10 @@ func (m *mockup) selectTaskView(id string) {
 	if m.taskView == id {
 		return
 	}
+	m.rememberQueryBrowsing()
 	m.taskViewDrafts[m.taskView] = m.viewState()
 	m.taskView = id
+	m.customQuery.revealTab = true
 	state := defaultTaskViewState(id)
 	if draft, ok := m.taskViewDrafts[id]; ok {
 		state = draft
@@ -171,6 +174,7 @@ func (m *mockup) selectTaskView(id string) {
 	}
 	m.restoreView(state)
 	m.closeInspector()
+	m.restoreQueryBrowsing()
 }
 
 func (m *mockup) taskViewBar(c *ui.Context) {
@@ -179,13 +183,27 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 		ui.Column(c.Key("view-list")).Grow(1).MinWidth(0).Children(func() {
 			items := []components.ViewItem{{ID: "all", Title: tr("全部任务")}, {ID: "in-progress", Title: tr("处理中")}, {ID: "pending", Title: tr("待处理")}, {ID: "watching", Title: tr("关注中")}}
 			for _, saved := range m.savedTaskViews {
-				items = append(items, components.ViewItem{ID: saved.ID, Title: saved.Name})
+				title := saved.Name
+				if saved.ID == m.taskView && m.customQueryChanged() {
+					title += " •"
+				}
+				items = append(items, components.ViewItem{ID: saved.ID, Title: title})
+			}
+			for _, id := range slices.Sorted(maps.Keys(m.customQuery.conversion)) {
+				items = append(items, components.ViewItem{ID: id, Title: m.customQuery.conversion[id].view.Name + " •"})
 			}
 			current := m.taskView
 			if current == "" {
 				current = "all"
 			}
-			if chosen := components.ViewStrip(c.Key("views"), items, current); chosen != "" {
+			var chosen string
+			if m.customQuery.path != "" {
+				chosen = components.ScrollableViewStrip(c.Key("views"), items, current, m.customQuery.revealTab)
+				m.customQuery.revealTab = false
+			} else {
+				chosen = components.ViewStrip(c.Key("views"), items, current)
+			}
+			if chosen != "" {
 				if chosen == "all" {
 					chosen = ""
 				}
@@ -194,6 +212,10 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 		})
 		if m.unifiedTasks() {
 			m.taskLayoutControl(c.Key("layout"))
+		}
+		m.queryTabButtons(c.Key("query-actions"))
+		if m.activeTaskQuery() != nil {
+			return
 		}
 		if !m.taskBoard {
 			display := components.IconToggle(c.Key("display"), "slider.horizontal.3", tr("显示选项"), m.taskDisplayOpen)
@@ -205,6 +227,9 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 					m.taskDisplayOptions(c.Key("display-options"))
 				})
 			}
+		}
+		if m.customQuery.path != "" {
+			return
 		}
 		label := "保存视图"
 		current := m.currentSavedView()
@@ -236,11 +261,14 @@ func (m *mockup) taskViewBar(c *ui.Context) {
 			m.saveCurrentTaskView()
 		}
 	})
+	if m.activeTaskQuery() == nil && m.customQuery.problem != "" {
+		components.Muted(c.Key("config-problem"), m.customQuery.problem)
+	}
 	if m.taskViewSaveError && !m.saveTaskViewOpen {
 		components.Muted(c.Key("save-error"), tr("无法保存视图"))
 	}
 	ui.Divider(c)
-	if !m.taskBoard && m.taskDisplayOpen && !compact {
+	if m.activeTaskQuery() == nil && !m.taskBoard && m.taskDisplayOpen && !compact {
 		m.taskDisplayOptions(c.Key("display-options"))
 	}
 }
@@ -276,6 +304,10 @@ func (m *mockup) currentSavedView() *savedTaskView {
 }
 
 func (m *mockup) saveCurrentTaskView() {
+	if m.activeTaskQuery() != nil {
+		m.saveCustomQuery()
+		return
+	}
 	if !m.taskViewChanged() {
 		return
 	}

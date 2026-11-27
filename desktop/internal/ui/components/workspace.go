@@ -7,19 +7,36 @@ type ViewItem struct {
 }
 
 func ViewStrip(c *ui.Context, items []ViewItem, active string) string {
+	return viewStrip(c, items, active, true, false)
+}
+
+func ScrollableViewStrip(c *ui.Context, items []ViewItem, active string, reveal bool) string {
 	var chosen string
-	ui.Row(c).FillWidth().Wrap().Gap(8).Children(func() {
+	ui.ScrollHorizontal(c).FillWidth().Children(func() { chosen = viewStrip(c, items, active, false, reveal) })
+	return chosen
+}
+
+func viewStrip(c *ui.Context, items []ViewItem, active string, wrap, reveal bool) string {
+	var chosen string
+	row := ui.Row(c).Gap(8)
+	if wrap {
+		row.FillWidth().Wrap()
+	}
+	row.Children(func() {
 		for _, item := range items {
 			entry := ui.ButtonBase(c.Key(item.ID)).Label(item.Title).Selected(active == item.ID).
 				Padding(6, 10).MinHeight(28).Radius(6)
 			color := c.Theme().TextMuted
 			if active == item.ID {
+				if reveal {
+					entry.ScrollIntoView()
+				}
 				entry.Background(c.Theme().SurfaceHover)
 				color = c.Theme().Text
 			} else if entry.Hovered() {
 				entry.Background(c.Theme().SurfaceHover)
 			}
-			entry.Children(func() { DataText(c, item.Title).TextColor(color) })
+			entry.Children(func() { DataText(c, item.Title).TextColor(color).SingleLine() })
 			if entry.Clicked() {
 				chosen = item.ID
 			}

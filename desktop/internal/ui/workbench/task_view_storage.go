@@ -35,6 +35,12 @@ func loadNamedTaskViews(path string) ([]savedTaskView, error) {
 }
 
 func (m *mockup) saveNamedTaskView(view savedTaskView) error {
+	if m.customQuery.path != "" {
+		if view.Query == nil {
+			view.Query = &taskQueryView{Engine: "legacy-v1"}
+		}
+		return m.updateTaskQueryConfig(func(cfg *taskQueryConfig) error { return putTaskQueryView(cfg, view) })
+	}
 	path := m.taskViewStorePath
 	if path == "" {
 		m.savedTaskViews = upsertNamedTaskView(m.savedTaskViews, view)

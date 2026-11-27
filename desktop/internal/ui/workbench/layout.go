@@ -151,6 +151,10 @@ func (m *mockup) detailToggle(c *ui.Context) {
 func (m *mockup) layoutTaskList(c *ui.Context) {
 	ui.Column(c).Fill().MinWidth(0).MinHeight(0).Padding(12).Gap(8).Children(func() {
 		m.taskListControls(c.Key("controls"))
+		if view := m.activeTaskQuery(); view != nil {
+			m.customQueryResults(c.Key("custom-query"), *view)
+			return
+		}
 		if m.taskBoard {
 			m.taskListResults(c.Key("board-results"), 0)
 			return

@@ -3,6 +3,7 @@ package workbench
 import (
 	"log"
 	"path/filepath"
+	"time"
 
 	"github.com/alswl/apilot/core/pkg/config"
 	"github.com/alswl/apilot/core/pkg/services"
@@ -37,8 +38,12 @@ func NewHostedWorkspace(service *services.Remote, keybindingsPath, language stri
 	m.live = service
 	m.hosted = true
 	m.fixtureConnector = localConnectorFixture()
-	if err := m.loadTaskViewStore(filepath.Join(config.DataDir(), "task-views.json")); err != nil {
+	m.customQuery.path = filepath.Join(config.DataDir(), "task-views.v2.json")
+	if cfg, err := bootTaskQueryConfig(m.customQuery.path); err != nil {
+		m.customQuery.problem = err.Error()
 		log.Printf("Could not load saved task views: %v", err)
+	} else {
+		m.adoptTaskQueryConfig(cfg)
 	}
 	m.hostPanels = panels
 	m.useAdaptiveLayout()
@@ -56,6 +61,14 @@ func (w *HostedWorkspace) Open() *mygo.Window {
 			TitleBarStyle: mygo.TitleBarHiddenInset, Content: ui.View(m.view),
 		})
 		m.win.OnBlur(func() { m.keyboard.prefix = keystroke{} })
+		m.win.OnFocus(func() {
+			if result := m.customQuery.result; result != nil {
+				if zone, err := time.LoadLocation(m.customQuery.config.Timezone); err == nil && result.AsOfDate != time.Now().In(zone).Format(time.DateOnly) {
+					m.invalidateTaskQuery()
+					m.win.Invalidate()
+				}
+			}
+		})
 		m.startLiveEvents()
 	}
 	m.win.Show()

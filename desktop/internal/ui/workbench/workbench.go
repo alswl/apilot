@@ -30,6 +30,8 @@ const (
 var pages = [...]string{"Now", "任务", "连接", "定时任务", "用量"}
 
 type mockup struct {
+	customQuery taskQueryWorkspace
+
 	fixtureConnector                                          bool
 	connectorConflicts                                        map[string]common.WorkbenchTaskReceipt
 	connectorConflictRefreshes                                map[string]connectorConflictRefresh
@@ -581,6 +583,7 @@ func (m *mockup) view(c *ui.Context) {
 	m.syncLogDialog(c.Key("sync-log-dialog"))
 	m.newTaskDialog(c.Key("new-task-dialog"))
 	m.savedTaskViewDialog(c.Key("save-view-dialog"))
+	m.queryTabDialog(c.Key("query-tab-dialog"))
 	m.resourceDialog(c.Key("resource-dialog"))
 	m.sourceEditDialog(c.Key("source-edit"))
 	m.labelsDialog(c.Key("label-editor"))
@@ -768,6 +771,9 @@ func (m *mockup) matchesStatusFilter(task sourceObject) bool {
 }
 
 func (m *mockup) taskRows() []int {
+	if m.activeTaskQuery() != nil {
+		return m.customQueryRows()
+	}
 	query, problem := m.parseSearch()
 	if problem != "" {
 		return nil
@@ -845,6 +851,10 @@ func (m *mockup) tasks(c *ui.Context) {
 func (m *mockup) taskListControls(c *ui.Context) {
 	compact := m.compactTaskList()
 	m.taskViewBar(c.Key("task-views"))
+	if view := m.activeTaskQuery(); view != nil {
+		m.customQueryControls(c.Key("custom-query-controls"), *view)
+		return
+	}
 	m.changeTag(c, "task-search", tr("按来源和状态组合筛选，点击表头排序。"))
 	ui.Row(c.Key("filters")).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 		components.Symbol(c.Key("search-icon"), "magnifyingglass", c.Theme().TextMuted)
@@ -1150,6 +1160,7 @@ func (m *mockup) taskProperties(c *ui.Context, o *sourceObject) {
 	}
 	m.taskDateProperties(c.Key("dates"), o)
 	m.taskLabelProperty(c.Key("labels"), o)
+	m.customQueryProperties(c.Key("custom-query"), o.ID)
 	if m.live != nil {
 		m.workbenchLabelProperty(c.Key("local-labels"), o)
 	}

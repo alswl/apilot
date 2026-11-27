@@ -23,6 +23,7 @@ func (m *mockup) startLiveEvents() {
 	ctx, cancel := context.WithCancel(context.Background())
 	window.OnClosed(func() {
 		cancel()
+		m.invalidateTaskQuery()
 		m.stopPermissionRetry()
 	})
 	current := func() bool {
@@ -56,6 +57,7 @@ func (m *mockup) startLiveEvents() {
 
 func (m *mockup) receiveLiveDisconnect() {
 	m.stopPermissionRetry()
+	m.invalidateTaskQuery()
 	m.liveDisconnected, m.liveStale = true, true
 	if !m.liveLoaded {
 		m.liveError = true
@@ -63,6 +65,10 @@ func (m *mockup) receiveLiveDisconnect() {
 }
 
 func (m *mockup) receiveLiveEvent(event common.WorkbenchEvent) {
+	m.invalidateTaskQuery()
+	if m.win != nil && !m.win.IsDestroyed() {
+		m.win.Invalidate()
+	}
 	if event.Type == "snapshot" {
 		m.liveDisconnected = false
 		m.livePermissionRetries = 0
@@ -209,6 +215,7 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 			plugins, err = remote.WorkbenchPlugins()
 		}
 		var tasks []sourceObject
+		var taskRevision int64
 		revalidate := false
 		if err == nil {
 			q := common.WorkbenchQuery{Limit: 100}
@@ -218,6 +225,7 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 					err = readErr
 					break
 				}
+				taskRevision = page.Revision
 				tasks = append(tasks, page.Items...)
 				if len(tasks) >= page.Total {
 					break
@@ -304,13 +312,21 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 			hadError, wasStale := m.liveError, m.liveStale
 			m.liveError = err != nil
 			m.liveStale = m.liveDisconnected || err != nil || revalidate
+			revisionChanged := !m.liveStale && m.customQuery.liveRevision != taskRevision
+			if revisionChanged {
+				m.customQuery.liveRevision = taskRevision
+				m.invalidateTaskQuery()
+			}
+			if m.liveStale {
+				m.invalidateTaskQuery()
+			}
 			if err == nil && (!m.liveLoaded || !reflect.DeepEqual(connections, m.liveConnections) || !reflect.DeepEqual(plugins, m.livePlugins) || !reflect.DeepEqual(parents, m.connectorParents) || !reflect.DeepEqual(tasks, m.objects)) {
 				m.liveConnections = connections
 				m.livePlugins = plugins
 				m.connectorParents = parents
 				m.applyLive(connections, tasks)
 				m.win.Invalidate()
-			} else if hadError != m.liveError || wasStale != m.liveStale || detailChanged || settled || annotationsChanged {
+			} else if hadError != m.liveError || wasStale != m.liveStale || revisionChanged || m.activeTaskQuery() != nil || detailChanged || settled || annotationsChanged {
 				m.win.Invalidate()
 			}
 			if settled && !revalidate {
@@ -444,6 +460,7 @@ func (m *mockup) clearChangedGitHubAccess(snapshots []common.WorkbenchSnapshot) 
 }
 
 func (m *mockup) clearGitHubAccess(changed map[string]bool) {
+	m.invalidateTaskQuery()
 	for id := range changed {
 		m.clearGitHubTaskDrafts(id)
 		delete(m.syncLogs, id)
@@ -490,6 +507,7 @@ func workbenchOperationInProgress(state string) bool {
 }
 
 func (m *mockup) applyLive(snapshots []common.WorkbenchSnapshot, tasks []sourceObject) {
+	m.invalidateTaskQuery()
 	m.liveLoaded = true
 	if m.connectorDesktop() {
 		snapshots = slices.DeleteFunc(slices.Clone(snapshots), func(snapshot common.WorkbenchSnapshot) bool { return !m.visibleConnectorKind(snapshot.Kind) })
