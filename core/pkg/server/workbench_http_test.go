@@ -60,6 +60,44 @@ func TestWorkbenchHTTPContract(t *testing.T) {
 	}
 }
 
+func TestWorkbenchTaskQueryHTTP(t *testing.T) {
+	dir := t.TempDir()
+	runtime, err := Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close()
+	remote := services.NewRemote(config.SocketPath(dir))
+	_, err = remote.Call("workbench.task.import", common.WorkbenchImport{Tasks: []common.WorkbenchImportTask{
+		{Key: "fixture", Title: "Literal foo:bar", State: "open"},
+		{Key: "another", Title: "Another task", State: "done"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	query := common.WorkbenchTaskQuery{Timezone: "UTC", Keyword: "foo:bar", Expression: `task.status == "open"`}
+	result, err := remote.QueryWorkbenchTasks(ctx, query)
+	if err != nil || result.QueryTotal != 1 || len(result.Items) != 1 || result.Items[0].Task.Title != "Literal foo:bar" {
+		t.Fatalf("query route: %+v %v", result, err)
+	}
+	query.Expression = "true &&\n task.unlisted"
+	if result, err := remote.QueryWorkbenchTasks(ctx, query); err == nil || common.ProtocolError(err).Code != "INVALID_ARGUMENT" ||
+		common.ProtocolError(err).Details["line"] != float64(2) || len(result.Items) != 0 {
+		t.Fatalf("query diagnostics: %+v %v", result, err)
+	}
+	query.Expression = "true"
+	watch := []string{}
+	query.WatchIDs = &watch
+	if result, err := remote.QueryWorkbenchTasks(ctx, query); err != nil || result.QueryTotal != 0 {
+		t.Fatalf("empty watch filter: %+v %v", result, err)
+	}
+	page, err := remote.WorkbenchTasks(common.WorkbenchQuery{})
+	if err != nil || page.Total != 2 {
+		t.Fatalf("legacy list changed: %+v %v", page, err)
+	}
+}
+
 func TestWorkbenchHTTPDoesNotCacheAuthorizationOrTaskResults(t *testing.T) {
 	service, err := OpenService(t.TempDir())
 	if err != nil {
