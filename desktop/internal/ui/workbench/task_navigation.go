@@ -90,6 +90,7 @@ func (m *mockup) showTaskList() {
 	m.leaveTaskDetail()
 	if m.unifiedTasks() {
 		m.layout.detailHidden = true
+		m.layout.revealSelection = false
 	}
 }
 

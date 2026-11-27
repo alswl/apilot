@@ -206,6 +206,38 @@ func TestTaskBreadcrumbAndEscapeRestoreList(t *testing.T) {
 	}
 }
 
+func TestCustomTaskBreadcrumbReturnsToQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		board bool
+	}{{name: "split list"}, {name: "expanded board", board: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMockup()
+			m.useAdaptiveLayout()
+			m.taskView, m.taskBoard = "cel-view", tc.board
+			view := taskQueryView{Engine: "cel", Expression: `task.title == "QA Shared 03" && task.status == "done"`}
+			m.changeTaskQuery(view)
+			slice := "local"
+			m.customQuery.page, m.customQuery.slice = 2, &slice
+			m.pageScroll[tasksPage].X, m.taskBoardScroll.X = 40, 80
+			m.taskSelection = m.objects[0].ID
+			m.openFullTask(0)
+			p := ui.NewTester(m.view, 880, 680)
+
+			click(t, p, "返回 任务")
+
+			if p.HasText("返回 任务") || m.inspector || !m.layout.detailHidden || m.layout.detailExpanded || m.layout.revealSelection {
+				t.Fatal("the breadcrumb should dismiss the detail without scrolling the selected row into view")
+			}
+			if m.taskView != "cel-view" || m.taskBoard != tc.board || m.taskSelection != m.objects[0].ID ||
+				m.activeTaskQuery().Expression != view.Expression || m.customQuery.page != 2 || m.customQuery.slice != &slice ||
+				m.pageScroll[tasksPage].X != 40 || m.taskBoardScroll.X != 80 {
+				t.Fatal("the breadcrumb should retain the originating query and browsing state")
+			}
+		})
+	}
+}
+
 func TestInlineLabelAndTaskDates(t *testing.T) {
 	m := newMockup()
 	m.useAdaptiveLayout()
