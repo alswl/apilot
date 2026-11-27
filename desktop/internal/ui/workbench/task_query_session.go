@@ -36,6 +36,8 @@ type taskQueryWorkspace struct {
 	liveRevision                                                       int64
 	configConflict                                                     bool
 	selectPageEdge                                                     int
+	immediate                                                          bool
+	autoLimit                                                          int
 	path, problem                                                      string
 	config                                                             taskQueryConfig
 	drafts                                                             map[string]taskQueryView
@@ -43,6 +45,7 @@ type taskQueryWorkspace struct {
 	effective                                                          map[string]common.WorkbenchTaskQuery
 	slice                                                              *string
 	page                                                               int
+	objectIndex                                                        map[string]int
 	result                                                             *common.WorkbenchTaskQueryResult
 	loaded                                                             string
 	cancel                                                             context.CancelFunc
@@ -100,6 +103,7 @@ func (m *mockup) restoreQueryBrowsing() {
 func (m *mockup) invalidateTaskQuery() {
 	q := &m.customQuery
 	q.sequence++
+	q.immediate = true
 	if q.cancel != nil {
 		q.cancel()
 		q.cancel = nil
@@ -131,6 +135,8 @@ func (m *mockup) queryInput(view taskQueryView) common.WorkbenchTaskQuery {
 		input.Limit = 100
 	} else if m.taskPageSizeOverride > 0 {
 		input.Limit = min(m.taskPageSizeOverride, 100)
+	} else if q.autoLimit > 0 {
+		input.Limit = q.autoLimit
 	}
 	// Retain projected fields for value suggestions and detail explanations.
 	input.Display.Fields = nil
@@ -215,7 +221,11 @@ func readCustomQueryPages(ctx context.Context, remote taskQueryRunner, input com
 }
 
 func (m *mockup) ensureCustomQuery(view taskQueryView) {
-	m.scheduleCustomQuery(view, 120*time.Millisecond)
+	delay := 120 * time.Millisecond
+	if m.customQuery.immediate {
+		delay = 0
+	}
+	m.scheduleCustomQuery(view, delay)
 }
 
 func (m *mockup) scheduleCustomQuery(view taskQueryView, delay time.Duration) {
@@ -234,6 +244,7 @@ func (m *mockup) scheduleCustomQuery(view taskQueryView, delay time.Duration) {
 		q.cancel()
 	}
 	q.loaded, q.loading, q.valid = key, true, false
+	q.immediate = false
 	q.sequence++
 	seq, id, page, window, remote := q.sequence, m.taskView, q.page, m.win, m.live
 	ctx, cancel := context.WithCancel(context.Background())
@@ -433,6 +444,31 @@ func (m *mockup) browseCustomQueryPage(delta int) bool {
 		return false
 	}
 	q.page += delta
+	q.immediate = true
 	m.pageScroll[tasksPage] = ui.ScrollState{}
+	return true
+}
+
+// Fit the page to the laid-out scroll viewport, retaining the previous first row.
+func (m *mockup) fitCustomQueryPage(height float32, grouped bool) bool {
+	q := &m.customQuery
+	if height <= 0 || m.taskPageSizeOverride > 0 || m.inspector {
+		return false
+	}
+	rowHeight := float32(28)
+	if grouped {
+		rowHeight += 24
+	}
+	limit := max(1, min(100, int((height-34)/rowHeight)))
+	if limit == q.autoLimit {
+		return false
+	}
+	previous := q.autoLimit
+	if previous == 0 {
+		previous = 50
+	}
+	q.page = q.page * previous / limit
+	q.autoLimit = limit
+	q.immediate = true
 	return true
 }

@@ -150,3 +150,21 @@ func TestTaskQueryPaginationRejectsMixedVisibility(t *testing.T) {
 		t.Fatal("disconnected snapshot still visible")
 	}
 }
+
+func TestTaskQueryAutomaticPageKeepsAnchor(t *testing.T) {
+	m := newFramework()
+	m.customQuery.autoLimit, m.customQuery.page = 20, 2
+	view := taskQueryView{}
+	if !m.fitCustomQueryPage(314, false) || m.queryInput(view).Limit != 10 || m.customQuery.page != 4 {
+		t.Fatalf("resized page lost anchor: limit=%d page=%d", m.queryInput(view).Limit, m.customQuery.page)
+	}
+	m.inspector = true
+	if m.fitCustomQueryPage(180, false) || m.customQuery.page != 4 {
+		t.Fatal("opening detail moved the page")
+	}
+	m.inspector = false
+	m.taskPageSizeOverride = 50
+	if m.fitCustomQueryPage(180, false) || m.queryInput(view).Limit != 50 {
+		t.Fatal("automatic sizing replaced an explicit page size")
+	}
+}

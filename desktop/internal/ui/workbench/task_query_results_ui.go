@@ -2,7 +2,6 @@ package workbench
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/alswl/apilot/core/pkg/common"
@@ -15,13 +14,9 @@ func (m *mockup) customQueryRows() []int {
 	if result == nil {
 		return nil
 	}
-	index := make(map[string]int, len(m.objects))
-	for i, task := range m.objects {
-		index[task.ID] = i
-	}
 	rows := make([]int, 0, len(result.Items))
 	for _, item := range result.Items {
-		if i, exists := index[item.Task.ID]; exists {
+		if i, exists := m.customQuery.objectIndex[item.Task.ID]; exists {
 			rows = append(rows, i)
 		}
 	}
@@ -46,13 +41,16 @@ func (m *mockup) customQueryResults(c *ui.Context, view taskQueryView) {
 			m.customQuerySlices(c.Key("slices"), result)
 		}
 		ui.Column(c.Key("content")).Grow(1).FillHeight().MinWidth(0).MinHeight(0).Gap(6).Children(func() {
-			if result.SliceTotal == 0 && !m.taskBoard {
+			if result.QueryTotal == 0 && len(m.objects) == 0 {
+				m.liveTaskEmptyState(c.Key("empty-workspace"))
+			} else if result.SliceTotal == 0 {
 				components.Muted(c.Key("empty"), tr("没有符合条件的任务"))
 			}
 			if m.taskBoard {
 				m.customQueryBoard(c.Key("board"), result, display, view)
 				if len(result.Items) < result.SliceTotal && ui.Button(c.Key("more"), tr("加载更多")).Disabled(q.loading).Clicked() {
 					q.page++
+					q.immediate = true
 				}
 			} else {
 				m.customQueryList(c.Key("list"), result, display, view)
@@ -76,7 +74,7 @@ func queryGroupTitle(group common.WorkbenchQueryGroup) string {
 
 func (m *mockup) customQuerySlices(c *ui.Context, result *common.WorkbenchTaskQueryResult) {
 	q := &m.customQuery
-	ui.Scroll(c).Width(116).FillHeight().Children(func() {
+	ui.Scroll(c).Width(116).MinWidth(116).Shrink(0).FillHeight().Children(func() {
 		ui.Column(c).FillWidth().Gap(4).Children(func() {
 			options := []components.ViewItem{{ID: "all", Title: fmt.Sprintf("%s · %d", tr("全部任务"), result.QueryTotal)}}
 			current := "all"
@@ -99,6 +97,7 @@ func (m *mockup) customQuerySlices(c *ui.Context, result *common.WorkbenchTaskQu
 						q.slice = &value
 					}
 					q.page = 0
+					q.immediate = true
 					m.taskBoardScroll, m.pageScroll[tasksPage] = ui.ScrollState{}, ui.ScrollState{}
 				}
 			}
@@ -108,7 +107,8 @@ func (m *mockup) customQuerySlices(c *ui.Context, result *common.WorkbenchTaskQu
 
 func (m *mockup) customQueryList(c *ui.Context, result *common.WorkbenchTaskQueryResult, display common.WorkbenchQueryDisplay, view taskQueryView) {
 	q := &m.customQuery
-	ui.ScrollBoth(c.Key("scroll")).Grow(1).MinHeight(0).MinWidth(0).FillWidth().TrackScroll(&m.pageScroll[tasksPage]).Children(func() {
+	scroll := ui.ScrollBoth(c.Key("scroll")).Grow(1).MinHeight(0).MinWidth(0).FillWidth().TrackScroll(&m.pageScroll[tasksPage])
+	scroll.Children(func() {
 		ui.Column(c).FillWidth().Gap(4).Children(func() {
 			if len(result.Items) == 0 {
 				return
@@ -140,17 +140,18 @@ func (m *mockup) customQueryList(c *ui.Context, result *common.WorkbenchTaskQuer
 			}
 		})
 	})
+	if m.fitCustomQueryPage(scroll.LayoutBounds().H, display.GroupBy != "") {
+		c.Invalidate()
+	}
 	limit := m.queryInput(view).Limit
 	pages := max(1, (result.SliceTotal+limit-1)/limit)
 	ui.Row(c.Key("pagination")).FillWidth().Gap(8).AlignItems(ui.Center).Children(func() {
 		if components.IconButton(c.Key("previous"), "chevron.left", tr("上一页"), q.page == 0 || q.loading).Clicked() && q.page > 0 {
-			q.page--
-			m.pageScroll[tasksPage] = ui.ScrollState{}
+			m.browseCustomQueryPage(-1)
 		}
 		components.Muted(c.Key("page"), fmt.Sprintf("%d / %d", q.page+1, pages))
 		if components.IconButton(c.Key("next"), "chevron.right", tr("下一页"), q.page+1 >= pages || q.loading).Clicked() && q.page+1 < pages {
-			q.page++
-			m.pageScroll[tasksPage] = ui.ScrollState{}
+			m.browseCustomQueryPage(1)
 		}
 	})
 }
@@ -214,7 +215,7 @@ func queryInfo(fields []common.WorkbenchQueryFieldInfo, id string) common.Workbe
 }
 
 func (m *mockup) customQueryItem(c *ui.Context, item common.WorkbenchQueryItem, fields []string, view taskQueryView, board bool) {
-	index := slices.IndexFunc(m.objects, func(task sourceObject) bool { return task.ID == item.Task.ID })
+	index, available := m.customQuery.objectIndex[item.Task.ID]
 	selected := m.taskSelection == item.Task.ID
 	theme := c.Theme()
 	row := ui.Row(c).Gap(8).AlignItems(ui.Center)
@@ -227,7 +228,7 @@ func (m *mockup) customQueryItem(c *ui.Context, item common.WorkbenchQueryItem, 
 	}
 	row.Children(func() {
 		title := ui.ButtonBase(c.Key("title")).Label(item.Task.Title).Tooltip(item.Task.Title).
-			Justify(ui.Start).MinWidth(0).MinHeight(24).Selected(selected).Disabled(index < 0)
+			Justify(ui.Start).MinWidth(0).MinHeight(24).Selected(selected).Disabled(!available)
 		if board {
 			title.FillWidth()
 		} else {
@@ -252,7 +253,7 @@ func (m *mockup) customQueryItem(c *ui.Context, item common.WorkbenchQueryItem, 
 			m.layout.revealSelection = false
 			m.restoreTaskFocus = false
 		}
-		if title.Clicked() && index >= 0 {
+		if title.Clicked() && available {
 			m.taskSelection = item.Task.ID
 			m.openFullTask(index)
 		}

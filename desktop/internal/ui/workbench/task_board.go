@@ -34,6 +34,7 @@ func (m *mockup) taskLayoutControl(c *ui.Context) {
 	if segments.Track.Changed() {
 		m.taskBoard = selected == 1
 		m.customQuery.page = 0
+		m.customQuery.immediate = true
 		m.taskDisplayOpen = false
 		m.closeInspector()
 		m.restoreTaskFocus = false

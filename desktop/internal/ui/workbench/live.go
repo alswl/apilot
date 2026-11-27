@@ -793,6 +793,10 @@ func (m *mockup) replaceLiveTasks(tasks []sourceObject) {
 		selectedID = m.objects[m.selected].ID
 	}
 	m.objects = tasks
+	m.customQuery.objectIndex = make(map[string]int, len(tasks))
+	for index, task := range tasks {
+		m.customQuery.objectIndex[task.ID] = index
+	}
 	if previousPosition >= 0 {
 		rows := m.taskRows()
 		stillVisible := slices.ContainsFunc(rows, func(index int) bool { return m.objects[index].ID == selectedID })
