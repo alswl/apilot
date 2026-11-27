@@ -267,17 +267,8 @@ func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 		if k.editingText {
 			m.restoreTaskFocus = m.page == tasksPage && len(m.taskRows()) > 0
 			k.focusNavigation = !m.restoreTaskFocus
-		} else if m.editingDue {
-			m.editingDue = false
-		} else if len(m.taskBackStack) > 0 {
-			m.returnRelatedPending = true
-		} else if m.taskBoard && m.layout.detailExpanded {
-			m.leaveTaskDetail()
-		} else if m.layout.detailExpanded {
-			m.layout.detailExpanded = false
-			m.layout.focusDetail = true
 		} else {
-			m.leaveTaskDetail()
+			m.escapeTaskDetail()
 		}
 		c.Invalidate()
 		return

@@ -271,42 +271,51 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 			m.changeTaskQuery(view)
 		}
 	})
-	ui.Row(c.Key("summary")).Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
-		if view.Expression != "" && (len(view.Chips) == 0 || view.ChipBase != "") {
-			if ui.Button(c.Key("expression-summary"), tr("自定义表达式")).Clicked() {
-				q.expressionOpen = true
+	summary := func(c *ui.Context) {
+		ui.Row(c).FillWidth().Wrap().Gap(6).AlignItems(ui.Center).Children(func() {
+			if view.Expression != "" && (len(view.Chips) == 0 || view.ChipBase != "") {
+				if ui.Button(c.Key("expression-summary"), tr("自定义表达式")).Clicked() {
+					q.expressionOpen = true
+				}
+				if components.IconButton(c.Key("clear-expression"), "xmark", tr("清除表达式"), false).Clicked() {
+					view.editExpression("")
+					m.changeTaskQuery(view)
+				}
 			}
-			if components.IconButton(c.Key("clear-expression"), "xmark", tr("清除表达式"), false).Clicked() {
-				view.editExpression("")
-				m.changeTaskQuery(view)
+			for i, chip := range view.Chips {
+				if ui.Button(c.Key(fmt.Sprintf("chip-%d", i)), chip.Label+" ×").Tooltip(tr("移除条件") + " · " + chip.Label).Clicked() {
+					view.removeCondition(i)
+					m.changeTaskQuery(view)
+					break
+				}
 			}
-		}
-		for i, chip := range view.Chips {
-			if ui.Button(c.Key(fmt.Sprintf("chip-%d", i)), chip.Label+" ×").Tooltip(tr("移除条件") + " · " + chip.Label).Clicked() {
-				view.removeCondition(i)
-				m.changeTaskQuery(view)
-				break
+			if m.sourceFilter != "全部来源" && ui.Button(c.Key("source"), tr(m.sourceFilter)+" ×").Clicked() {
+				m.sourceFilter, m.sourceFilterID = "全部来源", ""
+				q.page = 0
 			}
-		}
-		if m.sourceFilter != "全部来源" && ui.Button(c.Key("source"), tr(m.sourceFilter)+" ×").Clicked() {
-			m.sourceFilter, m.sourceFilterID = "全部来源", ""
-			q.page = 0
-		}
-		if m.statusFilter != "全部状态" && ui.Button(c.Key("status"), tr(m.statusFilter)+" ×").Clicked() {
-			m.statusFilter = "全部状态"
-			q.page = 0
-		}
-		if m.taskWatchOnly && ui.Button(c.Key("watch"), tr("关注中")+" ×").Clicked() {
-			m.taskWatchOnly = false
-			q.page = 0
-		}
-		if q.result != nil {
-			components.Muted(c.Key("counts"), fmt.Sprintf(tr("%d / %d 项"), q.result.SliceTotal, q.result.QueryTotal))
-		}
-		if q.loading || !m.liveLoaded || m.liveStale {
-			components.Muted(c.Key("loading"), tr("正在读取任务…"))
-		}
-	})
+			if m.statusFilter != "全部状态" && ui.Button(c.Key("status"), tr(m.statusFilter)+" ×").Clicked() {
+				m.statusFilter = "全部状态"
+				q.page = 0
+			}
+			if m.taskWatchOnly && ui.Button(c.Key("watch"), tr("关注中")+" ×").Clicked() {
+				m.taskWatchOnly = false
+				q.page = 0
+			}
+			if q.result != nil {
+				components.Muted(c.Key("counts"), fmt.Sprintf(tr("%d / %d 项"), q.result.SliceTotal, q.result.QueryTotal))
+			}
+			if q.loading || !m.liveLoaded || m.liveStale {
+				components.Muted(c.Key("loading"), tr("正在读取任务…"))
+			}
+		})
+	}
+	if m.compactTaskList() {
+		ui.Scroll(c.Key("summary-scroll")).FillWidth().MaxHeight(64).Children(func() {
+			summary(c.Key("summary"))
+		})
+	} else {
+		summary(c.Key("summary"))
+	}
 	if conversion, converting := q.conversion[m.taskView]; converting {
 		if conversion.original != "" {
 			components.Muted(c.Key("legacy-query"), conversion.original)

@@ -94,6 +94,24 @@ func (m *mockup) showTaskList() {
 	}
 }
 
+func (m *mockup) escapeTaskDetail() {
+	switch {
+	case m.editingDue:
+		m.editingDue = false
+	case len(m.taskBackStack) > 0:
+		m.returnRelatedPending = true
+	case m.taskBoard && m.layout.detailExpanded:
+		m.leaveTaskDetail()
+	case m.layout.detailExpanded:
+		m.layout.detailExpanded = false
+		m.layout.focusDetail = true
+	case m.unifiedTasks() && m.activeTaskQuery() != nil:
+		m.showTaskList()
+	default:
+		m.leaveTaskDetail()
+	}
+}
+
 func (m *mockup) returnTaskTitle() string {
 	if len(m.taskBackStack) != 0 {
 		id := m.taskBackStack[len(m.taskBackStack)-1].taskID

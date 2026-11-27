@@ -271,6 +271,44 @@ func TestCustomTaskBreadcrumbRestoresFocusWithoutScrolling(t *testing.T) {
 	}
 }
 
+func TestMinimumWindowQueryRowIsReadableAndOpensFromDefaultSplit(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.taskView = "cel-view"
+	m.savedTaskViews = []savedTaskView{{ID: m.taskView, Name: "QA custom view"}}
+	m.customQuery.path = t.TempDir() + "/views.json"
+	chips := make([]taskQueryChip, 9)
+	for i := range chips {
+		chips[i] = taskQueryChip{Label: "A long condition label that takes up much of a toolbar row"}
+	}
+	m.changeTaskQuery(taskQueryView{
+		Engine:     "cel",
+		Expression: `task.status == "done"`,
+		ChipBase:   `task.status == "done"`,
+		Chips:      chips,
+		List:       common.WorkbenchQueryDisplay{Fields: []string{"task.status", "task.source", "task.due"}},
+	})
+	task := common.WorkbenchTask{ID: m.objects[0].ID, Title: "Filtered task"}
+	m.customQuery.objectIndex = map[string]int{task.ID: 0}
+	m.customQuery.result = &common.WorkbenchTaskQueryResult{
+		QueryTotal: 1, SliceTotal: 1, Items: []common.WorkbenchQueryItem{{Task: task}},
+	}
+	p := ui.NewTester(m.view, 680, 580)
+	row, ok := p.Find(task.Title)
+	pager, hasPager := p.Find("上一页")
+	if !ok || !hasPager || row.Y+row.H > pager.Y {
+		t.Fatalf("the whole result row must fit above the pager: row=%+v pager=%+v", row, pager)
+	}
+	click(t, p, task.Title)
+	if !m.inspector || m.layout.detailHidden || !p.HasText("返回 任务") {
+		t.Fatal("the default split should allow opening the filtered row")
+	}
+	p.Key(0, ui.KeyEscape)
+	if p.HasText("返回 任务") || !m.layout.detailHidden || !p.Focused(task.Title) {
+		t.Fatal("Escape should dismiss the selected detail and restore focus to the result")
+	}
+}
+
 func TestInlineLabelAndTaskDates(t *testing.T) {
 	m := newMockup()
 	m.useAdaptiveLayout()
