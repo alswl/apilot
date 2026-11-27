@@ -28,6 +28,7 @@ func (m *mockup) navigate(page int) {
 		m.layout.detailExpanded, m.layout.detailReturnHidden = false, false
 		m.taskBackStack = nil
 		m.page, m.inspector, m.editingDue, m.fullTask = page, false, false, false
+		m.rememberLocation()
 	}
 	if page == tasksPage && !m.inspector {
 		m.restoreTaskFocus = true

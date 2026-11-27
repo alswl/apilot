@@ -1,9 +1,6 @@
 package workbench
 
 import (
-	"log"
-	"path/filepath"
-
 	"github.com/alswl/apilot/core/pkg/config"
 	"github.com/alswl/apilot/core/pkg/services"
 	"github.com/egoist/mygo"
@@ -37,11 +34,9 @@ func NewHostedWorkspace(service *services.Remote, keybindingsPath, language stri
 	m.live = service
 	m.hosted = true
 	m.fixtureConnector = localConnectorFixture()
-	if err := m.loadTaskViewStore(filepath.Join(config.DataDir(), "task-views.json")); err != nil {
-		log.Printf("Could not load saved task views: %v", err)
-	}
 	m.hostPanels = panels
 	m.useAdaptiveLayout()
+	m.loadHostedNavigation(config.DataDir())
 	m.keyboard.path = keybindingsPath
 	m.keyboard.reload()
 	m.initLanguage(language)
