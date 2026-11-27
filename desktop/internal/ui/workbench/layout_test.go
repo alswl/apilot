@@ -3,6 +3,8 @@ package workbench
 import (
 	"testing"
 
+	"github.com/alswl/apilot/core/pkg/common"
+
 	"github.com/egoist/mygo/ui"
 )
 
@@ -235,6 +237,37 @@ func TestCustomTaskBreadcrumbReturnsToQuery(t *testing.T) {
 				t.Fatal("the breadcrumb should retain the originating query and browsing state")
 			}
 		})
+	}
+}
+
+func TestCustomTaskBreadcrumbRestoresFocusWithoutScrolling(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.layout.detailHidden = true
+	m.taskView = "cel-view"
+	m.changeTaskQuery(taskQueryView{
+		Engine: "cel",
+		List:   common.WorkbenchQueryDisplay{Fields: []string{"task.status", "task.source"}},
+		Widths: map[string]float32{"task.title": 350, "task.status": 180, "task.source": 180},
+	})
+	task := common.WorkbenchTask{ID: m.objects[0].ID, Title: "Filtered task"}
+	m.customQuery.objectIndex = map[string]int{task.ID: 0}
+	m.customQuery.result = &common.WorkbenchTaskQueryResult{
+		QueryTotal: 1, SliceTotal: 1, Items: []common.WorkbenchQueryItem{{Task: task}},
+	}
+	p := ui.NewTester(m.view, 680, 580)
+	row, ok := p.Find(task.Title)
+	if !ok {
+		t.Fatal("the filtered row must be present before scrolling")
+	}
+	p.Scroll(row.X+100, row.Y+10, 30, 0)
+	scrolled := m.pageScroll[tasksPage].X
+	if scrolled <= 0 {
+		t.Fatal("the fixture must be horizontally scrolled before opening details")
+	}
+	click(t, p, task.Title, "返回 任务")
+	if !p.Focused(task.Title) || m.pageScroll[tasksPage].X != scrolled {
+		t.Fatalf("focused=%t, horizontal offset=%v, want %v", p.Focused(task.Title), m.pageScroll[tasksPage].X, scrolled)
 	}
 }
 

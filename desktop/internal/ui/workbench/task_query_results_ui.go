@@ -246,7 +246,7 @@ func (m *mockup) customQueryItem(c *ui.Context, item common.WorkbenchQueryItem, 
 			}
 		})
 		if m.restoreTaskFocus && m.taskSelection == item.Task.ID {
-			title.Focus()
+			title.Focus(ui.FocusOptions{PreventScroll: !m.layout.revealSelection})
 			if m.layout.revealSelection {
 				title.ScrollIntoView()
 			}
