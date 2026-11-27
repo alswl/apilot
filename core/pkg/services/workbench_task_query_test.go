@@ -307,3 +307,72 @@ func TestWorkbenchTaskQueryCELCalendarAndDiagnostics(t *testing.T) {
 		t.Fatalf("option keys and display text: %+v", value)
 	}
 }
+
+func TestWorkbenchTaskQueryFixedCalendarBoundaries(t *testing.T) {
+	zone, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, beforeUTC, afterUTC string
+		before, after             [5]string
+	}{
+		{"Sunday to Monday after spring forward", "2026-03-09T03:59:59Z", "2026-03-09T04:00:00Z",
+			[5]string{"2026-03-08", "2026-03-09", "2026-03-02", "2026-03-09", "2026-03-15"},
+			[5]string{"2026-03-09", "2026-03-10", "2026-03-09", "2026-03-16", "2026-03-16"}},
+		{"spring forward", "2026-03-08T06:59:59Z", "2026-03-08T07:00:00Z",
+			[5]string{"2026-03-08", "2026-03-09", "2026-03-02", "2026-03-09", "2026-03-15"},
+			[5]string{"2026-03-08", "2026-03-09", "2026-03-02", "2026-03-09", "2026-03-15"}},
+		{"fall back", "2026-11-01T05:59:59Z", "2026-11-01T06:00:00Z",
+			[5]string{"2026-11-01", "2026-11-02", "2026-10-26", "2026-11-02", "2026-11-08"},
+			[5]string{"2026-11-01", "2026-11-02", "2026-10-26", "2026-11-02", "2026-11-08"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			parse := func(value string) time.Time {
+				result, err := time.Parse(time.RFC3339, value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return result
+			}
+			assertCalendar := func(instant time.Time, want [5]string) {
+				t.Helper()
+				got := workbenchQueryCalendar(instant, zone)
+				for i, name := range workbenchQueryCalendarNames {
+					if got[name] != want[i] {
+						t.Errorf("%s at %s = %v, want %s", name, instant, got[name], want[i])
+					}
+				}
+			}
+			before, after := parse(tc.beforeUTC), parse(tc.afterUTC)
+			assertCalendar(before, tc.before)
+			assertCalendar(after, tc.after)
+			db, err := dal.Open(filepath.Join(t.TempDir(), "query.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			service := &Service{store: db}
+			calls := 0
+			result, err := service.queryWorkbenchTasks(t.Context(),
+				common.WorkbenchTaskQuery{Timezone: zone.String(), Expression: "true"}, func() time.Time {
+					calls++
+					if calls == 1 {
+						return before
+					}
+					return after
+				})
+			if calls != 2 {
+				t.Fatalf("clock called %d times, want query start and final validation", calls)
+			}
+			if tc.before[0] != tc.after[0] {
+				if err == nil || common.ProtocolError(err).Code != "STALE_REVISION" ||
+					!reflect.DeepEqual(result, common.WorkbenchTaskQueryResult{}) {
+					t.Fatalf("old-date result published: %+v, %v", result, err)
+				}
+			} else if err != nil || result.AsOfDate != tc.after[0] || result.PageToken == "" {
+				t.Fatalf("same-date DST change invalidated query: %+v, %v", result, err)
+			}
+		})
+	}
+}
