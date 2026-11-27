@@ -309,8 +309,8 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 			}
 		})
 	}
-	if m.compactTaskList() {
-		ui.Scroll(c.Key("summary-scroll")).FillWidth().MaxHeight(64).Children(func() {
+	if m.compactTaskList() && len(view.Chips) > 1 {
+		ui.Scroll(c.Key("summary-scroll")).FillWidth().Height(64).Children(func() {
 			summary(c.Key("summary"))
 		})
 	} else {
