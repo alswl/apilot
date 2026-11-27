@@ -31,7 +31,8 @@ type ObsidianSyncOptions struct {
 }
 
 type Service struct {
-	workbenchQueryPrograms workbenchQueryProgramCache
+	workbenchQueryPrograms    workbenchQueryProgramCache
+	workbenchQueryProjections workbenchQueryProjectionCache
 
 	volatileRevision      atomic.Uint64
 	workbenchActive       map[string]context.CancelFunc

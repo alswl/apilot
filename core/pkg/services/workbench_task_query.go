@@ -49,7 +49,7 @@ func (s *Service) queryWorkbenchTasks(ctx context.Context, input common.Workbenc
 	if input.AsOfDate != "" && input.AsOfDate != date {
 		return empty, staleWorkbenchQuery()
 	}
-	revision, sources, tasks, err := store.WorkbenchQuerySnapshot(ctx, false)
+	revision, sources, err := readWorkbenchQueryBoundary(ctx, store)
 	if err != nil {
 		return empty, err
 	}
@@ -60,8 +60,11 @@ func (s *Service) queryWorkbenchTasks(ctx context.Context, input common.Workbenc
 	if input.PageToken != "" && input.PageToken != token {
 		return empty, staleWorkbenchQuery()
 	}
-
-	result, queryErr := calculateWorkbenchQuery(ctx, input, program, directory, zone, calendar, sources, tasks)
+	prepared, err := s.workbenchQueryProjections.load(ctx, store, revision, sources, input, directory, zone)
+	if err != nil {
+		return empty, err
+	}
+	result, queryErr := calculateWorkbenchQuery(ctx, input, program, calendar, prepared)
 	latest, currentSources, _, err := store.WorkbenchQuerySnapshot(ctx, true)
 	if err != nil {
 		return empty, err
@@ -125,14 +128,14 @@ func workbenchQueryToken(input common.WorkbenchTaskQuery, revision int64, source
 	return hex.EncodeToString(digest[:])
 }
 
-func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuery, program workbenchQueryProgram,
-	directory map[string]common.WorkbenchQueryFieldInfo, zone *time.Location, calendar map[string]any,
+func prepareWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuery, directory map[string]common.WorkbenchQueryFieldInfo, zone *time.Location,
 	sources []common.WorkbenchQueryScope, tasks []common.WorkbenchTask,
-) (common.WorkbenchTaskQueryResult, error) {
-	result := common.WorkbenchTaskQueryResult{FieldDependencies: append([]string{}, program.dependencies...)}
+) (*workbenchPreparedQuery, error) {
+	prepared := &workbenchPreparedQuery{directory: directory, sourceVersions: make(map[string]int64, len(sources))}
 	sourceByID := make(map[string]common.WorkbenchConnection, len(sources))
 	for _, source := range sources {
 		sourceByID[source.ID] = source.WorkbenchConnection
+		prepared.sourceVersions[source.ID] = source.Version
 	}
 	connectors := make(map[string]WorkbenchConnector)
 	for _, connector := range WorkbenchConnectors() {
@@ -151,7 +154,7 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 	nativeByTask := make([]map[string]queryNativeValue, len(tasks))
 	for i, task := range tasks {
 		if err := ctx.Err(); err != nil {
-			return result, err
+			return nil, err
 		}
 		if _, visible := sourceByID[task.ConnectionID]; !visible {
 			continue
@@ -168,7 +171,7 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 			}
 		}
 	}
-	result.Sources = make([]common.WorkbenchQuerySource, 0, len(sources))
+	prepared.sources = make([]common.WorkbenchQuerySource, 0, len(sources))
 	for _, source := range sources {
 		info := common.WorkbenchQuerySource{ID: source.ID, Name: source.Name, NativeFields: []common.WorkbenchQueryFieldInfo{}}
 		for _, key := range slices.Sorted(maps.Keys(catalog[source.ID])) {
@@ -179,25 +182,18 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 			}
 			directory[field.ID] = field
 		}
-		result.Sources = append(result.Sources, info)
+		prepared.sources = append(prepared.sources, info)
 	}
 	for _, id := range slices.Sorted(maps.Keys(directory)) {
-		result.Fields = append(result.Fields, directory[id])
+		prepared.fields = append(prepared.fields, directory[id])
 	}
-	display, err := validateWorkbenchQueryDisplay(input.Display, input.SliceValue, directory)
-	if err != nil {
-		return result, err
-	}
-
-	keyword := strings.ToLower(strings.TrimSpace(input.Keyword))
-	matches := make([]common.WorkbenchQueryItem, 0)
-	constraints := newWorkbenchQueryConstraints(input)
+	prepared.rows = make([]workbenchPreparedRow, 0, len(tasks))
 	for i, task := range tasks {
 		if err := ctx.Err(); err != nil {
-			return result, err
+			return nil, err
 		}
 		source, visible := sourceByID[task.ConnectionID]
-		if !visible || !constraints.match(task) {
+		if !visible {
 			continue
 		}
 		native := nativeByTask[i]
@@ -207,22 +203,50 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 			}
 		}
 		projected := projectWorkbenchQueryTask(task, source, native, input.Fields, zone)
-		if !workbenchQueryKeyword(keyword, projected, source, connectors[task.Kind]) {
+		prepared.rows = append(prepared.rows, workbenchPreparedRow{projected, source, connectors[task.Kind]})
+	}
+	return prepared, nil
+}
+
+func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuery, program workbenchQueryProgram,
+	calendar map[string]any, prepared *workbenchPreparedQuery,
+) (common.WorkbenchTaskQueryResult, error) {
+	result := common.WorkbenchTaskQueryResult{FieldDependencies: append([]string{}, program.dependencies...)}
+	display, err := validateWorkbenchQueryDisplay(input.Display, input.SliceValue, prepared.directory)
+	if err != nil {
+		return result, err
+	}
+
+	keyword := strings.ToLower(strings.TrimSpace(input.Keyword))
+	matches := make([]common.WorkbenchQueryItem, 0)
+	constraints := newWorkbenchQueryConstraints(input)
+	for _, row := range prepared.rows {
+		if err := ctx.Err(); err != nil {
+			return result, err
+		}
+		task := row.task.item.Task
+		if !constraints.match(task) || !workbenchQueryKeyword(keyword, row.task, row.source, row.connector) {
 			continue
 		}
-		match, err := program.match(ctx, projected, input.Fields, calendar)
+		match, err := program.match(ctx, row.task, input.Fields, calendar)
 		if err != nil {
 			return result, err
 		}
 		if match {
-			matches = append(matches, projected.item)
+			matches = append(matches, row.task.item)
 		}
 	}
 	aggregateWorkbenchQuery(&result, matches, display, input)
 	for i := range result.Items {
-		task := &result.Items[i].Task
-		task.TargetVersion = workbenchTaskTargetVersion(*task)
-		task.ConnectionVersion = sourceByID[task.ConnectionID].Version
+		item := &result.Items[i]
+		item.Task.TargetVersion = workbenchTaskTargetVersion(item.Task)
+		item.Task.ConnectionVersion = prepared.sourceVersions[item.Task.ConnectionID]
+		copyWorkbenchQueryItem(item)
+	}
+	result.Fields = slices.Clone(prepared.fields)
+	result.Sources = slices.Clone(prepared.sources)
+	for i := range result.Sources {
+		result.Sources[i].NativeFields = slices.Clone(result.Sources[i].NativeFields)
 	}
 	return result, ctx.Err()
 }

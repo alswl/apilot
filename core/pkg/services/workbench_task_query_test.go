@@ -176,14 +176,28 @@ func TestWorkbenchTaskQueryFullSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertStale(continuation)
-	duringQuery := &Service{store: &queryBoundaryStore{db, func() error {
-		return db.InvalidateWorkbenchGitHubAccess(rename, 1)
-	}}}
+	boundaries := &queryBoundaryStore{Store: db}
+	duringQuery := &Service{store: boundaries}
+	warm, err := duringQuery.queryWorkbenchTasks(ctx, query, clock)
+	if err != nil || warm.QueryTotal != 205 {
+		t.Fatalf("could not warm projection: %d, %v", warm.QueryTotal, err)
+	}
+	warm.Items[0].Task.LabelValues["estimate"] = "999"
+	delete(warm.Items[0].Fields, "estimate-id")
+	again, err := duringQuery.queryWorkbenchTasks(ctx, query, clock)
+	if err != nil || boundaries.fullReads != 1 || again.Items[0].Fields["estimate-id"].Number == nil ||
+		again.Items[0].Task.LabelValues["estimate"] == "999" {
+		t.Fatalf("cached response aliased caller values or reread the snapshot: reads=%d, err=%v", boundaries.fullReads, err)
+	}
+	boundaries.beforeBoundary = func() error { return db.InvalidateWorkbenchGitHubAccess(rename, 1) }
 	failingQuery := query
 	failingQuery.Expression = `native["absent"] == ""`
 	if result, err := duringQuery.queryWorkbenchTasks(ctx, failingQuery, clock); err == nil || common.ProtocolError(err).Code != "STALE_REVISION" ||
 		len(result.Items) != 0 || len(result.Sources) != 0 {
 		t.Fatalf("permission changed during an invalid query: %v / %+v", err, result)
+	}
+	if boundaries.fullReads != 1 {
+		t.Fatal("permission change did not exercise a warmed cache")
 	}
 	assertStale(continuation)
 	visible := read(query)
@@ -199,14 +213,20 @@ func TestWorkbenchTaskQueryFullSnapshot(t *testing.T) {
 
 type queryBoundaryStore struct {
 	*dal.Store
-	beforeBoundary func() error
+	beforeBoundary           func() error
+	boundaryReads, fullReads int
 }
 
 func (s *queryBoundaryStore) WorkbenchQuerySnapshot(ctx context.Context, boundaryOnly bool) (int64, []common.WorkbenchQueryScope, []common.WorkbenchTask, error) {
 	if boundaryOnly {
-		if err := s.beforeBoundary(); err != nil {
-			return 0, nil, nil, err
+		s.boundaryReads++
+		if s.boundaryReads%2 == 0 && s.beforeBoundary != nil {
+			if err := s.beforeBoundary(); err != nil {
+				return 0, nil, nil, err
+			}
 		}
+	} else {
+		s.fullReads++
 	}
 	return s.Store.WorkbenchQuerySnapshot(ctx, boundaryOnly)
 }
