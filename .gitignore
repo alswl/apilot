@@ -42,3 +42,4 @@ __pycache__/
 
 /desktop/.mygo/
 /desktop/resources/*/bin/
+.worktrees
