@@ -105,7 +105,9 @@ func (p *WorkbenchConnectorProcess) Call(ctx context.Context, request protocol.R
 	switch request.Method {
 	case "auth.login":
 		timeout = 15 * time.Minute
-	case "tasks.sync", "tasks.resolve":
+	case "tasks.sync":
+		timeout = 10 * time.Minute
+	case "tasks.resolve":
 		timeout = 2 * time.Minute
 	}
 	p.mu.Lock()

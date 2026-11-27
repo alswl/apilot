@@ -106,6 +106,26 @@ func TestWorkbenchConnectorProcessDeadline(t *testing.T) {
 	}
 }
 
+func TestWorkbenchConnectorFullSyncDeadline(t *testing.T) {
+	pkg := testWorkbenchConnector(t, `printf '{"jsonrpc":"2.0","id":"call","result":{"deadline":"%s"}}\n' "$APILOT_CONNECTOR_DEADLINE"`)
+	process := NewWorkbenchConnectorProcess(pkg, t.TempDir())
+	t.Cleanup(process.Close)
+	result, err := process.Call(context.Background(), protocol.Request{ID: "call", Method: "tasks.sync"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Deadline time.Time `json:"deadline"`
+	}
+	if err := json.Unmarshal(result, &response); err != nil {
+		t.Fatal(err)
+	}
+	remaining := time.Until(response.Deadline)
+	if remaining < 9*time.Minute || remaining > 10*time.Minute {
+		t.Fatalf("full scan must have the service's ten-minute budget; got %v", remaining)
+	}
+}
+
 func TestWorkbenchConnectorProcessClose(t *testing.T) {
 	pkg := testWorkbenchConnector(t, `
 printf '%s\n' '{"jsonrpc":"2.0","method":"sync.usage","params":{}}'
