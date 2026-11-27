@@ -47,6 +47,7 @@ type mockup struct {
 	connectorImportStatus                                     string
 	devTask                                                   *devTaskScenario
 	hosted                                                    bool
+	locationPath                                              string
 	hostPanels                                                HostPanels
 	liveConnections                                           []common.WorkbenchSnapshot
 	livePlugins                                               []services.WorkbenchPlugin

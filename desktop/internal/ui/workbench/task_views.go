@@ -171,6 +171,7 @@ func (m *mockup) selectTaskView(id string) {
 	}
 	m.restoreView(state)
 	m.closeInspector()
+	m.rememberLocation()
 }
 
 func (m *mockup) taskViewBar(c *ui.Context) {
