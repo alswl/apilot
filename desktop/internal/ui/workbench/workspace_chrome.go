@@ -202,7 +202,7 @@ func (m *mockup) assistantDialog(c *ui.Context) {
 			if m.assistantContext >= 0 {
 				m.assistantView(c.Key("context"))
 			} else {
-				m.nowConversation(c.Key("conversation"), &m.assistantScroll, m.assistantNeedsFocus)
+				m.nowConversation(c.Key("conversation"), &m.assistantScroll, m.assistantNeedsFocus, false)
 				m.assistantNeedsFocus = false
 			}
 		})

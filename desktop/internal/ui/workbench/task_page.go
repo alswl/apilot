@@ -227,6 +227,10 @@ func (m *mockup) obsidianSourceLink(c *ui.Context, o *sourceObject) {
 }
 
 func githubIssueURL(repository, number string) string {
+	return githubSourceURL(repository, "issues", number)
+}
+
+func githubSourceURL(repository, resource, number string) string {
 	parts := strings.Split(repository, "/")
 	if len(parts) != 2 {
 		return ""
@@ -240,7 +244,7 @@ func githubIssueURL(repository, number string) string {
 	if err != nil || id == 0 || strconv.FormatUint(id, 10) != number {
 		return ""
 	}
-	return "https://github.com/" + url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1]) + "/issues/" + number
+	return "https://github.com/" + url.PathEscape(parts[0]) + "/" + url.PathEscape(parts[1]) + "/" + resource + "/" + number
 }
 
 func taskActivityTime(event taskEvent) string {

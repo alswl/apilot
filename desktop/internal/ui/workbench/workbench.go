@@ -114,6 +114,7 @@ type mockup struct {
 	refundConfirmedAt                                         string
 	nowSessions                                               []nowSession
 	nowSessionIndex                                           int
+	nowReviews                                                nowReviews
 	nowSessionsHidden, nowLibraryOpen                         bool
 	nowQuery                                                  string
 	briefDismissed                                            bool

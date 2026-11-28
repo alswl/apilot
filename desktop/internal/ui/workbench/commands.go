@@ -25,6 +25,9 @@ func (m *mockup) navigate(page int) {
 		m.nowLibraryOpen = false
 	}
 	if m.page != page {
+		if m.page == nowPage {
+			m.clearNowReviews()
+		}
 		m.layout.detailExpanded, m.layout.detailReturnHidden = false, false
 		m.taskBackStack = nil
 		q := &m.customQuery

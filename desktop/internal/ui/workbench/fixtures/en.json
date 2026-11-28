@@ -917,5 +917,19 @@
   "取消转换": "Cancel conversion",
   "快照已更改，请重新开始转换": "The task snapshot changed. Restart the conversion.",
   "大于": "Greater than",
-  "小于等于": "At most"
+  "小于等于": "At most",
+  "待我评审的 GitHub PR": "GitHub PRs awaiting my review",
+  "刷新评审请求": "Refresh review requests",
+  "正在重新连接 Apilot…": "Reconnecting to Apilot…",
+  "正在读取 GitHub 评审请求…": "Loading GitHub review requests…",
+  "连接仓库或重新授权后，即可查看评审请求。": "Connect a repository or renew GitHub authorization to see review requests.",
+  "请检查仓库访问权限和 Pull requests 读取权限。": "Check repository access and the Pull requests read permission.",
+  "GitHub 请求已达上限，请稍后重试。": "GitHub rate limit reached. Try again later.",
+  "请确认已连接的 GitHub 仓库使用同一账号，然后刷新。": "Check that connected GitHub repositories use the same account, then refresh.",
+  "无法读取 GitHub 评审请求。": "Could not load GitHub review requests.",
+  "部分仓库的评审请求暂不可用。": "Review requests from some repositories are unavailable.",
+  "已连接的仓库没有待你评审的 PR。": "No PRs awaiting your review in the connected repositories.",
+  "在 GitHub 中打开 %s · %s": "Open %s on GitHub · %s",
+  "补充退款回调的重试测试": "Cover refund callback retries",
+  "在结账页显示退款进度": "Show refund progress at checkout"
 }
