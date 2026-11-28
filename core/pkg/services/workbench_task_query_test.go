@@ -235,16 +235,18 @@ func TestWorkbenchTaskQueryCrossSourceLabelsAndExactGitHubIDs(t *testing.T) {
 		}
 	}
 	githubTasks := []common.WorkbenchTask{
-		{ID: "issue-17", SourceKey: "stable-17", NativeID: "17", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "修复登录重试", State: "open", Labels: []string{"release"}, NativeFields: map[string]string{"repository": "owner/a"}},
+		{ID: "issue-17", SourceKey: "issue:117", NativeID: "17", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "修复登录重试", State: "open", Labels: []string{"release"}, NativeFields: map[string]string{"issue_id": "117", "repository": "owner/a"}},
 		{ID: "issue-170", SourceKey: "stable-170", NativeID: "170", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Issue 170", State: "open", NativeFields: map[string]string{"repository": "owner/a"}},
 		{ID: "issue-other-17", SourceKey: "stable-other-17", NativeID: "17", ConnectionID: "repo-b", Kind: githubB.Kind, Title: "Issue 17 elsewhere", State: "open", NativeFields: map[string]string{"repository": "owner/b"}},
 		{ID: "issue-title-17", SourceKey: "stable-title-17", NativeID: "18", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Release 17 in title", State: "open", NativeFields: map[string]string{"repository": "owner/a"}},
 		{ID: "issue-closed", SourceKey: "stable-closed", NativeID: "19", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Closed release", State: "done", Labels: []string{"release"}, NativeFields: map[string]string{"repository": "owner/a"}},
 	}
+	githubATasks := []common.WorkbenchTask{githubTasks[0], githubTasks[1], githubTasks[3], githubTasks[4]}
+	githubBTasks := []common.WorkbenchTask{githubTasks[2]}
 	for _, entry := range []struct {
 		connection common.WorkbenchConnection
 		tasks      []common.WorkbenchTask
-	}{{githubA, []common.WorkbenchTask{githubTasks[0], githubTasks[1], githubTasks[3], githubTasks[4]}}, {githubB, []common.WorkbenchTask{githubTasks[2]}}} {
+	}{{githubA, githubATasks}, {githubB, githubBTasks}} {
 		if err := db.RecordWorkbench(entry.connection, nil, nil, entry.tasks, &now); err != nil {
 			t.Fatal(err)
 		}
@@ -303,7 +305,11 @@ func TestWorkbenchTaskQueryCrossSourceLabelsAndExactGitHubIDs(t *testing.T) {
 	if exact.QueryTotal != 1 || exact.Items[0].Task.NativeID != "17" || exact.Items[0].Task.ConnectionID != "repo-a" {
 		t.Fatalf("repo-scoped exact number returned %+v", exact.Items)
 	}
-	stable := query(common.WorkbenchTaskQuery{StableSourceID: "stable-170"})
+	stable := query(common.WorkbenchTaskQuery{StableSourceID: "117"})
+	if stable.QueryTotal != 1 || stable.Items[0].Task.ID != "issue-17" {
+		t.Fatalf("built-in GitHub stable ID match returned %+v", stable.Items)
+	}
+	stable = query(common.WorkbenchTaskQuery{StableSourceID: "stable-170"})
 	if stable.QueryTotal != 1 || stable.Items[0].Task.NativeID != "170" {
 		t.Fatalf("stable ID match returned %+v", stable.Items)
 	}
@@ -314,6 +320,45 @@ func TestWorkbenchTaskQueryCrossSourceLabelsAndExactGitHubIDs(t *testing.T) {
 	combined := query(common.WorkbenchTaskQuery{IssueRepository: "owner/a", IssueNumber: "17", Keyword: "title"})
 	if combined.QueryTotal != 0 {
 		t.Fatalf("exact number and keyword constraints did not combine: %d", combined.QueryTotal)
+	}
+	if err := db.SetWorkbenchLabels("issue-17", []string{"release", "qa-local"}); err != nil {
+		t.Fatal(err)
+	}
+	if before := query(common.WorkbenchTaskQuery{Expression: `"qa-local" in task.labels`}); before.QueryTotal != 1 || before.Items[0].Task.ID != "issue-17" {
+		t.Fatalf("workspace label missing before source refresh: %+v", before.Items)
+	}
+	refreshed := slices.Clone(githubATasks)
+	refreshed[0].Title += " refreshed"
+	if err := db.RecordWorkbench(githubA, nil, githubATasks, refreshed, &now); err != nil {
+		t.Fatal(err)
+	}
+	after := query(common.WorkbenchTaskQuery{StableSourceID: "117"})
+	if after.QueryTotal != 1 || after.Items[0].Task.ID != "issue-17" || after.Items[0].Task.Title != "修复登录重试 refreshed" ||
+		!slices.Contains(after.Items[0].Task.Labels, "release") || len(after.Items[0].Task.WorkbenchLabels) != 2 ||
+		!slices.ContainsFunc(after.Items[0].Task.WorkbenchLabels, func(label common.WorkbenchLabel) bool { return label.Name == "qa-local" }) {
+		t.Fatalf("source refresh changed canonical identity or workspace labels: %+v", after.Items)
+	}
+	if local := query(common.WorkbenchTaskQuery{Expression: `"qa-local" in task.labels`}); local.QueryTotal != 1 || local.Items[0].Task.ID != "issue-17" {
+		t.Fatalf("workspace-only label was not queryable after source refresh: %+v", local.Items)
+	}
+}
+
+func TestWorkbenchStableSourceIDAcrossGitHubAdapters(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		task common.WorkbenchTask
+		want string
+	}{
+		{name: "built-in source key and canonical native ID", task: common.WorkbenchTask{Kind: common.WorkbenchGitHubRepository, SourceKey: "issue:117", NativeFields: map[string]string{"issue_id": "117"}}, want: "117"},
+		{name: "built-in source key fallback", task: common.WorkbenchTask{Kind: common.WorkbenchGitHubRepository, SourceKey: "issue:117\x000"}, want: "117"},
+		{name: "managed connector raw source ID", task: common.WorkbenchTask{Kind: "github-issues", SourceKey: "117"}, want: "117"},
+		{name: "numeric prefix remains exact", task: common.WorkbenchTask{Kind: common.WorkbenchGitHubRepository, SourceKey: "issue:1170", NativeFields: map[string]string{"issue_id": "1170"}}, want: "1170"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := workbenchStableSourceID(test.task); got != test.want {
+				t.Fatalf("canonical stable source ID = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

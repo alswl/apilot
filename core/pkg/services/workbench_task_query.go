@@ -293,7 +293,7 @@ func (c workbenchQueryConstraints) match(task common.WorkbenchTask, source commo
 	if !validWorkbenchState(state) {
 		state = "unknown"
 	}
-	if c.sourceID != "" && (!isWorkbenchGitHubTask(task.Kind) || task.SourceKey != c.sourceID) {
+	if c.sourceID != "" && (!isWorkbenchGitHubTask(task.Kind) || workbenchStableSourceID(task) != c.sourceID) {
 		return false
 	}
 	if c.issueNumber != "" {
@@ -315,6 +315,19 @@ func (c workbenchQueryConstraints) match(task common.WorkbenchTask, source commo
 
 func isWorkbenchGitHubTask(kind string) bool {
 	return kind == "github-issues" || kind == common.WorkbenchGitHubIssues || kind == common.WorkbenchGitHubRepository
+}
+
+func workbenchStableSourceID(task common.WorkbenchTask) string {
+	if task.NativeFields["issue_id"] != "" {
+		return task.NativeFields["issue_id"]
+	}
+	key, _, _ := strings.Cut(task.SourceKey, "\x00")
+	if task.Kind == common.WorkbenchGitHubRepository {
+		if id, ok := strings.CutPrefix(key, "issue:"); ok {
+			return id
+		}
+	}
+	return key
 }
 
 func workbenchQueryKeyword(keyword string, task queryTask, source common.WorkbenchConnection, connector WorkbenchConnector) bool {
