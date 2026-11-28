@@ -80,6 +80,12 @@ func (c *Connector) Handle(ctx context.Context, req protocol.Request, notify pro
 			return nil, e
 		}
 		return c.detail(ctx, p)
+	case protocol.GitHubReviewRequests:
+		var p protocol.ScopeContext
+		if e := protocol.DecodeParams(req, &p); e != nil {
+			return nil, e
+		}
+		return c.reviewRequests(ctx, p)
 	case protocol.Sync:
 		var p protocol.SyncParams
 		if e := protocol.DecodeParams(req, &p); e != nil {

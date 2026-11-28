@@ -93,8 +93,8 @@ func NewWorkbenchGitHubClient(baseURL, token string, transport http.RoundTripper
 			return http.ErrUseLastResponse
 		}
 		// Same-origin redirects can point to issues transferred out of the repository.
-		if len(via) > 0 && strings.Contains(via[0].URL.Path, "/issues") && req.URL.Path != via[0].URL.Path {
-			return common.Err("INVALID_ARGUMENT", "GitHub redirected outside the selected issue path")
+		if len(via) > 0 && (strings.Contains(via[0].URL.Path, "/issues") || strings.HasSuffix(via[0].URL.Path, "/pulls")) && req.URL.Path != via[0].URL.Path {
+			return common.Err("INVALID_ARGUMENT", "GitHub redirected outside the selected path")
 		}
 		return nil
 	}

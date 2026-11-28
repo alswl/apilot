@@ -16,7 +16,7 @@ func (c *WorkbenchGitHubClient) VerifyInstallationRepository(ctx context.Context
 	if appSlug == "" || repositoryID <= 0 {
 		return common.Err("INVALID_ARGUMENT", "GitHub App installation is not configured")
 	}
-	found, err := c.visitInstallationRepositories(ctx, appSlug, func(repo WorkbenchGitHubRepository) bool { return repo.ID == repositoryID })
+	found, err := c.visitInstallationRepositories(ctx, appSlug, "", func(repo WorkbenchGitHubRepository) bool { return repo.ID == repositoryID })
 	if err != nil || found {
 		return err
 	}
@@ -25,7 +25,7 @@ func (c *WorkbenchGitHubClient) VerifyInstallationRepository(ctx context.Context
 
 func (c *WorkbenchGitHubClient) ListInstallationRepositories(ctx context.Context, appSlug string) ([]string, error) {
 	names := []string{}
-	_, err := c.visitInstallationRepositories(ctx, appSlug, func(repo WorkbenchGitHubRepository) bool {
+	_, err := c.visitInstallationRepositories(ctx, appSlug, "", func(repo WorkbenchGitHubRepository) bool {
 		if repo.ID > 0 && repo.HasIssues && repo.FullName != "" {
 			names = append(names, repo.FullName)
 		}
@@ -34,14 +34,15 @@ func (c *WorkbenchGitHubClient) ListInstallationRepositories(ctx context.Context
 	return names, err
 }
 
-func (c *WorkbenchGitHubClient) visitInstallationRepositories(ctx context.Context, appSlug string, visit func(WorkbenchGitHubRepository) bool) (bool, error) {
+func (c *WorkbenchGitHubClient) visitInstallationRepositories(ctx context.Context, appSlug, permission string, visit func(WorkbenchGitHubRepository) bool) (bool, error) {
 	type installation struct {
-		ID          int64   `json:"id"`
-		Slug        string  `json:"app_slug"`
-		SuspendedAt *string `json:"suspended_at"`
+		ID          int64             `json:"id"`
+		Slug        string            `json:"app_slug"`
+		SuspendedAt *string           `json:"suspended_at"`
+		Permissions map[string]string `json:"permissions"`
 	}
 	var installations []installation
-	err := c.installationPages(ctx, "/user/installations", func(pageURL *url.URL) (http.Header, error) {
+	err := c.githubPages(ctx, "/user/installations", "", func(pageURL *url.URL) (http.Header, error) {
 		var page struct {
 			Installations []installation `json:"installations"`
 		}
@@ -56,9 +57,12 @@ func (c *WorkbenchGitHubClient) visitInstallationRepositories(ctx context.Contex
 		if install.ID <= 0 || install.SuspendedAt != nil || !strings.EqualFold(install.Slug, appSlug) {
 			continue
 		}
+		if permission != "" && install.Permissions[permission] != "read" && install.Permissions[permission] != "write" {
+			continue
+		}
 		var repositories []WorkbenchGitHubRepository
 		path := fmt.Sprintf("/user/installations/%d/repositories", install.ID)
-		err := c.installationPages(ctx, path, func(pageURL *url.URL) (http.Header, error) {
+		err := c.githubPages(ctx, path, "", func(pageURL *url.URL) (http.Header, error) {
 			var page struct {
 				Repositories []WorkbenchGitHubRepository `json:"repositories"`
 			}
@@ -78,14 +82,14 @@ func (c *WorkbenchGitHubClient) visitInstallationRepositories(ctx context.Contex
 	return false, nil
 }
 
-func (c *WorkbenchGitHubClient) installationPages(ctx context.Context, path string, read func(*url.URL) (http.Header, error)) error {
+func (c *WorkbenchGitHubClient) githubPages(ctx context.Context, path, alias string, read func(*url.URL) (http.Header, error)) error {
 	current := *c.base
 	current.Path = path
 	current.RawQuery = url.Values{"per_page": {"100"}}.Encode()
 	seen := make(map[string]bool)
 	for {
 		if seen[current.String()] {
-			return common.Err("SOURCE_UNAVAILABLE", "GitHub installation pagination contains a cycle")
+			return common.Err("SOURCE_UNAVAILABLE", "GitHub pagination contains a cycle")
 		}
 		seen[current.String()] = true
 		header, err := read(&current)
@@ -104,11 +108,11 @@ func (c *WorkbenchGitHubClient) installationPages(ctx context.Context, path stri
 		}
 		parsed, err := url.Parse(next)
 		if err != nil {
-			return common.Err("SOURCE_UNAVAILABLE", "GitHub installation pagination is invalid")
+			return common.Err("SOURCE_UNAVAILABLE", "GitHub pagination is invalid")
 		}
 		parsed = current.ResolveReference(parsed)
-		if parsed.Scheme != c.base.Scheme || !strings.EqualFold(parsed.Host, c.base.Host) || parsed.User != nil || parsed.Path != path || parsed.Query().Get("per_page") != "100" {
-			return common.Err("SOURCE_UNAVAILABLE", "GitHub installation pagination left the selected scope")
+		if parsed.Scheme != c.base.Scheme || !strings.EqualFold(parsed.Host, c.base.Host) || parsed.User != nil || (parsed.Path != path && (alias == "" || parsed.Path != alias)) || parsed.Query().Get("per_page") != "100" {
+			return common.Err("SOURCE_UNAVAILABLE", "GitHub pagination left the selected scope")
 		}
 		current = *parsed
 	}

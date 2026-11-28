@@ -58,7 +58,7 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 	var first issue
 	second := issue{ID: 200, Number: 7, Title: "Second repo", State: "open", Updated: "2026-01-01T00:00:00Z"}
 	writes := 0
-	firstAllowed := true
+	firstAllowed, directRequest, pullPermission := true, true, true
 	accountID := 17
 	fixture := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -86,7 +86,11 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 		case "GET /user":
 			fmt.Fprintf(w, `{"id":%d,"login":"account-%d"}`, accountID, accountID)
 		case "GET /user/installations":
-			fmt.Fprintf(w, `{"installations":[{"id":1,"app_slug":%q}]}`, services.GitHubAppSlug)
+			permissions := "none"
+			if pullPermission {
+				permissions = "read"
+			}
+			fmt.Fprintf(w, `{"installations":[{"id":1,"app_slug":%q,"permissions":{"pull_requests":%q}}]}`, services.GitHubAppSlug, permissions)
 		case "GET /user/installations/1/repositories":
 			fmt.Fprint(w, `{"repositories":[{"id":2,"full_name":"owner/second","has_issues":true}`)
 			if firstAllowed {
@@ -97,6 +101,22 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 			fmt.Fprint(w, `{"id":1,"full_name":"owner/first","has_issues":true}`)
 		case "GET /repos/owner/second":
 			fmt.Fprint(w, `{"id":2,"full_name":"owner/second","has_issues":true}`)
+		case "GET /repositories/1/pulls":
+			if r.URL.Query().Get("page") == "" {
+				w.Header().Set("Link", fmt.Sprintf(`<https://%s/repositories/1/pulls?per_page=100&page=2>; rel="next"`, r.Host))
+				fmt.Fprint(w, `[
+					{"number":8,"title":"Other reviewer","state":"open","user":{"id":2},"requested_reviewers":[{"id":9}],"base":{"repo":{"id":1}}},
+					{"number":9,"title":"Own PR","state":"open","user":{"id":17},"requested_reviewers":[{"id":17}],"base":{"repo":{"id":1}}},
+					{"number":10,"title":"Team request","state":"open","user":{"id":2},"requested_reviewers":[],"requested_teams":[{"id":17}],"base":{"repo":{"id":1}}},
+					{"number":11,"title":"Closed","state":"closed","user":{"id":2},"requested_reviewers":[{"id":17}],"base":{"repo":{"id":1}}}
+				]`)
+			} else if directRequest {
+				fmt.Fprint(w, `[{"number":7,"title":"First review","state":"open","user":{"id":2},"requested_reviewers":[{"id":17}],"base":{"repo":{"id":1}}}]`)
+			} else {
+				fmt.Fprint(w, `[{"number":7,"title":"First review","state":"open","user":{"id":2},"requested_reviewers":[],"base":{"repo":{"id":1}}}]`)
+			}
+		case "GET /repositories/2/pulls":
+			fmt.Fprint(w, `[{"number":7,"title":"Second review","state":"open","user":{"id":2},"requested_reviewers":[{"id":17}],"base":{"repo":{"id":2}}}]`)
 		case "GET /repos/owner/first/issues":
 			items := []issue{}
 			if first.ID != 0 {
@@ -156,6 +176,9 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 		}
 		t.Fatalf("timed out waiting for %s", description)
 	}
+	if _, err := remote.WorkbenchGitHubReviewRequests(context.Background()); common.ProtocolError(err).Code != "UNAUTHORIZED" {
+		t.Fatalf("unconnected reviews: %v", err)
+	}
 	status, err := remote.StartGitHubAuthorization()
 	if err != nil || status.State != "waiting" || status.UserCode != "ABCD-1234" {
 		t.Fatalf("start authorization: %+v, %v", status, err)
@@ -190,6 +213,35 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitSync(firstConn.ID, "incremental")
+
+	reviews := func(incomplete bool, expected ...common.WorkbenchGitHubReviewRequest) {
+		t.Helper()
+		result, err := remote.WorkbenchGitHubReviewRequests(context.Background())
+		if err != nil || result.Incomplete != incomplete || !slices.Equal(result.Items, expected) {
+			t.Fatalf("review requests: %+v, %v", result, err)
+		}
+	}
+	firstReview := common.WorkbenchGitHubReviewRequest{Repository: "owner/first", Number: 7, Title: "First review"}
+	secondReview := common.WorkbenchGitHubReviewRequest{Repository: "owner/second", Number: 7, Title: "Second review"}
+	reviews(false, firstReview, secondReview)
+	page, err := remote.WorkbenchTasks(common.WorkbenchQuery{Limit: 5})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Title != "Second repo" {
+		t.Fatalf("review requests entered the task projection: %+v, %v", page, err)
+	}
+	mu.Lock()
+	directRequest = false
+	mu.Unlock()
+	reviews(false, secondReview)
+	mu.Lock()
+	pullPermission = false
+	mu.Unlock()
+	if _, err := remote.WorkbenchGitHubReviewRequests(context.Background()); common.ProtocolError(err).Code != "FORBIDDEN" {
+		t.Fatalf("missing Pull requests permission: %v", err)
+	}
+	mu.Lock()
+	directRequest, pullPermission = true, true
+	mu.Unlock()
+	reviews(false, firstReview, secondReview)
 
 	submit := func(input common.WorkbenchTaskWrite, wantState string) common.WorkbenchTask {
 		t.Helper()
@@ -226,6 +278,7 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 	writeCount := writes
 	firstAllowed = false
 	mu.Unlock()
+	reviews(true, secondReview)
 	if writeCount != 3 {
 		t.Fatalf("expected exactly three upstream writes, got %d", writeCount)
 	}
@@ -264,6 +317,9 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 	mu.Lock()
 	accountID = 18
 	mu.Unlock()
+	if _, err := remote.WorkbenchGitHubReviewRequests(context.Background()); common.ProtocolError(err).Code != "UNAUTHORIZED" {
+		t.Fatalf("credential identity changed: %v", err)
+	}
 	switched, err := remote.ConfigureWorkbenchGitHub(common.WorkbenchConnection{
 		ID: firstConn.ID, Version: firstConn.Version, Kind: common.WorkbenchGitHubRepository,
 		Name: "First", Repository: "owner/first",
@@ -272,6 +328,9 @@ func TestWorkbenchHTTPGitHubRepositoryLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitSync(switched.ID, "full")
+	if _, err := remote.WorkbenchGitHubReviewRequests(context.Background()); common.ProtocolError(err).Code != "CONFLICT" {
+		t.Fatalf("multiple account scopes: %v", err)
+	}
 	details, err := remote.WorkbenchSyncDetails(switched.ID)
 	if err != nil || details.AccountLogin != "account-18" || len(details.Attempts) != 1 || details.Attempts[0].SyncType != "full" {
 		t.Fatalf("new account received old attempts: %+v %v", details, err)

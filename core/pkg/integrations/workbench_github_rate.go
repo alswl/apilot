@@ -32,6 +32,14 @@ func (r *WorkbenchGitHubRate) RestoreBackoff(id int64, until time.Time) {
 	r.mu.Unlock()
 }
 
+// RecordBackoff shares a rate limit reported by the bundled GitHub connector.
+func (r *WorkbenchGitHubRate) RecordBackoff(id int64, until time.Time) {
+	r.RestoreBackoff(id, until)
+	if r.persistBackoff != nil {
+		r.persistBackoff(id, until)
+	}
+}
+
 type githubPollKey struct {
 	accountID    int64
 	connectionID string

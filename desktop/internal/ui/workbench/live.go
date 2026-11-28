@@ -25,6 +25,7 @@ func (m *mockup) startLiveEvents() {
 		cancel()
 		m.invalidateTaskQuery()
 		m.stopPermissionRetry()
+		m.clearNowReviews()
 	})
 	current := func() bool {
 		return ctx.Err() == nil && m.win == window && !window.IsDestroyed()
@@ -56,6 +57,7 @@ func (m *mockup) startLiveEvents() {
 }
 
 func (m *mockup) receiveLiveDisconnect() {
+	m.clearNowReviews()
 	m.stopPermissionRetry()
 	m.invalidateTaskQuery()
 	m.liveDisconnected, m.liveStale = true, true
@@ -147,6 +149,7 @@ func (m *mockup) refreshLiveWithDispatch(dispatch func(func())) {
 		dispatch(func() {
 			// Connection lists are observed by one refresh worker in request order.
 			// A local UI generation change only invalidates the aggregate result.
+			m.observeNowReviewConnections(confirmed)
 			if m.clearChangedGitHubAccess(confirmed) && m.win != nil && !m.win.IsDestroyed() {
 				m.win.Invalidate()
 			}

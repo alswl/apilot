@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/desktop/internal/ui/components"
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 )
 
@@ -19,13 +20,16 @@ type nowTurn struct {
 }
 
 func (m *mockup) nowChat(c *ui.Context) {
-	m.nowConversation(c, &m.nowSession().scroll, m.layout.focusAssistant)
+	m.nowConversation(c, &m.nowSession().scroll, m.layout.focusAssistant, true)
 }
 
-func (m *mockup) nowConversation(c *ui.Context, scroll *ui.ScrollState, focusComposer bool) {
+func (m *mockup) nowConversation(c *ui.Context, scroll *ui.ScrollState, focusComposer, showReviews bool) {
 	ui.Scroll(c.Key(m.nowSessionIndex)).Grow(1).MinHeight(0).FillWidth().TrackScroll(scroll).Children(func() {
 		ui.Column(c).FillWidth().AlignItems(ui.Center).Children(func() {
 			ui.Column(c.Key("messages")).FillWidth().MaxWidth(688).Padding(12, 0).Gap(24).Children(func() {
+				if showReviews {
+					m.nowReviewRequests(c.Key("review-requests"), mygo.Shell.OpenExternal)
+				}
 				m.nowChatContent(c)
 			})
 		})
@@ -293,6 +297,7 @@ const nowRecentLimit = 10
 func (m *mockup) openNowLibrary() {
 	m.navigate(nowPage)
 	m.nowLibraryOpen = true
+	m.clearNowReviews()
 }
 
 func (m *mockup) openNowSession(index int) {

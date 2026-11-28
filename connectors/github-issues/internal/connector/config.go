@@ -128,10 +128,15 @@ func (c *Connector) options(ctx context.Context, p protocol.OptionsParams) (any,
 }
 
 func (c *apiClient) repositories(ctx context.Context) ([]repository, *protocol.RPCError) {
+	return c.installationRepositories(ctx, "")
+}
+
+func (c *apiClient) installationRepositories(ctx context.Context, permission string) ([]repository, *protocol.RPCError) {
 	type install struct {
-		ID          int64   `json:"id"`
-		Slug        string  `json:"app_slug"`
-		SuspendedAt *string `json:"suspended_at"`
+		ID          int64             `json:"id"`
+		Slug        string            `json:"app_slug"`
+		SuspendedAt *string           `json:"suspended_at"`
+		Permissions map[string]string `json:"permissions"`
 	}
 	var installs []install
 	problem := c.pages(ctx, "/user/installations", func(q url.Values) (http.Header, *protocol.RPCError) {
@@ -150,6 +155,9 @@ func (c *apiClient) repositories(ctx context.Context) ([]repository, *protocol.R
 		if in.ID <= 0 || in.SuspendedAt != nil || !strings.EqualFold(in.Slug, appSlug) {
 			continue
 		}
+		if permission != "" && in.Permissions[permission] != "read" && in.Permissions[permission] != "write" {
+			continue
+		}
 		path := fmt.Sprintf("/user/installations/%d/repositories", in.ID)
 		problem := c.pages(ctx, path, func(q url.Values) (http.Header, *protocol.RPCError) {
 			var payload struct {
@@ -157,7 +165,7 @@ func (c *apiClient) repositories(ctx context.Context) ([]repository, *protocol.R
 			}
 			header, err := c.get(ctx, path, q, &payload)
 			for _, repo := range payload.Repositories {
-				if repo.ID > 0 && repo.HasIssues && repo.FullName != "" {
+				if repo.ID > 0 && (permission != "" || repo.HasIssues) && repo.FullName != "" {
 					byID[repo.ID] = repo
 				}
 			}
