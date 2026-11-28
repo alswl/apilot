@@ -92,6 +92,7 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 		{"submitWorkbenchTaskOperation", "POST", "/v1/workbench/task-operations", "task operation submit -", `{"request_id":"item"}`},
 		{"getWorkbenchTaskOperation", "GET", "/v1/workbench/task-operations/item", "task operation show item", ``},
 		{"reconcileWorkbenchTaskOperation", "POST", "/v1/workbench/task-operations/item/reconcile", "task operation reconcile item", ``},
+		{"queryWorkbenchTasks", "POST", "/v1/workbench/task-query", "task query -", `{"timezone":"UTC"}`},
 		{"listWorkbenchTasks", "GET", "/v1/workbench/tasks", "task list --label-id item", ``},
 		{"createWorkbenchTask", "POST", "/v1/workbench/tasks", "task create -", `{"request_id":"item"}`},
 		{"importWorkbenchTasks", "POST", "/v1/workbench/tasks/import", "task import -", `{"items":[]}`},

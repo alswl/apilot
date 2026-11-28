@@ -27,6 +27,8 @@ func (m *mockup) navigate(page int) {
 	if m.page != page {
 		m.layout.detailExpanded, m.layout.detailReturnHidden = false, false
 		m.taskBackStack = nil
+		q := &m.customQuery
+		q.viewOpen, q.expressionOpen, q.conditionOpen, q.fieldsOpen = false, false, false, false
 		m.page, m.inspector, m.editingDue, m.fullTask = page, false, false, false
 		m.rememberLocation()
 	}
@@ -85,7 +87,7 @@ func (m *mockup) moveSelection(delta int) {
 	if len(rows) == 0 {
 		return
 	}
-	if !m.taskBoard {
+	if !m.taskBoard && m.activeTaskQuery() == nil {
 		m.syncTaskPage(len(rows))
 	}
 	current := -1
@@ -98,7 +100,7 @@ func (m *mockup) moveSelection(delta int) {
 	}
 	if current < 0 {
 		first, last := 0, len(rows)
-		if !m.taskBoard {
+		if !m.taskBoard && m.activeTaskQuery() == nil {
 			first = m.taskPageIndex * m.taskPageSize
 			last = min(first+m.taskPageSize, len(rows))
 		}
@@ -106,6 +108,11 @@ func (m *mockup) moveSelection(delta int) {
 		if delta < 0 {
 			current = last
 		}
+	}
+	if m.activeTaskQuery() != nil && m.taskSelection != "" &&
+		(current+delta < 0 || current+delta >= len(rows)) && m.browseCustomQueryPage(delta) {
+		m.customQuery.selectPageEdge = delta
+		return
 	}
 	m.selectTask(rows[max(0, min(current+delta, len(rows)-1))])
 }
@@ -159,10 +166,14 @@ func (m *mockup) activeCommands() []command {
 			items = append(items, command{"task.open", tr("打开完整任务"), m.openCurrentTask})
 		}
 		items = append(items, command{"tasks.insert", tr("输入任务搜索"), m.openSearch}, command{"view.save", tr("保存视图"), m.saveCurrentTaskView})
-		if !m.taskBoard && (!m.inspector || m.unifiedTasks()) && m.taskPageIndex > 0 {
+		page, pages := m.taskPageIndex, m.taskPages(len(rows))
+		if m.activeTaskQuery() != nil {
+			page, pages = m.queryPagePosition()
+		}
+		if !m.taskBoard && (!m.inspector || m.unifiedTasks()) && page > 0 {
 			items = append(items, command{"view.prevPage", tr("上一页"), func() { m.browseTaskPage(-1) }})
 		}
-		if !m.taskBoard && (!m.inspector || m.unifiedTasks()) && m.taskPageIndex+1 < m.taskPages(len(rows)) {
+		if !m.taskBoard && (!m.inspector || m.unifiedTasks()) && page+1 < pages {
 			items = append(items, command{"view.nextPage", tr("下一页"), func() { m.browseTaskPage(1) }})
 		}
 		if len(rows) > 0 {
@@ -225,6 +236,10 @@ func (m *mockup) activeCommands() []command {
 
 func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 	k := &m.keyboard
+	if q := &m.customQuery; q.dialog != "" || q.expressionOpen || q.conditionOpen || q.fieldsOpen || q.viewOpen {
+		k.prefix = keystroke{}
+		return
+	}
 	if m.connectorLogin != nil || m.connectorMapping != nil || m.connectorRuns != nil || m.connectorTaskEditor != nil || k.palette || m.assistantOpen || m.connectorEditor != nil || m.syncLogID != "" || m.newTaskOpen || m.debugOpen || m.saveTaskViewOpen || m.taskResourceOpen || m.sourceEditor != nil || m.labelEditor != nil ||
 		(m.compactTaskList() && (m.taskDisplayOpen || m.searchExpanded)) || (m.taskBoard && m.searchExpanded) {
 		k.prefix = keystroke{}
@@ -253,17 +268,8 @@ func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 		if k.editingText {
 			m.restoreTaskFocus = m.page == tasksPage && len(m.taskRows()) > 0
 			k.focusNavigation = !m.restoreTaskFocus
-		} else if m.editingDue {
-			m.editingDue = false
-		} else if len(m.taskBackStack) > 0 {
-			m.returnRelatedPending = true
-		} else if m.taskBoard && m.layout.detailExpanded {
-			m.leaveTaskDetail()
-		} else if m.layout.detailExpanded {
-			m.layout.detailExpanded = false
-			m.layout.focusDetail = true
 		} else {
-			m.leaveTaskDetail()
+			m.escapeTaskDetail()
 		}
 		c.Invalidate()
 		return

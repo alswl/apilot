@@ -189,6 +189,8 @@ func requestWorkbenchHTTP(ctx context.Context, client *Client, method string, pa
 		return client.ImportWorkbenchConnector(ctx, in)
 	case "workbench.plugin.list":
 		return client.ListWorkbenchPlugins(ctx)
+	case "workbench.task.query":
+		return client.QueryWorkbenchTasksWithBody(ctx, "application/json", bytes.NewReader(input))
 	case "workbench.task.list":
 		var q common.WorkbenchQuery
 		var mapped ListWorkbenchTasksParams
@@ -352,7 +354,7 @@ func decodeWorkbenchProblem(status int, payload []byte) *common.Error {
 		for _, detail := range *problem.Errors {
 			if detail.Location != nil && *detail.Location == "code" && detail.Message != nil {
 				code = *detail.Message
-			} else if detail.Location != nil && (*detail.Location == "connection_id" || *detail.Location == "retry_after" || *detail.Location == "rate_limit_reset" || *detail.Location == "github_installation_required") && detail.Value != nil {
+			} else if detail.Location != nil && (*detail.Location == "connection_id" || *detail.Location == "retry_after" || *detail.Location == "rate_limit_reset" || *detail.Location == "github_installation_required" || *detail.Location == "line" || *detail.Location == "column") && detail.Value != nil {
 				details[*detail.Location] = detail.Value
 			}
 		}

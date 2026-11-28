@@ -104,6 +104,99 @@ func (e WorkbenchConnectorScopeUpdateResultSyncStatus) Valid() bool {
 	}
 }
 
+// Defines values for WorkbenchQueryDisplayLayout.
+const (
+	Board WorkbenchQueryDisplayLayout = "board"
+	List  WorkbenchQueryDisplayLayout = "list"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchQueryDisplayLayout enum.
+func (e WorkbenchQueryDisplayLayout) Valid() bool {
+	switch e {
+	case Board:
+		return true
+	case List:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchQueryFieldType.
+const (
+	Date         WorkbenchQueryFieldType = "date"
+	MultiSelect  WorkbenchQueryFieldType = "multi_select"
+	Number       WorkbenchQueryFieldType = "number"
+	SingleSelect WorkbenchQueryFieldType = "single_select"
+	Text         WorkbenchQueryFieldType = "text"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchQueryFieldType enum.
+func (e WorkbenchQueryFieldType) Valid() bool {
+	switch e {
+	case Date:
+		return true
+	case MultiSelect:
+		return true
+	case Number:
+		return true
+	case SingleSelect:
+		return true
+	case Text:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchQueryMappingKind.
+const (
+	KeyValueLabel WorkbenchQueryMappingKind = "key_value_label"
+	LabelPrefix   WorkbenchQueryMappingKind = "label_prefix"
+	Native        WorkbenchQueryMappingKind = "native"
+	Standard      WorkbenchQueryMappingKind = "standard"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchQueryMappingKind enum.
+func (e WorkbenchQueryMappingKind) Valid() bool {
+	switch e {
+	case KeyValueLabel:
+		return true
+	case LabelPrefix:
+		return true
+	case Native:
+		return true
+	case Standard:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WorkbenchQueryValueReason.
+const (
+	Conflict WorkbenchQueryValueReason = "conflict"
+	Invalid  WorkbenchQueryValueReason = "invalid"
+	Missing  WorkbenchQueryValueReason = "missing"
+	Unmapped WorkbenchQueryValueReason = "unmapped"
+)
+
+// Valid indicates whether the value is a known member of the WorkbenchQueryValueReason enum.
+func (e WorkbenchQueryValueReason) Valid() bool {
+	switch e {
+	case Conflict:
+		return true
+	case Invalid:
+		return true
+	case Missing:
+		return true
+	case Unmapped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SyncWorkbenchConnectorConnectionParamsMode.
 const (
 	SyncWorkbenchConnectorConnectionParamsModeAuto SyncWorkbenchConnectorConnectionParamsMode = "auto"
@@ -963,6 +1056,104 @@ type WorkbenchPluginInputBody struct {
 	Enabled bool    `json:"enabled"`
 }
 
+// WorkbenchQueryCell defines model for WorkbenchQueryCell.
+type WorkbenchQueryCell struct {
+	Column string `json:"column"`
+	Count  int64  `json:"count"`
+	Lane   string `json:"lane"`
+}
+
+// WorkbenchQueryDisplay defines model for WorkbenchQueryDisplay.
+type WorkbenchQueryDisplay struct {
+	ColumnBy   *string                      `json:"column_by,omitempty"`
+	Descending *bool                        `json:"descending,omitempty"`
+	Fields     *[]string                    `json:"fields,omitempty"`
+	GroupBy    *string                      `json:"group_by,omitempty"`
+	Layout     *WorkbenchQueryDisplayLayout `json:"layout,omitempty"`
+	SliceBy    *string                      `json:"slice_by,omitempty"`
+	SortBy     *string                      `json:"sort_by,omitempty"`
+	SumBy      *string                      `json:"sum_by,omitempty"`
+	SwimlaneBy *string                      `json:"swimlane_by,omitempty"`
+}
+
+// WorkbenchQueryDisplayLayout defines model for WorkbenchQueryDisplay.Layout.
+type WorkbenchQueryDisplayLayout string
+
+// WorkbenchQueryField defines model for WorkbenchQueryField.
+type WorkbenchQueryField struct {
+	Id       string                           `json:"id"`
+	Key      string                           `json:"key"`
+	Mappings map[string]WorkbenchQueryMapping `json:"mappings"`
+	Name     string                           `json:"name"`
+	Type     WorkbenchQueryFieldType          `json:"type"`
+}
+
+// WorkbenchQueryFieldType defines model for WorkbenchQueryField.Type.
+type WorkbenchQueryFieldType string
+
+// WorkbenchQueryFieldInfo defines model for WorkbenchQueryFieldInfo.
+type WorkbenchQueryFieldInfo struct {
+	Display bool   `json:"display"`
+	Group   bool   `json:"group"`
+	Id      string `json:"id"`
+	Key     string `json:"key"`
+	Name    string `json:"name"`
+	Sort    bool   `json:"sort"`
+	Sum     bool   `json:"sum"`
+	Type    string `json:"type"`
+}
+
+// WorkbenchQueryGroup defines model for WorkbenchQueryGroup.
+type WorkbenchQueryGroup struct {
+	Count   int64  `json:"count"`
+	Key     string `json:"key"`
+	Missing *bool  `json:"missing,omitempty"`
+	Name    string `json:"name"`
+
+	// Sum Exact decimal sum. Omitted when there are no valid numbers.
+	Sum   *string `json:"sum,omitempty"`
+	Valid int64   `json:"valid"`
+}
+
+// WorkbenchQueryItem defines model for WorkbenchQueryItem.
+type WorkbenchQueryItem struct {
+	Column *string                        `json:"column,omitempty"`
+	Fields map[string]WorkbenchQueryValue `json:"fields"`
+	Lane   *string                        `json:"lane,omitempty"`
+	Task   WorkbenchTask                  `json:"task"`
+}
+
+// WorkbenchQueryMapping defines model for WorkbenchQueryMapping.
+type WorkbenchQueryMapping struct {
+	Key  string                    `json:"key"`
+	Kind WorkbenchQueryMappingKind `json:"kind"`
+}
+
+// WorkbenchQueryMappingKind defines model for WorkbenchQueryMapping.Kind.
+type WorkbenchQueryMappingKind string
+
+// WorkbenchQuerySource defines model for WorkbenchQuerySource.
+type WorkbenchQuerySource struct {
+	Id           string                     `json:"id"`
+	Name         string                     `json:"name"`
+	NativeFields *[]WorkbenchQueryFieldInfo `json:"native_fields"`
+}
+
+// WorkbenchQueryValue defines model for WorkbenchQueryValue.
+type WorkbenchQueryValue struct {
+	// Decimal Original fixed-point decimal used for exact sums.
+	Decimal *string                    `json:"decimal,omitempty"`
+	Key     *string                    `json:"key,omitempty"`
+	Keys    *[]string                  `json:"keys,omitempty"`
+	Number  *float64                   `json:"number,omitempty"`
+	Reason  *WorkbenchQueryValueReason `json:"reason,omitempty"`
+	Text    *string                    `json:"text,omitempty"`
+	Values  *[]string                  `json:"values,omitempty"`
+}
+
+// WorkbenchQueryValueReason defines model for WorkbenchQueryValue.Reason.
+type WorkbenchQueryValueReason string
+
 // WorkbenchReadProgress defines model for WorkbenchReadProgress.
 type WorkbenchReadProgress struct {
 	Read  int64 `json:"read"`
@@ -1118,6 +1309,76 @@ type WorkbenchTaskEvent struct {
 	At   string    `json:"at"`
 	Text string    `json:"text"`
 	Time time.Time `json:"time"`
+}
+
+// WorkbenchTaskQuery defines model for WorkbenchTaskQuery.
+type WorkbenchTaskQuery struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchTaskQuery.json
+	Schema *string `json:"$schema,omitempty"`
+
+	// AsOfDate Pass the first response local YYYY-MM-DD date for a continuation.
+	AsOfDate *string                `json:"as_of_date,omitempty"`
+	Display  *WorkbenchQueryDisplay `json:"display,omitempty"`
+
+	// Expression CEL expression returning bool. An empty expression matches all candidates.
+	Expression *string                `json:"expression,omitempty"`
+	Fields     *[]WorkbenchQueryField `json:"fields,omitempty"`
+
+	// Keyword Case-insensitive literal substring matched against visible task search fields.
+	Keyword *string `json:"keyword,omitempty"`
+	Limit   *int64  `json:"limit,omitempty"`
+	Offset  *int64  `json:"offset,omitempty"`
+
+	// PageToken Pass the first response token with the same query and display settings for a continuation.
+	PageToken *string `json:"page_token,omitempty"`
+
+	// RequiredRevision Pass the first response revision for a continuation.
+	RequiredRevision *int64 `json:"required_revision,omitempty"`
+
+	// SliceValue Group key from slices. An empty string selects missing values. Omit to include all values.
+	SliceValue *string `json:"slice_value,omitempty"`
+
+	// SourceIds Stable scope IDs (task connection_id).
+	SourceIds *[]string `json:"source_ids,omitempty"`
+	States    *[]string `json:"states,omitempty"`
+
+	// TaskIds Stable task IDs for sample preview. An empty array matches nothing.
+	TaskIds *[]string `json:"task_ids,omitempty"`
+
+	// Timezone IANA workspace timezone.
+	Timezone string `json:"timezone"`
+
+	// WatchIds Task IDs in the current watch set. Omit to ignore watch status. An empty array matches nothing.
+	WatchIds *[]string `json:"watch_ids,omitempty"`
+}
+
+// WorkbenchTaskQueryResult defines model for WorkbenchTaskQueryResult.
+type WorkbenchTaskQueryResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchTaskQueryResult.json
+	Schema   *string                `json:"$schema,omitempty"`
+	AsOfDate string                 `json:"as_of_date"`
+	Cells    *[]WorkbenchQueryCell  `json:"cells"`
+	Columns  *[]WorkbenchQueryGroup `json:"columns"`
+
+	// FieldDependencies Stable custom field IDs referenced by the checked CEL expression.
+	FieldDependencies *[]string                  `json:"field_dependencies"`
+	Fields            *[]WorkbenchQueryFieldInfo `json:"fields"`
+	Items             *[]WorkbenchQueryItem      `json:"items"`
+	Lanes             *[]WorkbenchQueryGroup     `json:"lanes"`
+	PageToken         string                     `json:"page_token"`
+
+	// QueryTotal Task count after query and before slicing.
+	QueryTotal int64 `json:"query_total"`
+	Revision   int64 `json:"revision"`
+
+	// SliceTotal Task count after query and slicing, before pagination.
+	SliceTotal int64                   `json:"slice_total"`
+	Slices     *[]WorkbenchQueryGroup  `json:"slices"`
+	Sources    *[]WorkbenchQuerySource `json:"sources"`
 }
 
 // WorkbenchTaskReceipt defines model for WorkbenchTaskReceipt.
@@ -1315,6 +1576,9 @@ type SetWorkbenchPluginEnabledJSONRequestBody = WorkbenchPluginInputBody
 
 // SubmitWorkbenchTaskOperationJSONRequestBody defines body for SubmitWorkbenchTaskOperation for application/json ContentType.
 type SubmitWorkbenchTaskOperationJSONRequestBody = WorkbenchTaskWrite
+
+// QueryWorkbenchTasksJSONRequestBody defines body for QueryWorkbenchTasks for application/json ContentType.
+type QueryWorkbenchTasksJSONRequestBody = WorkbenchTaskQuery
 
 // CreateWorkbenchTaskJSONRequestBody defines body for CreateWorkbenchTask for application/json ContentType.
 type CreateWorkbenchTaskJSONRequestBody = WorkbenchTaskWrite
@@ -1733,6 +1997,20 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /v1/workbench/task-operations/{request_id}/reconcile (the `ReconcileWorkbenchTaskOperation` operationId).
 	ReconcileWorkbenchTaskOperation(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// QueryWorkbenchTasksWithBody Query and group the visible task snapshot
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+	QueryWorkbenchTasksWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// QueryWorkbenchTasks Query and group the visible task snapshot
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+	QueryWorkbenchTasks(ctx context.Context, body QueryWorkbenchTasksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListWorkbenchTasks Search the committed task snapshot
 	//
@@ -2724,6 +3002,40 @@ func (c *Client) GetWorkbenchTaskOperation(ctx context.Context, requestId string
 // Corresponds with POST /v1/workbench/task-operations/{request_id}/reconcile (the `ReconcileWorkbenchTaskOperation` operationId).
 func (c *Client) ReconcileWorkbenchTaskOperation(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewReconcileWorkbenchTaskOperationRequest(c.Server, requestId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// QueryWorkbenchTasksWithBody Query and group the visible task snapshot
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+func (c *Client) QueryWorkbenchTasksWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryWorkbenchTasksRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// QueryWorkbenchTasks Query and group the visible task snapshot
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+func (c *Client) QueryWorkbenchTasks(ctx context.Context, body QueryWorkbenchTasksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewQueryWorkbenchTasksRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5106,6 +5418,46 @@ func NewReconcileWorkbenchTaskOperationRequest(server string, requestId string) 
 	return req, nil
 }
 
+// NewQueryWorkbenchTasksRequest calls the generic QueryWorkbenchTasks builder with application/json body
+func NewQueryWorkbenchTasksRequest(server string, body QueryWorkbenchTasksJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewQueryWorkbenchTasksRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewQueryWorkbenchTasksRequestWithBody constructs an http.Request for the QueryWorkbenchTasks method, with any body, and a specified content type
+func NewQueryWorkbenchTasksRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/task-query")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewListWorkbenchTasksRequest constructs an http.Request for the ListWorkbenchTasks method
 func NewListWorkbenchTasksRequest(server string, params *ListWorkbenchTasksParams) (*http.Request, error) {
 	var err error
@@ -6214,6 +6566,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /v1/workbench/task-operations/{request_id}/reconcile (the `ReconcileWorkbenchTaskOperation` operationId).
 	ReconcileWorkbenchTaskOperationWithResponse(ctx context.Context, requestId string, reqEditors ...RequestEditorFn) (*ReconcileWorkbenchTaskOperationResponse, error)
+
+	// QueryWorkbenchTasksWithBodyWithResponse Query and group the visible task snapshot
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+	QueryWorkbenchTasksWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryWorkbenchTasksResponse, error)
+
+	// QueryWorkbenchTasksWithResponse Query and group the visible task snapshot
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+	QueryWorkbenchTasksWithResponse(ctx context.Context, body QueryWorkbenchTasksJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryWorkbenchTasksResponse, error)
 
 	// ListWorkbenchTasksWithResponse Search the committed task snapshot
 	//
@@ -9670,6 +10036,82 @@ func (r ReconcileWorkbenchTaskOperationResponse) ContentType() string {
 	return ""
 }
 
+type QueryWorkbenchTasksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchTaskQueryResult
+	// ApplicationproblemJSON400 the response for an HTTP 400 `application/problem+json` response
+	ApplicationproblemJSON400 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON422 the response for an HTTP 422 `application/problem+json` response
+	ApplicationproblemJSON422 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r QueryWorkbenchTasksResponse) GetJSON200() *WorkbenchTaskQueryResult {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON400 returns the response for an HTTP 400 `application/problem+json` response
+func (r QueryWorkbenchTasksResponse) GetApplicationproblemJSON400() *ErrorModel {
+	return r.ApplicationproblemJSON400
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r QueryWorkbenchTasksResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON422 returns the response for an HTTP 422 `application/problem+json` response
+func (r QueryWorkbenchTasksResponse) GetApplicationproblemJSON422() *ErrorModel {
+	return r.ApplicationproblemJSON422
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r QueryWorkbenchTasksResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r QueryWorkbenchTasksResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r QueryWorkbenchTasksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r QueryWorkbenchTasksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r QueryWorkbenchTasksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r QueryWorkbenchTasksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListWorkbenchTasksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -11210,6 +11652,32 @@ func (c *ClientWithResponses) ReconcileWorkbenchTaskOperationWithResponse(ctx co
 		return nil, err
 	}
 	return ParseReconcileWorkbenchTaskOperationResponse(rsp)
+}
+
+// QueryWorkbenchTasksWithBodyWithResponse Query and group the visible task snapshot
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+func (c *ClientWithResponses) QueryWorkbenchTasksWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*QueryWorkbenchTasksResponse, error) {
+	rsp, err := c.QueryWorkbenchTasksWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryWorkbenchTasksResponse(rsp)
+}
+
+// QueryWorkbenchTasksWithResponse Query and group the visible task snapshot
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /v1/workbench/task-query (the `QueryWorkbenchTasks` operationId).
+func (c *ClientWithResponses) QueryWorkbenchTasksWithResponse(ctx context.Context, body QueryWorkbenchTasksJSONRequestBody, reqEditors ...RequestEditorFn) (*QueryWorkbenchTasksResponse, error) {
+	rsp, err := c.QueryWorkbenchTasks(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseQueryWorkbenchTasksResponse(rsp)
 }
 
 // ListWorkbenchTasksWithResponse Search the committed task snapshot
@@ -14063,6 +14531,67 @@ func ParseReconcileWorkbenchTaskOperationResponse(rsp *http.Response) (*Reconcil
 			return nil, err
 		}
 		response.ApplicationproblemJSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseQueryWorkbenchTasksResponse parses an HTTP response from a QueryWorkbenchTasksWithResponse call
+func ParseQueryWorkbenchTasksResponse(rsp *http.Response) (*QueryWorkbenchTasksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &QueryWorkbenchTasksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchTaskQueryResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 422:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON422 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
 
 	}
 

@@ -11,6 +11,8 @@ import (
 type taskReturnPoint struct {
 	taskID, selection, viewID                      string
 	view                                           taskViewState
+	queryPage                                      int
+	querySlice                                     *string
 	listX, listY, detailX, detailY, boardX, boardY float32
 }
 
@@ -23,6 +25,7 @@ func (m *mockup) followRelatedTask(index int) {
 	detail := &m.assistantThreadFor(origin).scroll
 	m.taskBackStack = append(m.taskBackStack, taskReturnPoint{
 		taskID: m.objects[origin].ID, selection: m.taskSelection, viewID: m.taskView, view: m.viewState(),
+		queryPage: m.customQuery.page, querySlice: m.customQuery.slice,
 		listX: list.X, listY: list.Y, detailX: detail.X, detailY: detail.Y,
 		boardX: m.taskBoardScroll.X, boardY: m.taskBoardScroll.Y,
 	})
@@ -40,6 +43,7 @@ func (m *mockup) returnToRelatedSource() {
 		}
 		m.taskView = point.viewID
 		m.restoreView(point.view)
+		m.customQuery.page, m.customQuery.slice = point.queryPage, point.querySlice
 		m.showTaskDetail(index)
 		m.taskPageIndex, m.taskSelection = point.view.Page, point.selection
 		m.layout.revealSelection = false
@@ -86,5 +90,34 @@ func (m *mockup) showTaskList() {
 	m.leaveTaskDetail()
 	if m.unifiedTasks() {
 		m.layout.detailHidden = true
+		m.layout.revealSelection = false
 	}
+}
+
+func (m *mockup) escapeTaskDetail() {
+	switch {
+	case m.editingDue:
+		m.editingDue = false
+	case len(m.taskBackStack) > 0:
+		m.returnRelatedPending = true
+	case m.taskBoard && m.layout.detailExpanded:
+		m.leaveTaskDetail()
+	case m.layout.detailExpanded:
+		m.layout.detailExpanded = false
+		m.layout.focusDetail = true
+	case m.unifiedTasks() && m.activeTaskQuery() != nil:
+		m.showTaskList()
+	default:
+		m.leaveTaskDetail()
+	}
+}
+
+func (m *mockup) returnTaskTitle() string {
+	if len(m.taskBackStack) != 0 {
+		id := m.taskBackStack[len(m.taskBackStack)-1].taskID
+		if index := slices.IndexFunc(m.objects, func(task sourceObject) bool { return task.ID == id }); index >= 0 {
+			return m.sourceText(m.objects[index].Title)
+		}
+	}
+	return tr("任务")
 }

@@ -44,6 +44,10 @@ func (m *mockup) workspaceBreadcrumb(c *ui.Context) {
 		case tasksPage:
 			if index := m.currentTaskIndex(); index >= 0 && !m.layout.detailHidden && (!m.taskBoard || m.layout.detailExpanded) {
 				current, back = m.sourceText(m.objects[index].Title), m.showTaskList
+				if len(m.taskBackStack) > 0 {
+					back = func() { m.returnRelatedPending = true }
+					page = m.returnTaskTitle()
+				}
 			}
 		}
 		if back != nil {

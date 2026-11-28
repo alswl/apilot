@@ -23,8 +23,12 @@ type workbenchLocation struct {
 }
 
 func (m *mockup) loadHostedNavigation(dataDir string) {
-	if err := m.loadTaskViewStore(filepath.Join(dataDir, "task-views.json")); err != nil {
+	m.customQuery.path = filepath.Join(dataDir, "task-views.v2.json")
+	if cfg, err := bootTaskQueryConfig(m.customQuery.path); err != nil {
+		m.customQuery.problem = err.Error()
 		log.Printf("Could not load saved task views: %v", err)
+	} else {
+		m.adoptTaskQueryConfig(cfg)
 	}
 	m.restoreLocation(filepath.Join(dataDir, "workbench-location.json"))
 }

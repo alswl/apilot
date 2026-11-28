@@ -49,12 +49,30 @@ func TestWorkbenchLocationRestoresPageAndSavedView(t *testing.T) {
 	if reopened.search != view.State.Query || !reopened.taskBoard {
 		t.Fatal("relaunch did not apply the saved browse view")
 	}
-	if err := os.Remove(filepath.Join(dir, "task-views.json")); err != nil {
+	if err := os.Remove(filepath.Join(dir, "task-views.v2.json")); err != nil {
 		t.Fatal(err)
 	}
 	fallback := openLocationTestWorkspace(dir).model
 	if fallback.page != tasksPage || fallback.taskView != "" || fallback.taskBoard || fallback.search != "" {
 		t.Fatal("removed saved view did not fall back to the ordinary Tasks view")
+	}
+}
+
+func TestWorkbenchLocationRestoresCELView(t *testing.T) {
+	dir := t.TempDir()
+	m := openLocationTestWorkspace(dir).model
+	view := m.newTaskQueryView("My query")
+	view.Query.Expression = `task.status == "open"`
+	if err := m.saveNamedTaskView(view); err != nil {
+		t.Fatal(err)
+	}
+	m.selectTaskView(view.ID)
+
+	reopened := openLocationTestWorkspace(dir).model
+	query := reopened.activeTaskQuery()
+	if reopened.page != tasksPage || reopened.taskView != view.ID ||
+		query == nil || query.Expression != view.Query.Expression {
+		t.Fatalf("relaunch = page %d, view %q, query %+v", reopened.page, reopened.taskView, query)
 	}
 }
 

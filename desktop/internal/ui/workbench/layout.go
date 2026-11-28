@@ -8,12 +8,13 @@ import (
 )
 
 const (
-	sidebarWidth    = 188
-	sidebarDivider  = 1
-	layoutListMin   = 488
-	layoutDetailMin = 352
-	layoutBriefSize = 54
-	taskResultsGap  = 8
+	sidebarWidth      = 188
+	sidebarDivider    = 1
+	layoutListMin     = 488
+	layoutDetailMin   = 352
+	queryListStackMin = 330
+	layoutBriefSize   = 54
+	taskResultsGap    = 8
 )
 
 type taskViewportGeometry struct {
@@ -120,6 +121,10 @@ func (m *mockup) layoutWorkspace(c *ui.Context, width float32) {
 		if stacked {
 			share, size = &m.layout.stackShare, availableHeight
 			firstMin, secondMin, reset = 220, 160, 52
+			if m.activeTaskQuery() != nil {
+				// Keep room for the query toolbar, summary, result rows and pager.
+				firstMin = queryListStackMin
+			}
 			m.layout.listHeight = (size - 1) * components.SplitShare(*share, size, firstMin, secondMin) / 100
 		} else {
 			m.layout.listWidth = (width - 1) * components.SplitShare(*share, size, firstMin, secondMin) / 100
@@ -151,6 +156,10 @@ func (m *mockup) detailToggle(c *ui.Context) {
 func (m *mockup) layoutTaskList(c *ui.Context) {
 	ui.Column(c).Fill().MinWidth(0).MinHeight(0).Padding(12).Gap(8).Children(func() {
 		m.taskListControls(c.Key("controls"))
+		if view := m.activeTaskQuery(); view != nil {
+			m.customQueryResults(c.Key("custom-query"), *view)
+			return
+		}
 		if m.taskBoard {
 			m.taskListResults(c.Key("board-results"), 0)
 			return
@@ -205,6 +214,10 @@ func (m *mockup) layoutTaskDetail(c *ui.Context) {
 			if m.layout.focusDetail {
 				title.Focus()
 				m.layout.focusDetail = false
+			}
+			if m.inspector && m.activeTaskQuery() != nil && title.Shortcut(0, ui.KeyEscape) {
+				m.escapeTaskDetail()
+				c.Invalidate()
 			}
 			if !m.taskBoard {
 				m.detailSizeButton(c.Key("detail-size"))
