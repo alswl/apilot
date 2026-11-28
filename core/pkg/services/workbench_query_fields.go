@@ -220,7 +220,7 @@ func projectWorkbenchQueryTask(task common.WorkbenchTask, source common.Workbenc
 	projected["task.title"] = queryText(task.Title)
 	projected["task.source_id"] = common.WorkbenchQueryValue{Text: &source.Name, Key: task.ConnectionID}
 	projected["task.status"] = common.WorkbenchQueryValue{Text: &status, Key: status}
-	projected["task.labels"] = queryConvert("multi_select", labels, zone)
+	projected["task.labels"] = queryExactMultiSelect(labels)
 	projected["task.assignees"] = queryRawList(task.Assignees)
 	projected["task.priority"] = common.WorkbenchQueryValue{Reason: "missing"}
 	if task.Priority != nil {
@@ -245,6 +245,22 @@ func projectWorkbenchQueryTask(task common.WorkbenchTask, source common.Workbenc
 		projected[field.ID] = queryMappedValue(task, field, projected, native, zone)
 	}
 	return queryTask{item: common.WorkbenchQueryItem{Task: task, Fields: projected}, native: nativeInputs}
+}
+
+func queryExactMultiSelect(raw []string) common.WorkbenchQueryValue {
+	labels := make([]string, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, value := range raw {
+		value = strings.TrimSpace(value)
+		if value != "" && !seen[value] {
+			seen[value] = true
+			labels = append(labels, value)
+		}
+	}
+	if len(labels) == 0 {
+		return common.WorkbenchQueryValue{Reason: "missing"}
+	}
+	return common.WorkbenchQueryValue{Values: labels, Keys: slices.Clone(labels)}
 }
 
 func queryUpdated(task common.WorkbenchTask) common.WorkbenchQueryValue {

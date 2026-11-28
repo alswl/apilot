@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"maps"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/alswl/apilot/core/pkg/integrations"
 )
 
 type workbenchQueryStore interface {
@@ -109,6 +111,11 @@ func validateWorkbenchQuery(input common.WorkbenchTaskQuery) error {
 	}
 	if (input.IssueRepository == "") != (input.IssueNumber == "") {
 		return common.Err("INVALID_ARGUMENT", "Issue lookup requires both repository and issue number")
+	}
+	if input.IssueRepository != "" {
+		if _, ok := integrations.GitHubRepositoryParts(input.IssueRepository); !ok {
+			return common.Err("INVALID_ARGUMENT", "Issue repository must use owner/repository form")
+		}
 	}
 	if input.IssueNumber != "" {
 		number, err := strconv.ParseUint(input.IssueNumber, 10, 64)
@@ -297,13 +304,7 @@ func (c workbenchQueryConstraints) match(task common.WorkbenchTask, source commo
 		return false
 	}
 	if c.issueNumber != "" {
-		repository := source.Repository
-		if repository == "" {
-			repository = task.NativeFields["repository"]
-		}
-		if repository == "" {
-			repository = task.NativeFields["repo"]
-		}
+		repository := workbenchTaskRepository(task, source)
 		if !isWorkbenchGitHubTask(task.Kind) || !strings.EqualFold(repository, c.issueRepository) || task.NativeID != c.issueNumber {
 			return false
 		}
@@ -311,6 +312,34 @@ func (c workbenchQueryConstraints) match(task common.WorkbenchTask, source commo
 	return (len(c.sources) == 0 || c.sources[task.ConnectionID]) &&
 		(len(c.states) == 0 || c.states[state]) &&
 		(c.watch == nil || c.watch[task.ID]) && (c.tasks == nil || c.tasks[task.ID])
+}
+
+func workbenchTaskRepository(task common.WorkbenchTask, source common.WorkbenchConnection) string {
+	if source.Repository != "" {
+		return source.Repository
+	}
+	if repository := task.NativeFields["repository"]; repository != "" {
+		return repository
+	}
+	if repository := task.NativeFields["repo"]; repository != "" {
+		return repository
+	}
+	if !isWorkbenchGitHubTask(task.Kind) || task.Locator == "" {
+		return ""
+	}
+	locator, err := url.Parse(task.Locator)
+	if err != nil || locator.Scheme != "https" || !strings.EqualFold(locator.Host, "github.com") || locator.User != nil || locator.RawQuery != "" || locator.Fragment != "" || locator.RawPath != "" {
+		return ""
+	}
+	parts := strings.Split(locator.Path, "/")
+	if len(parts) != 5 || parts[0] != "" || parts[3] != "issues" || parts[4] != task.NativeID {
+		return ""
+	}
+	repository := parts[1] + "/" + parts[2]
+	if _, ok := integrations.GitHubRepositoryParts(repository); !ok {
+		return ""
+	}
+	return repository
 }
 
 func isWorkbenchGitHubTask(kind string) bool {

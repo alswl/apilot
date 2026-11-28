@@ -2169,6 +2169,7 @@ components:
           type: string
         issue_repository:
           description: Repository name for an exact GitHub issue number lookup.
+          pattern: ^[^/?#%\\\s]+/[^/?#%\\\s]+$
           type: string
         keyword:
           description: Case-insensitive literal substring matched against visible task search fields.

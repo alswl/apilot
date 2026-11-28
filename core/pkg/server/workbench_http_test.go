@@ -81,7 +81,11 @@ func TestWorkbenchTaskQueryHTTP(t *testing.T) {
 	if err != nil || result.QueryTotal != 1 || len(result.Items) != 1 || result.Items[0].Task.Title != "Literal foo:bar" {
 		t.Fatalf("query route: %+v %v", result, err)
 	}
-	query.Expression = "true &&\n task.unlisted"
+	query = common.WorkbenchTaskQuery{Timezone: "UTC", IssueRepository: "owner//repo", IssueNumber: "17"}
+	if _, err := remote.QueryWorkbenchTasks(ctx, query); err == nil || common.ProtocolError(err).Code != "INVALID_ARGUMENT" {
+		t.Fatalf("malformed repository passed the HTTP DTO: %v", err)
+	}
+	query = common.WorkbenchTaskQuery{Timezone: "UTC", Expression: "true &&\n task.unlisted"}
 	if result, err := remote.QueryWorkbenchTasks(ctx, query); err == nil || common.ProtocolError(err).Code != "INVALID_ARGUMENT" ||
 		common.ProtocolError(err).Details["line"] != float64(2) || len(result.Items) != 0 {
 		t.Fatalf("query diagnostics: %+v %v", result, err)
