@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alswl/apilot/connectors/protocol"
 	"github.com/alswl/apilot/core/pkg/common"
 	"github.com/alswl/apilot/core/pkg/dal"
 )
@@ -208,6 +209,259 @@ func TestWorkbenchTaskQueryFullSnapshot(t *testing.T) {
 	filter.Expression = "true"
 	if result := read(filter); result.QueryTotal != 0 {
 		t.Fatalf("explicit source constraint enlarged visibility: %d", result.QueryTotal)
+	}
+}
+
+func TestWorkbenchTaskQueryCrossSourceLabelsAndExactGitHubIDs(t *testing.T) {
+	ctx := context.Background()
+	db, err := dal.Open(filepath.Join(t.TempDir(), "query.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service := &Service{store: db}
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	obsidian := common.WorkbenchConnection{ID: "vault", Kind: common.WorkbenchObsidianTasks, Name: "Vault", Version: 1}
+	if err := db.CommitWorkbenchImport(obsidian, nil, nil, []common.WorkbenchTask{{ID: "obs-task", SourceKey: "obs-key", NativeID: "obs-key", ConnectionID: "vault", Kind: common.WorkbenchObsidianTasks, Title: "超时 release", State: "open", Labels: []string{"#release"}}}, &now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWorkbenchLabels("obs-task", []string{"release"}); err != nil {
+		t.Fatal(err)
+	}
+	githubA := common.WorkbenchConnection{ID: "repo-a", Kind: common.WorkbenchGitHubRepository, Name: "Repo A", Repository: "owner/a", Version: 1}
+	githubB := common.WorkbenchConnection{ID: "repo-b", Kind: common.WorkbenchGitHubRepository, Name: "Repo B", Repository: "owner/b", Version: 1}
+	for i, connection := range []common.WorkbenchConnection{githubA, githubB} {
+		if err := db.SaveWorkbenchGitHub(connection, 0, common.WorkbenchGitHubProgress{ConnectionID: connection.ID, RepositoryID: int64(10 + i), AccountID: 20, AccountLogin: "fixture", CredentialRef: "fixture", AccessState: "available"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	githubTasks := []common.WorkbenchTask{
+		{ID: "issue-17", SourceKey: "issue:117", NativeID: "17", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "修复登录重试", State: "open", Labels: []string{"release"}, NativeFields: map[string]string{"issue_id": "117", "repository": "owner/a"}},
+		{ID: "issue-170", SourceKey: "stable-170", NativeID: "170", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Issue 170", State: "open", NativeFields: map[string]string{"repository": "owner/a"}},
+		{ID: "issue-other-17", SourceKey: "stable-other-17", NativeID: "17", ConnectionID: "repo-b", Kind: githubB.Kind, Title: "Issue 17 elsewhere", State: "open", NativeFields: map[string]string{"repository": "owner/b"}},
+		{ID: "issue-title-17", SourceKey: "stable-title-17", NativeID: "18", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Release 17 in title", State: "open", NativeFields: map[string]string{"repository": "owner/a"}},
+		{ID: "issue-closed", SourceKey: "stable-closed", NativeID: "19", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Closed release", State: "done", Labels: []string{"release"}, NativeFields: map[string]string{"repository": "owner/a"}},
+	}
+	githubATasks := []common.WorkbenchTask{githubTasks[0], githubTasks[1], githubTasks[3], githubTasks[4]}
+	githubBTasks := []common.WorkbenchTask{githubTasks[2]}
+	for _, entry := range []struct {
+		connection common.WorkbenchConnection
+		tasks      []common.WorkbenchTask
+	}{{githubA, githubATasks}, {githubB, githubBTasks}} {
+		if err := db.RecordWorkbench(entry.connection, nil, nil, entry.tasks, &now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	managedParent := common.WorkbenchConnectorConnection{ID: "managed-parent", ConnectorID: "github-issues", EndpointRef: "github.com", AccountRef: "synthetic"}
+	_, err = db.SaveWorkbenchConnectorConnection(managedParent, []common.WorkbenchConnectorNewScope{{ID: "managed-a", Label: "Managed GitHub", Context: protocol.ScopeContext{
+		ScopeRef: "managed-a", EndpointConfig: []byte("{}"), ScopeConfig: []byte(`{"name":"Managed GitHub"}`), EndpointSchemaVersion: 1, ScopeSchemaVersion: 1,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managed, err := db.WorkbenchConnectorScope("managed-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedRelease := common.WorkbenchConnectorRelease{ConnectorID: "github-issues", ReleaseVersion: "0.1.0", ProtocolVersion: 1, PackageDigest: "managed-test"}
+	if err := db.RegisterWorkbenchPluginRelease("github-issues", &managedRelease); err != nil {
+		t.Fatal(err)
+	}
+	managedTask, err := connectorTask(managed, protocol.SourceRecord{SourceID: "managed-117", SourceVersion: "1", Number: "17", URL: "https://github.com/owner/a/issues/17", Title: "Managed issue", State: "open", StateID: "open", UpdatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedPrefix, err := connectorTask(managed, protocol.SourceRecord{SourceID: "managed-118", SourceVersion: "1", Number: "17", URL: "https://github.com/owner/ab/issues/17", Title: "Prefix issue", State: "open", StateID: "open", UpdatedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	managedRun := common.WorkbenchSyncRun{ID: "managed-run", ScopeID: managed.ScopeID, Trigger: "manual", Mode: "full", Status: "running", StartedAt: now}
+	if _, err := db.StartWorkbenchConnectorRun(managedRun); err != nil {
+		t.Fatal(err)
+	}
+	finished := now.Add(time.Second)
+	managedRun.Status, managedRun.FinishedAt = "success", &finished
+	if err := db.CommitWorkbenchConnectorSync(common.WorkbenchConnectorSyncCommit{Scope: managed, Release: managedRelease, PluginID: "github-issues", Run: managedRun,
+		Checkpoint: "managed-checkpoint", Records: map[string]common.WorkbenchTask{"managed-117": managedTask, "managed-118": managedPrefix}}); err != nil {
+		t.Fatal(err)
+	}
+	managedMembers, err := db.WorkbenchConnectorMembers(managed.ScopeID)
+	if err != nil || len(managedMembers) != 2 {
+		t.Fatalf("managed records were not persisted: %+v %v", managedMembers, err)
+	}
+	managedID, managedPrefixID := "", ""
+	for _, task := range managedMembers {
+		switch task.SourceKey {
+		case "managed-117":
+			managedID = task.ID
+		case "managed-118":
+			managedPrefixID = task.ID
+		}
+	}
+	if managedID == "" || managedPrefixID == "" {
+		t.Fatal("persisted managed GitHub issues are missing")
+	}
+	query := func(input common.WorkbenchTaskQuery) common.WorkbenchTaskQueryResult {
+		t.Helper()
+		input.Timezone = "UTC"
+		result, err := service.QueryWorkbenchTasks(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	fresh := common.WorkbenchTask{ID: "fresh", Kind: common.WorkbenchObsidianTasks, Labels: []string{"#release"}}
+	freshProjection := projectWorkbenchQueryTask(fresh, obsidian, nil, nil, time.UTC)
+	if !slices.Contains(freshProjection.item.Fields["task.labels"].Values, "release") || fresh.Labels[0] != "#release" {
+		t.Fatalf("fresh projection changed source label or missed shared value: %+v", freshProjection.item.Fields["task.labels"])
+	}
+	mixedCase := common.WorkbenchTask{Kind: common.WorkbenchObsidianTasks, Labels: []string{"#Release"}, WorkbenchLabels: []common.WorkbenchLabel{{Name: "Release"}}}
+	mixedProjection := projectWorkbenchQueryTask(mixedCase, obsidian, nil, nil, time.UTC)
+	if !slices.Equal(mixedProjection.item.Fields["task.labels"].Values, []string{"Release"}) || mixedCase.Labels[0] != "#Release" {
+		t.Fatalf("Obsidian marker normalization changed case/source or overlap: %+v / %+v", mixedProjection.item.Fields["task.labels"], mixedCase)
+	}
+	label := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, States: []string{"open"}})
+	if label.QueryTotal != 2 {
+		ids := make([]string, len(label.Items))
+		for i, item := range label.Items {
+			ids[i] = item.Task.ID
+		}
+		t.Fatalf("shared label query got %d tasks: %v", label.QueryTotal, ids)
+	}
+	matchedIDs := make(map[string]bool, len(label.Items))
+	for _, item := range label.Items {
+		matchedIDs[item.Task.ID] = true
+		if item.Task.ID == "obs-task" && (!slices.Contains(item.Task.Labels, "#release") || len(item.Task.WorkbenchLabels) != 1 || item.Task.WorkbenchLabels[0].Name != "release") {
+			t.Fatalf("query changed source values or workspace association: %+v", item.Task)
+		}
+	}
+	if !matchedIDs["obs-task"] || !matchedIDs["issue-17"] {
+		t.Fatalf("shared label query did not return one task per source: %v", matchedIDs)
+	}
+	keyword := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "#release", States: []string{"open"}})
+	if keyword.QueryTotal != 1 || keyword.Items[0].Task.ID != "obs-task" {
+		t.Fatalf("literal keyword should preserve original source value: %+v", keyword.Items)
+	}
+	keyword = query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "release", States: []string{"open"}})
+	if keyword.QueryTotal != 2 {
+		t.Fatalf("literal keyword and label filter failed to combine: %d", keyword.QueryTotal)
+	}
+	keyword = query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "超时", States: []string{"open"}})
+	if keyword.QueryTotal != 1 || keyword.Items[0].Task.ID != "obs-task" {
+		t.Fatalf("title search did not narrow the combined source query: %+v", keyword.Items)
+	}
+	if restored := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, States: []string{"open"}}); restored.QueryTotal != 2 {
+		t.Fatalf("clearing keyword did not restore the shared-label result: %d", restored.QueryTotal)
+	}
+	if empty := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "never matches", States: []string{"open"}}); empty.QueryTotal != 0 {
+		t.Fatalf("non-matching keyword returned %d tasks", empty.QueryTotal)
+	}
+	exact := query(common.WorkbenchTaskQuery{IssueRepository: "owner/a", IssueNumber: "17", SourceIDs: []string{"repo-a"}})
+	if exact.QueryTotal != 1 || exact.Items[0].Task.NativeID != "17" || exact.Items[0].Task.ConnectionID != "repo-a" {
+		t.Fatalf("repo-scoped exact number returned %+v", exact.Items)
+	}
+	exact = query(common.WorkbenchTaskQuery{IssueRepository: "owner/a", IssueNumber: "17", SourceIDs: []string{"managed-a"}})
+	if exact.QueryTotal != 1 || exact.Items[0].Task.ID != managedID {
+		t.Fatalf("managed locator repository lookup returned %+v", exact.Items)
+	}
+	if wrongRepository := query(common.WorkbenchTaskQuery{IssueRepository: "owner/a", IssueNumber: "17", SourceIDs: []string{"repo-b"}}); wrongRepository.QueryTotal != 0 {
+		t.Fatalf("wrong repository returned %+v", wrongRepository.Items)
+	}
+	if prefix := query(common.WorkbenchTaskQuery{IssueRepository: "owner/ab", IssueNumber: "17", SourceIDs: []string{"managed-a"}}); prefix.QueryTotal != 1 || prefix.Items[0].Task.ID != managedPrefixID {
+		t.Fatalf("exact managed repository lookup returned %+v", prefix.Items)
+	}
+	if other := query(common.WorkbenchTaskQuery{IssueRepository: "owner/b", IssueNumber: "17", SourceIDs: []string{"repo-b"}}); other.QueryTotal != 1 || other.Items[0].Task.ID != "issue-other-17" {
+		t.Fatalf("legacy other-repository lookup returned %+v", other.Items)
+	}
+	if err := db.SetWorkbenchLabels(managedID, []string{"Release"}); err != nil {
+		t.Fatal(err)
+	}
+	caseSensitive := query(common.WorkbenchTaskQuery{Expression: `"Release" in task.labels`})
+	if caseSensitive.QueryTotal != 1 || caseSensitive.Items[0].Task.ID != managedID {
+		t.Fatalf("mixed-case exact label literal failed: %+v", caseSensitive.Items)
+	}
+	caseSensitive = query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`})
+	for _, item := range caseSensitive.Items {
+		if item.Task.ID == managedID {
+			t.Fatalf("lowercase CEL label matched mixed-case workspace value: %+v", item.Task)
+		}
+	}
+	if _, err := service.QueryWorkbenchTasks(ctx, common.WorkbenchTaskQuery{Timezone: "UTC", IssueRepository: "owner//a", IssueNumber: "17"}); err == nil || common.ProtocolError(err).Code != "INVALID_ARGUMENT" {
+		t.Fatalf("malformed repository should be rejected, got %v", err)
+	}
+	stable := query(common.WorkbenchTaskQuery{StableSourceID: "117"})
+	if stable.QueryTotal != 1 || stable.Items[0].Task.ID != "issue-17" {
+		t.Fatalf("built-in GitHub stable ID match returned %+v", stable.Items)
+	}
+	stable = query(common.WorkbenchTaskQuery{StableSourceID: "stable-170"})
+	if stable.QueryTotal != 1 || stable.Items[0].Task.NativeID != "170" {
+		t.Fatalf("stable ID match returned %+v", stable.Items)
+	}
+	text := query(common.WorkbenchTaskQuery{Keyword: "17"})
+	if text.QueryTotal != 6 {
+		t.Fatalf("literal text search should match issue number substrings and title; got %d", text.QueryTotal)
+	}
+	combined := query(common.WorkbenchTaskQuery{IssueRepository: "owner/a", IssueNumber: "17", Keyword: "title"})
+	if combined.QueryTotal != 0 {
+		t.Fatalf("exact number and keyword constraints did not combine: %d", combined.QueryTotal)
+	}
+	if err := db.SetWorkbenchLabels("issue-17", []string{"release", "qa-local"}); err != nil {
+		t.Fatal(err)
+	}
+	if before := query(common.WorkbenchTaskQuery{Expression: `"qa-local" in task.labels`}); before.QueryTotal != 1 || before.Items[0].Task.ID != "issue-17" {
+		t.Fatalf("workspace label missing before source refresh: %+v", before.Items)
+	}
+	refreshed := slices.Clone(githubATasks)
+	refreshed[0].Title += " refreshed"
+	if err := db.RecordWorkbench(githubA, nil, githubATasks, refreshed, &now); err != nil {
+		t.Fatal(err)
+	}
+	after := query(common.WorkbenchTaskQuery{StableSourceID: "117"})
+	if after.QueryTotal != 1 || after.Items[0].Task.ID != "issue-17" || after.Items[0].Task.Title != "修复登录重试 refreshed" ||
+		!slices.Contains(after.Items[0].Task.Labels, "release") || len(after.Items[0].Task.WorkbenchLabels) != 2 ||
+		!slices.ContainsFunc(after.Items[0].Task.WorkbenchLabels, func(label common.WorkbenchLabel) bool { return label.Name == "qa-local" }) {
+		t.Fatalf("source refresh changed canonical identity or workspace labels: %+v", after.Items)
+	}
+	if local := query(common.WorkbenchTaskQuery{Expression: `"qa-local" in task.labels`}); local.QueryTotal != 1 || local.Items[0].Task.ID != "issue-17" {
+		t.Fatalf("workspace-only label was not queryable after source refresh: %+v", local.Items)
+	}
+}
+
+func TestWorkbenchStableSourceIDAcrossGitHubAdapters(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		task common.WorkbenchTask
+		want string
+	}{
+		{name: "built-in source key and canonical native ID", task: common.WorkbenchTask{Kind: common.WorkbenchGitHubRepository, SourceKey: "issue:117", NativeFields: map[string]string{"issue_id": "117"}}, want: "117"},
+		{name: "built-in source key fallback", task: common.WorkbenchTask{Kind: common.WorkbenchGitHubRepository, SourceKey: "issue:117\x000"}, want: "117"},
+		{name: "managed connector raw source ID", task: common.WorkbenchTask{Kind: "github-issues", SourceKey: "117"}, want: "117"},
+		{name: "numeric prefix remains exact", task: common.WorkbenchTask{Kind: common.WorkbenchGitHubRepository, SourceKey: "issue:1170", NativeFields: map[string]string{"issue_id": "1170"}}, want: "1170"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := workbenchStableSourceID(test.task); got != test.want {
+				t.Fatalf("canonical stable source ID = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestWorkbenchTaskRepositoryUsesOnlyCanonicalGitHubIssueLocators(t *testing.T) {
+	task := common.WorkbenchTask{Kind: "github-issues", NativeID: "17", Locator: "https://github.com/owner/repo/issues/17"}
+	if got := workbenchTaskRepository(task, common.WorkbenchConnection{}); got != "owner/repo" {
+		t.Fatalf("canonical locator repository = %q", got)
+	}
+	for _, locator := range []string{
+		"https://evil.example/owner/repo/issues/17",
+		"https://github.com/owner/repo/issues/170",
+		"https://github.com/owner%2Frepo/issues/17",
+		"https://github.com/owner/repo/issues/17?redirect=1",
+		"https://user@github.com/owner/repo/issues/17",
+	} {
+		task.Locator = locator
+		if got := workbenchTaskRepository(task, common.WorkbenchConnection{}); got != "" {
+			t.Errorf("non-canonical locator %q resolved repository %q", locator, got)
+		}
 	}
 }
 

@@ -6,13 +6,16 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"maps"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata"
 	"unicode/utf8"
 
 	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/alswl/apilot/core/pkg/integrations"
 )
 
 type workbenchQueryStore interface {
@@ -105,6 +108,23 @@ func validateWorkbenchQuery(input common.WorkbenchTaskQuery) error {
 		if source == "" || strings.TrimSpace(source) != source {
 			return common.Err("INVALID_ARGUMENT", "Source constraints require stable scope IDs")
 		}
+	}
+	if (input.IssueRepository == "") != (input.IssueNumber == "") {
+		return common.Err("INVALID_ARGUMENT", "Issue lookup requires both repository and issue number")
+	}
+	if input.IssueRepository != "" {
+		if _, ok := integrations.GitHubRepositoryParts(input.IssueRepository); !ok {
+			return common.Err("INVALID_ARGUMENT", "Issue repository must use owner/repository form")
+		}
+	}
+	if input.IssueNumber != "" {
+		number, err := strconv.ParseUint(input.IssueNumber, 10, 64)
+		if err != nil || number == 0 || strconv.FormatUint(number, 10) != input.IssueNumber {
+			return common.Err("INVALID_ARGUMENT", "Issue number must be a positive canonical integer")
+		}
+	}
+	if strings.TrimSpace(input.StableSourceID) != input.StableSourceID {
+		return common.Err("INVALID_ARGUMENT", "Stable source ID must not contain surrounding whitespace")
 	}
 	return nil
 }
@@ -225,7 +245,7 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 			return result, err
 		}
 		task := row.task.item.Task
-		if !constraints.match(task) || !workbenchQueryKeyword(keyword, row.task, row.source, row.connector) {
+		if !constraints.match(task, row.source) || !workbenchQueryKeyword(keyword, row.task, row.source, row.connector) {
 			continue
 		}
 		match, err := program.match(ctx, row.task, input.Fields, calendar)
@@ -252,7 +272,8 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 }
 
 type workbenchQueryConstraints struct {
-	sources, states, watch, tasks map[string]bool
+	sources, states, watch, tasks          map[string]bool
+	sourceID, issueRepository, issueNumber string
 }
 
 func newWorkbenchQueryConstraints(input common.WorkbenchTaskQuery) workbenchQueryConstraints {
@@ -263,7 +284,8 @@ func newWorkbenchQueryConstraints(input common.WorkbenchTaskQuery) workbenchQuer
 		}
 		return result
 	}
-	constraints := workbenchQueryConstraints{sources: set(input.SourceIDs), states: set(input.States)}
+	constraints := workbenchQueryConstraints{sources: set(input.SourceIDs), states: set(input.States),
+		sourceID: input.StableSourceID, issueRepository: input.IssueRepository, issueNumber: input.IssueNumber}
 	if input.WatchIDs != nil {
 		constraints.watch = set(*input.WatchIDs)
 	}
@@ -273,14 +295,68 @@ func newWorkbenchQueryConstraints(input common.WorkbenchTaskQuery) workbenchQuer
 	return constraints
 }
 
-func (c workbenchQueryConstraints) match(task common.WorkbenchTask) bool {
+func (c workbenchQueryConstraints) match(task common.WorkbenchTask, source common.WorkbenchConnection) bool {
 	state := task.State
 	if !validWorkbenchState(state) {
 		state = "unknown"
 	}
+	if c.sourceID != "" && (!isWorkbenchGitHubTask(task.Kind) || workbenchStableSourceID(task) != c.sourceID) {
+		return false
+	}
+	if c.issueNumber != "" {
+		repository := workbenchTaskRepository(task, source)
+		if !isWorkbenchGitHubTask(task.Kind) || !strings.EqualFold(repository, c.issueRepository) || task.NativeID != c.issueNumber {
+			return false
+		}
+	}
 	return (len(c.sources) == 0 || c.sources[task.ConnectionID]) &&
 		(len(c.states) == 0 || c.states[state]) &&
 		(c.watch == nil || c.watch[task.ID]) && (c.tasks == nil || c.tasks[task.ID])
+}
+
+func workbenchTaskRepository(task common.WorkbenchTask, source common.WorkbenchConnection) string {
+	if source.Repository != "" {
+		return source.Repository
+	}
+	if repository := task.NativeFields["repository"]; repository != "" {
+		return repository
+	}
+	if repository := task.NativeFields["repo"]; repository != "" {
+		return repository
+	}
+	if !isWorkbenchGitHubTask(task.Kind) || task.Locator == "" {
+		return ""
+	}
+	locator, err := url.Parse(task.Locator)
+	if err != nil || locator.Scheme != "https" || !strings.EqualFold(locator.Host, "github.com") || locator.User != nil || locator.RawQuery != "" || locator.Fragment != "" || locator.RawPath != "" {
+		return ""
+	}
+	parts := strings.Split(locator.Path, "/")
+	if len(parts) != 5 || parts[0] != "" || parts[3] != "issues" || parts[4] != task.NativeID {
+		return ""
+	}
+	repository := parts[1] + "/" + parts[2]
+	if _, ok := integrations.GitHubRepositoryParts(repository); !ok {
+		return ""
+	}
+	return repository
+}
+
+func isWorkbenchGitHubTask(kind string) bool {
+	return kind == "github-issues" || kind == common.WorkbenchGitHubIssues || kind == common.WorkbenchGitHubRepository
+}
+
+func workbenchStableSourceID(task common.WorkbenchTask) string {
+	if task.NativeFields["issue_id"] != "" {
+		return task.NativeFields["issue_id"]
+	}
+	key, _, _ := strings.Cut(task.SourceKey, "\x00")
+	if task.Kind == common.WorkbenchGitHubRepository {
+		if id, ok := strings.CutPrefix(key, "issue:"); ok {
+			return id
+		}
+	}
+	return key
 }
 
 func workbenchQueryKeyword(keyword string, task queryTask, source common.WorkbenchConnection, connector WorkbenchConnector) bool {
@@ -291,6 +367,7 @@ func workbenchQueryKeyword(keyword string, task queryTask, source common.Workben
 	values := []string{t.Title, t.NativeID, t.Locator, source.ID, source.Name, source.Kind, connector.Name}
 	values = append(values, connector.SearchAliases...)
 	values = append(values, task.item.Fields["task.labels"].Values...)
+	values = append(values, t.Labels...)
 	values = append(values, t.Assignees...)
 	for _, value := range task.native {
 		values = append(values, value)

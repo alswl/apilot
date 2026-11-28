@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/alswl/apilot/core/pkg/common"
 )
@@ -72,14 +73,9 @@ func (c *WorkbenchGitHubClient) Issue(ctx context.Context, connection common.Wor
 	if number <= 0 {
 		return common.WorkbenchTask{}, common.Err("INVALID_ARGUMENT", "Invalid issue number")
 	}
-	parts := strings.Split(connection.Repository, "/")
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+	parts, ok := GitHubRepositoryParts(connection.Repository)
+	if !ok {
 		return common.WorkbenchTask{}, common.Err("INVALID_ARGUMENT", "Invalid repository")
-	}
-	for _, part := range parts {
-		if part == "." || part == ".." || strings.ContainsAny(part, "?#%\\ ") {
-			return common.WorkbenchTask{}, common.Err("INVALID_ARGUMENT", "Invalid repository")
-		}
 	}
 	var issue githubIssue
 	path := "/repos/" + parts[0] + "/" + parts[1] + "/issues/" + strconv.FormatInt(number, 10)
@@ -107,6 +103,20 @@ func (c *WorkbenchGitHubClient) Issue(ctx context.Context, connection common.Wor
 		return common.WorkbenchTask{}, common.Err("SOURCE_UNAVAILABLE", "GitHub returned an unexpected issue")
 	}
 	return githubIssueTask(connection, issue), nil
+}
+
+// GitHubRepositoryParts validates the owner/repository form used by GitHub REST paths.
+func GitHubRepositoryParts(repository string) ([]string, bool) {
+	parts := strings.Split(repository, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, false
+	}
+	for _, part := range parts {
+		if part == "." || part == ".." || strings.ContainsAny(part, "?#%\\") || strings.IndexFunc(part, unicode.IsSpace) >= 0 {
+			return nil, false
+		}
+	}
+	return parts, true
 }
 
 // Issues reads all pages of a repository snapshot or an incremental window.

@@ -21,16 +21,19 @@ type taskQueryChip struct {
 }
 
 type taskQueryView struct {
-	Engine       string                       `json:"queryEngine"`
-	Environment  int                          `json:"environmentVersion,omitempty"`
-	Keyword      string                       `json:"keyword,omitempty"`
-	Expression   string                       `json:"expression,omitempty"`
-	ChipBase     string                       `json:"chipBase,omitempty"`
-	Chips        []taskQueryChip              `json:"chips,omitempty"`
-	Widths       map[string]float32           `json:"listWidths,omitempty"`
-	Dependencies []string                     `json:"fieldDependencies,omitempty"`
-	List         common.WorkbenchQueryDisplay `json:"list"`
-	Board        common.WorkbenchQueryDisplay `json:"board"`
+	Engine          string                       `json:"queryEngine"`
+	Environment     int                          `json:"environmentVersion,omitempty"`
+	Keyword         string                       `json:"keyword,omitempty"`
+	StableSourceID  string                       `json:"stableSourceID,omitempty"`
+	IssueRepository string                       `json:"issueRepository,omitempty"`
+	IssueNumber     string                       `json:"issueNumber,omitempty"`
+	Expression      string                       `json:"expression,omitempty"`
+	ChipBase        string                       `json:"chipBase,omitempty"`
+	Chips           []taskQueryChip              `json:"chips,omitempty"`
+	Widths          map[string]float32           `json:"listWidths,omitempty"`
+	Dependencies    []string                     `json:"fieldDependencies,omitempty"`
+	List            common.WorkbenchQueryDisplay `json:"list"`
+	Board           common.WorkbenchQueryDisplay `json:"board"`
 }
 
 type taskQueryConfig struct {

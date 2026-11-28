@@ -6,12 +6,25 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
 )
+
+func TestGitHubRepositoryPartsMatchesIssuePathValidation(t *testing.T) {
+	parts, ok := GitHubRepositoryParts("owner/repo")
+	if !ok || !slices.Equal(parts, []string{"owner", "repo"}) {
+		t.Fatalf("valid repository parsed as %v, %t", parts, ok)
+	}
+	for _, repository := range []string{"", "owner", "/repo", "owner/", "owner//repo", "owner/../repo", "./repo", "owner/re po", "owner/re\tpo", "owner/repo?x", "owner/repo%2Fother", "owner/repo\\other"} {
+		if parts, ok := GitHubRepositoryParts(repository); ok {
+			t.Errorf("invalid repository %q parsed as %v", repository, parts)
+		}
+	}
+}
 
 func TestGitHubReadDistinguishesTimeout(t *testing.T) {
 	client, err := NewWorkbenchGitHubClient("https://api.github.com", "secret", nil)

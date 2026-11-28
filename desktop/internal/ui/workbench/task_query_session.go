@@ -30,38 +30,39 @@ type taskQueryConversion struct {
 }
 
 type taskQueryWorkspace struct {
-	returnFocus                                                        string
-	revealTab                                                          bool
-	conversion                                                         map[string]taskQueryConversion
-	comparison                                                         string
-	liveRevision                                                       int64
-	configConflict                                                     bool
-	selectPageEdge                                                     int
-	immediate                                                          bool
-	autoLimit                                                          int
-	path, problem, syncWarning                                         string
-	config                                                             taskQueryConfig
-	drafts                                                             map[string]taskQueryView
-	browsing                                                           map[string]taskQueryBrowsing
-	effective                                                          map[string]common.WorkbenchTaskQuery
-	slice                                                              *string
-	page                                                               int
-	objectIndex                                                        map[string]int
-	result                                                             *common.WorkbenchTaskQueryResult
-	loaded                                                             string
-	cancel                                                             context.CancelFunc
-	sequence                                                           uint64
-	dayTimer                                                           *time.Timer
-	loading, valid                                                     bool
-	diagnostic                                                         string
-	viewOpen, expressionOpen, conditionOpen, fieldsOpen                bool
-	dialog, name, fieldID, conditionField, conditionOp, conditionValue string
-	field                                                              *common.WorkbenchQueryField
-	fieldPreview                                                       *common.WorkbenchTaskQueryResult
-	previewCancel                                                      context.CancelFunc
-	previewSequence                                                    uint64
-	fieldProblem                                                       string
-	fieldDelete                                                        bool
+	returnFocus                                                         string
+	lookupMode, lookupID, lookupRepository, lookupNumber, lookupProblem string
+	revealTab                                                           bool
+	conversion                                                          map[string]taskQueryConversion
+	comparison                                                          string
+	liveRevision                                                        int64
+	configConflict                                                      bool
+	selectPageEdge                                                      int
+	immediate                                                           bool
+	autoLimit                                                           int
+	path, problem, syncWarning                                          string
+	config                                                              taskQueryConfig
+	drafts                                                              map[string]taskQueryView
+	browsing                                                            map[string]taskQueryBrowsing
+	effective                                                           map[string]common.WorkbenchTaskQuery
+	slice                                                               *string
+	page                                                                int
+	objectIndex                                                         map[string]int
+	result                                                              *common.WorkbenchTaskQueryResult
+	loaded                                                              string
+	cancel                                                              context.CancelFunc
+	sequence                                                            uint64
+	dayTimer                                                            *time.Timer
+	loading, valid, lookupOpen                                          bool
+	diagnostic                                                          string
+	viewOpen, expressionOpen, conditionOpen, fieldsOpen                 bool
+	dialog, name, fieldID, conditionField, conditionOp, conditionValue  string
+	field                                                               *common.WorkbenchQueryField
+	fieldPreview                                                        *common.WorkbenchTaskQueryResult
+	previewCancel                                                       context.CancelFunc
+	previewSequence                                                     uint64
+	fieldProblem                                                        string
+	fieldDelete                                                         bool
 }
 
 func (m *mockup) activeTaskQuery() *taskQueryView {
@@ -98,7 +99,7 @@ func (m *mockup) restoreQueryBrowsing() {
 	state := q.browsing[m.taskView]
 	q.slice, q.page = state.slice, state.page
 	m.taskSelection, m.pageScroll[tasksPage], m.taskBoardScroll = state.selected, state.scroll, state.board
-	q.viewOpen, q.expressionOpen, q.conditionOpen, q.fieldsOpen = false, false, false, false
+	q.viewOpen, q.expressionOpen, q.conditionOpen, q.fieldsOpen, q.lookupOpen = false, false, false, false, false
 	m.invalidateTaskQuery()
 }
 
@@ -128,6 +129,7 @@ func (m *mockup) queryInput(view taskQueryView) common.WorkbenchTaskQuery {
 	q := &m.customQuery
 	input := common.WorkbenchTaskQuery{
 		Timezone: q.config.Timezone, Fields: q.config.Fields, Keyword: view.Keyword, Expression: view.Expression,
+		StableSourceID: view.StableSourceID, IssueRepository: view.IssueRepository, IssueNumber: view.IssueNumber,
 		Display: view.List, SliceValue: q.slice, Limit: 50,
 	}
 	input.Display.Layout = "list"

@@ -223,7 +223,8 @@ func (m *mockup) applyQueryTabAction() bool {
 func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 	q := &m.customQuery
 	m.ensureCustomQuery(view)
-	wasCondition, wasExpression, wasFields := q.conditionOpen, q.expressionOpen, q.fieldsOpen
+	wasCondition, wasExpression, wasFields, wasLookup := q.conditionOpen, q.expressionOpen, q.fieldsOpen, q.lookupOpen
+	var lookupButton ui.Element
 	ui.Row(c.Key("query")).FillWidth().Gap(6).AlignItems(ui.Center).Children(func() {
 		input := ui.SearchField(c.Key("keyword"), &view.Keyword).Label(tr("搜索任务")).Placeholder(tr("搜索任务")).MinWidth(60).Grow(1)
 		if m.keyboard.focusSearch {
@@ -238,12 +239,16 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 			q.loaded = ""
 			m.scheduleCustomQuery(view, 0)
 		}
+		lookupButton = ui.Button(c.Key("lookup"), tr("查找 Issue")).Tooltip(tr("按 Issue 精确查找"))
+		if lookupButton.Clicked() {
+			m.openTaskQueryLookup(view)
+		}
 		condition := components.IconButton(c.Key("condition"), "line.3.horizontal.decrease.circle", tr("添加条件")+" · F", false)
 		if q.returnFocus == "condition" {
 			condition.Focus()
 			q.returnFocus = ""
 		}
-		if condition.Clicked() || (!input.Focused() && !m.fullTask && !q.expressionOpen && !q.fieldsOpen && !q.viewOpen && c.Shortcut(0, ui.KeyF)) {
+		if condition.Clicked() || (!input.Focused() && !m.fullTask && !q.expressionOpen && !q.fieldsOpen && !q.viewOpen && !q.lookupOpen && c.Shortcut(0, ui.KeyF)) {
 			q.conditionOpen = true
 		}
 		expression := components.IconToggle(c.Key("expression"), "chevron.left.forwardslash.chevron.right", tr("表达式"), q.expressionOpen)
@@ -265,6 +270,7 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 		m.taskControlsPopover(c.Key("view-popover"), settings, &q.viewOpen, func() { m.customQueryDisplay(c.Key("settings"), view) })
 		if components.IconButton(c.Key("reset"), "xmark.circle", tr("清除筛选"), false).Clicked() {
 			view.Keyword = ""
+			view.clearGitHubLookup()
 			view.editExpression("")
 			q.slice = nil
 			m.sourceFilter, m.sourceFilterID, m.statusFilter, m.taskWatchOnly = "全部来源", "", "全部状态", false
@@ -279,6 +285,12 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 				}
 				if components.IconButton(c.Key("clear-expression"), "xmark", tr("清除表达式"), false).Clicked() {
 					view.editExpression("")
+					m.changeTaskQuery(view)
+				}
+			}
+			if lookup := taskQueryLookupSummary(view); lookup != "" {
+				if ui.Button(c.Key("lookup-summary"), lookup+" ×").Tooltip(tr("清除 Issue 查找") + " · " + lookup).Clicked() {
+					view.clearGitHubLookup()
 					m.changeTaskQuery(view)
 				}
 			}
@@ -362,6 +374,7 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 	})
 	m.queryConditionDialog(c.Key("condition-dialog"), view)
 	m.queryFieldsDialog(c.Key("fields-dialog"))
+	m.taskQueryLookupDialog(c.Key("lookup-dialog"), view)
 	switch {
 	case wasFields && !q.fieldsOpen:
 		q.returnFocus = "settings"
@@ -369,10 +382,83 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 		q.returnFocus = "condition"
 	case wasExpression && !q.expressionOpen:
 		q.returnFocus = "expression"
+	case wasLookup && !q.lookupOpen:
+		q.returnFocus = "lookup"
+	}
+	if q.returnFocus == "lookup" {
+		lookupButton.Focus()
+		q.returnFocus = ""
 	}
 	if q.returnFocus != "" {
 		c.Invalidate()
 	}
+}
+
+func (m *mockup) openTaskQueryLookup(view taskQueryView) {
+	q := &m.customQuery
+	q.lookupID, q.lookupRepository, q.lookupNumber = view.StableSourceID, view.IssueRepository, view.IssueNumber
+	q.lookupMode = taskLookupIssue
+	if view.StableSourceID != "" {
+		q.lookupMode = taskLookupStableID
+	}
+	q.lookupProblem, q.lookupOpen = "", true
+}
+
+func (m *mockup) taskQueryLookupDialog(c *ui.Context, view taskQueryView) {
+	q := &m.customQuery
+	ui.Modal(c, &q.lookupOpen, func() {
+		ui.Column(c).Width(420).Gap(12).Children(func() {
+			components.Title(c, tr("精确查找 GitHub Issue"))
+			components.Muted(c, tr("按稳定来源 ID 或仓库编号定位；现有搜索和筛选会继续生效。"))
+			modeOptions := []string{taskLookupStableID, taskLookupIssue}
+			modeLabels := []string{tr("稳定来源 ID"), tr("仓库 + Issue 编号")}
+			selected := modeLabels[0]
+			if q.lookupMode == taskLookupIssue {
+				selected = modeLabels[1]
+			}
+			ui.Field(c.Key("mode"), tr("查找方式"), func() {
+				if ui.Select(c.Key("mode-select"), &selected, modeLabels).Label(tr("查找方式")).FillWidth().Changed() {
+					if i := slices.Index(modeLabels, selected); i >= 0 {
+						q.lookupMode = modeOptions[i]
+					}
+				}
+			})
+			if q.lookupMode == taskLookupStableID {
+				ui.Field(c.Key("stable-id"), tr("稳定来源 ID"), func() {
+					ui.TextInput(c.Key("input"), &q.lookupID).Label(tr("稳定来源 ID")).Placeholder("117").FillWidth().AutoFocus()
+				})
+			} else {
+				ui.Field(c.Key("repository"), tr("仓库"), func() {
+					ui.TextInput(c.Key("input"), &q.lookupRepository).Label(tr("仓库")).Placeholder("owner/repository").FillWidth().AutoFocus()
+				})
+				ui.Field(c.Key("issue-number"), tr("Issue 编号"), func() {
+					ui.TextInput(c.Key("input"), &q.lookupNumber).Label(tr("Issue 编号")).Placeholder("17").FillWidth()
+				})
+			}
+			if q.lookupProblem != "" {
+				components.StatusLabel(c.Key("problem"), components.Status{Text: q.lookupProblem, Icon: "exclamationmark.circle", Color: c.Theme().Warning})
+			}
+			ui.Row(c.Key("actions")).Gap(8).Justify(ui.End).Children(func() {
+				if ui.Button(c.Key("clear"), tr("清除查找")).Disabled(taskQueryLookupSummary(view) == "").Clicked() {
+					view.clearGitHubLookup()
+					m.changeTaskQuery(view)
+					q.lookupOpen = false
+				}
+				if ui.Button(c.Key("cancel"), tr("取消")).Clicked() {
+					q.lookupOpen = false
+				}
+				if ui.PrimaryButton(c.Key("apply"), tr("应用")).Clicked() {
+					candidate := view
+					if err := candidate.setGitHubLookup(q.lookupMode, q.lookupID, q.lookupRepository, q.lookupNumber); err != nil {
+						q.lookupProblem = err.Error()
+					} else {
+						m.changeTaskQuery(candidate)
+						q.lookupProblem, q.lookupOpen = "", false
+					}
+				}
+			})
+		})
+	})
 }
 
 func queryFieldTitle(field common.WorkbenchQueryFieldInfo) string {

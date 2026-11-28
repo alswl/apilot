@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/alswl/apilot/core/pkg/common"
+	"github.com/alswl/apilot/core/pkg/integrations"
 	"github.com/alswl/apilot/desktop/internal/ui/components"
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -231,14 +232,9 @@ func githubIssueURL(repository, number string) string {
 }
 
 func githubSourceURL(repository, resource, number string) string {
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
+	parts, ok := integrations.GitHubRepositoryParts(repository)
+	if !ok {
 		return ""
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." || strings.ContainsAny(part, "?#%\\ \t\r\n") {
-			return ""
-		}
 	}
 	id, err := strconv.ParseUint(number, 10, 64)
 	if err != nil || id == 0 || strconv.FormatUint(id, 10) != number {

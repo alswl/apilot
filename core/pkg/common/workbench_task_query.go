@@ -6,6 +6,9 @@ type WorkbenchTaskQuery struct {
 	Fields           []WorkbenchQueryField `json:"fields,omitempty" maxItems:"100"`
 	Timezone         string                `json:"timezone" doc:"IANA workspace timezone."`
 	SourceIDs        []string              `json:"source_ids,omitempty" doc:"Stable scope IDs (task connection_id)."`
+	StableSourceID   string                `json:"stable_source_id,omitempty" doc:"Exact connector source ID (for example, a GitHub issue ID)."`
+	IssueRepository  string                `json:"issue_repository,omitempty" doc:"Repository name for an exact GitHub issue number lookup." pattern:"^[^/?#%\\\\\\s]+/[^/?#%\\\\\\s]+$"`
+	IssueNumber      string                `json:"issue_number,omitempty" doc:"Exact GitHub issue number, scoped by issue_repository."`
 	States           []string              `json:"states,omitempty"`
 	WatchIDs         *[]string             `json:"watch_ids,omitempty" doc:"Task IDs in the current watch set. Omit to ignore watch status. An empty array matches nothing."`
 	TaskIDs          *[]string             `json:"task_ids,omitempty" doc:"Stable task IDs for sample preview. An empty array matches nothing."`
