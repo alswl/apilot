@@ -1343,6 +1343,12 @@ type WorkbenchTaskQuery struct {
 	Expression *string                `json:"expression,omitempty"`
 	Fields     *[]WorkbenchQueryField `json:"fields,omitempty"`
 
+	// IssueNumber Exact GitHub issue number, scoped by issue_repository.
+	IssueNumber *string `json:"issue_number,omitempty"`
+
+	// IssueRepository Repository name for an exact GitHub issue number lookup.
+	IssueRepository *string `json:"issue_repository,omitempty"`
+
 	// Keyword Case-insensitive literal substring matched against visible task search fields.
 	Keyword *string `json:"keyword,omitempty"`
 	Limit   *int64  `json:"limit,omitempty"`
@@ -1359,7 +1365,10 @@ type WorkbenchTaskQuery struct {
 
 	// SourceIds Stable scope IDs (task connection_id).
 	SourceIds *[]string `json:"source_ids,omitempty"`
-	States    *[]string `json:"states,omitempty"`
+
+	// StableSourceId Exact connector source ID (for example, a GitHub issue ID).
+	StableSourceId *string   `json:"stable_source_id,omitempty"`
+	States         *[]string `json:"states,omitempty"`
 
 	// TaskIds Stable task IDs for sample preview. An empty array matches nothing.
 	TaskIds *[]string `json:"task_ids,omitempty"`

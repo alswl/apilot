@@ -201,6 +201,11 @@ func decodeQueryNative(raw string) queryNativeValue {
 func projectWorkbenchQueryTask(task common.WorkbenchTask, source common.WorkbenchConnection, native map[string]queryNativeValue, fields []common.WorkbenchQueryField, zone *time.Location) queryTask {
 	projected := make(map[string]common.WorkbenchQueryValue, len(fields)+len(workbenchQueryStandard)+len(native))
 	labels := slices.Clone(task.Labels)
+	if task.Kind == common.WorkbenchObsidianTasks {
+		for i, label := range labels {
+			labels[i] = strings.TrimPrefix(label, "#")
+		}
+	}
 	for _, label := range task.WorkbenchLabels {
 		labels = append(labels, label.Name)
 	}
@@ -215,7 +220,7 @@ func projectWorkbenchQueryTask(task common.WorkbenchTask, source common.Workbenc
 	projected["task.title"] = queryText(task.Title)
 	projected["task.source_id"] = common.WorkbenchQueryValue{Text: &source.Name, Key: task.ConnectionID}
 	projected["task.status"] = common.WorkbenchQueryValue{Text: &status, Key: status}
-	projected["task.labels"] = queryRawList(labels)
+	projected["task.labels"] = queryConvert("multi_select", labels, zone)
 	projected["task.assignees"] = queryRawList(task.Assignees)
 	projected["task.priority"] = common.WorkbenchQueryValue{Reason: "missing"}
 	if task.Priority != nil {

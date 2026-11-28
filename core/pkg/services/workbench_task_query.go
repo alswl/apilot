@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	_ "time/tzdata"
@@ -105,6 +106,18 @@ func validateWorkbenchQuery(input common.WorkbenchTaskQuery) error {
 		if source == "" || strings.TrimSpace(source) != source {
 			return common.Err("INVALID_ARGUMENT", "Source constraints require stable scope IDs")
 		}
+	}
+	if (input.IssueRepository == "") != (input.IssueNumber == "") {
+		return common.Err("INVALID_ARGUMENT", "Issue lookup requires both repository and issue number")
+	}
+	if input.IssueNumber != "" {
+		number, err := strconv.ParseUint(input.IssueNumber, 10, 64)
+		if err != nil || number == 0 || strconv.FormatUint(number, 10) != input.IssueNumber {
+			return common.Err("INVALID_ARGUMENT", "Issue number must be a positive canonical integer")
+		}
+	}
+	if strings.TrimSpace(input.StableSourceID) != input.StableSourceID {
+		return common.Err("INVALID_ARGUMENT", "Stable source ID must not contain surrounding whitespace")
 	}
 	return nil
 }
@@ -225,7 +238,7 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 			return result, err
 		}
 		task := row.task.item.Task
-		if !constraints.match(task) || !workbenchQueryKeyword(keyword, row.task, row.source, row.connector) {
+		if !constraints.match(task, row.source) || !workbenchQueryKeyword(keyword, row.task, row.source, row.connector) {
 			continue
 		}
 		match, err := program.match(ctx, row.task, input.Fields, calendar)
@@ -252,7 +265,8 @@ func calculateWorkbenchQuery(ctx context.Context, input common.WorkbenchTaskQuer
 }
 
 type workbenchQueryConstraints struct {
-	sources, states, watch, tasks map[string]bool
+	sources, states, watch, tasks          map[string]bool
+	sourceID, issueRepository, issueNumber string
 }
 
 func newWorkbenchQueryConstraints(input common.WorkbenchTaskQuery) workbenchQueryConstraints {
@@ -263,7 +277,8 @@ func newWorkbenchQueryConstraints(input common.WorkbenchTaskQuery) workbenchQuer
 		}
 		return result
 	}
-	constraints := workbenchQueryConstraints{sources: set(input.SourceIDs), states: set(input.States)}
+	constraints := workbenchQueryConstraints{sources: set(input.SourceIDs), states: set(input.States),
+		sourceID: input.StableSourceID, issueRepository: input.IssueRepository, issueNumber: input.IssueNumber}
 	if input.WatchIDs != nil {
 		constraints.watch = set(*input.WatchIDs)
 	}
@@ -273,14 +288,33 @@ func newWorkbenchQueryConstraints(input common.WorkbenchTaskQuery) workbenchQuer
 	return constraints
 }
 
-func (c workbenchQueryConstraints) match(task common.WorkbenchTask) bool {
+func (c workbenchQueryConstraints) match(task common.WorkbenchTask, source common.WorkbenchConnection) bool {
 	state := task.State
 	if !validWorkbenchState(state) {
 		state = "unknown"
 	}
+	if c.sourceID != "" && (!isWorkbenchGitHubTask(task.Kind) || task.SourceKey != c.sourceID) {
+		return false
+	}
+	if c.issueNumber != "" {
+		repository := source.Repository
+		if repository == "" {
+			repository = task.NativeFields["repository"]
+		}
+		if repository == "" {
+			repository = task.NativeFields["repo"]
+		}
+		if !isWorkbenchGitHubTask(task.Kind) || !strings.EqualFold(repository, c.issueRepository) || task.NativeID != c.issueNumber {
+			return false
+		}
+	}
 	return (len(c.sources) == 0 || c.sources[task.ConnectionID]) &&
 		(len(c.states) == 0 || c.states[state]) &&
 		(c.watch == nil || c.watch[task.ID]) && (c.tasks == nil || c.tasks[task.ID])
+}
+
+func isWorkbenchGitHubTask(kind string) bool {
+	return kind == "github-issues" || kind == common.WorkbenchGitHubIssues || kind == common.WorkbenchGitHubRepository
 }
 
 func workbenchQueryKeyword(keyword string, task queryTask, source common.WorkbenchConnection, connector WorkbenchConnector) bool {
@@ -291,6 +325,7 @@ func workbenchQueryKeyword(keyword string, task queryTask, source common.Workben
 	values := []string{t.Title, t.NativeID, t.Locator, source.ID, source.Name, source.Kind, connector.Name}
 	values = append(values, connector.SearchAliases...)
 	values = append(values, task.item.Fields["task.labels"].Values...)
+	values = append(values, t.Labels...)
 	values = append(values, t.Assignees...)
 	for _, value := range task.native {
 		values = append(values, value)

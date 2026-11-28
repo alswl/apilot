@@ -211,6 +211,112 @@ func TestWorkbenchTaskQueryFullSnapshot(t *testing.T) {
 	}
 }
 
+func TestWorkbenchTaskQueryCrossSourceLabelsAndExactGitHubIDs(t *testing.T) {
+	ctx := context.Background()
+	db, err := dal.Open(filepath.Join(t.TempDir(), "query.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	service := &Service{store: db}
+	now := time.Date(2026, 3, 8, 12, 0, 0, 0, time.UTC)
+	obsidian := common.WorkbenchConnection{ID: "vault", Kind: common.WorkbenchObsidianTasks, Name: "Vault", Version: 1}
+	if err := db.CommitWorkbenchImport(obsidian, nil, nil, []common.WorkbenchTask{{ID: "obs-task", SourceKey: "obs-key", NativeID: "obs-key", ConnectionID: "vault", Kind: common.WorkbenchObsidianTasks, Title: "超时 release", State: "open", Labels: []string{"#release"}}}, &now); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetWorkbenchLabels("obs-task", []string{"release"}); err != nil {
+		t.Fatal(err)
+	}
+	githubA := common.WorkbenchConnection{ID: "repo-a", Kind: common.WorkbenchGitHubRepository, Name: "Repo A", Repository: "owner/a", Version: 1}
+	githubB := common.WorkbenchConnection{ID: "repo-b", Kind: common.WorkbenchGitHubRepository, Name: "Repo B", Repository: "owner/b", Version: 1}
+	for i, connection := range []common.WorkbenchConnection{githubA, githubB} {
+		if err := db.SaveWorkbenchGitHub(connection, 0, common.WorkbenchGitHubProgress{ConnectionID: connection.ID, RepositoryID: int64(10 + i), AccountID: 20, AccountLogin: "fixture", CredentialRef: "fixture", AccessState: "available"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	githubTasks := []common.WorkbenchTask{
+		{ID: "issue-17", SourceKey: "stable-17", NativeID: "17", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "修复登录重试", State: "open", Labels: []string{"release"}, NativeFields: map[string]string{"repository": "owner/a"}},
+		{ID: "issue-170", SourceKey: "stable-170", NativeID: "170", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Issue 170", State: "open", NativeFields: map[string]string{"repository": "owner/a"}},
+		{ID: "issue-other-17", SourceKey: "stable-other-17", NativeID: "17", ConnectionID: "repo-b", Kind: githubB.Kind, Title: "Issue 17 elsewhere", State: "open", NativeFields: map[string]string{"repository": "owner/b"}},
+		{ID: "issue-title-17", SourceKey: "stable-title-17", NativeID: "18", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Release 17 in title", State: "open", NativeFields: map[string]string{"repository": "owner/a"}},
+		{ID: "issue-closed", SourceKey: "stable-closed", NativeID: "19", ConnectionID: "repo-a", Kind: githubA.Kind, Title: "Closed release", State: "done", Labels: []string{"release"}, NativeFields: map[string]string{"repository": "owner/a"}},
+	}
+	for _, entry := range []struct {
+		connection common.WorkbenchConnection
+		tasks      []common.WorkbenchTask
+	}{{githubA, []common.WorkbenchTask{githubTasks[0], githubTasks[1], githubTasks[3], githubTasks[4]}}, {githubB, []common.WorkbenchTask{githubTasks[2]}}} {
+		if err := db.RecordWorkbench(entry.connection, nil, nil, entry.tasks, &now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	query := func(input common.WorkbenchTaskQuery) common.WorkbenchTaskQueryResult {
+		t.Helper()
+		input.Timezone = "UTC"
+		result, err := service.QueryWorkbenchTasks(ctx, input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	fresh := common.WorkbenchTask{ID: "fresh", Kind: common.WorkbenchObsidianTasks, Labels: []string{"#release"}}
+	freshProjection := projectWorkbenchQueryTask(fresh, obsidian, nil, nil, time.UTC)
+	if !slices.Contains(freshProjection.item.Fields["task.labels"].Values, "release") || fresh.Labels[0] != "#release" {
+		t.Fatalf("fresh projection changed source label or missed shared value: %+v", freshProjection.item.Fields["task.labels"])
+	}
+	label := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, States: []string{"open"}})
+	if label.QueryTotal != 2 {
+		ids := make([]string, len(label.Items))
+		for i, item := range label.Items {
+			ids[i] = item.Task.ID
+		}
+		t.Fatalf("shared label query got %d tasks: %v", label.QueryTotal, ids)
+	}
+	matchedIDs := make(map[string]bool, len(label.Items))
+	for _, item := range label.Items {
+		matchedIDs[item.Task.ID] = true
+		if item.Task.ID == "obs-task" && (!slices.Contains(item.Task.Labels, "#release") || len(item.Task.WorkbenchLabels) != 1 || item.Task.WorkbenchLabels[0].Name != "release") {
+			t.Fatalf("query changed source values or workspace association: %+v", item.Task)
+		}
+	}
+	if !matchedIDs["obs-task"] || !matchedIDs["issue-17"] {
+		t.Fatalf("shared label query did not return one task per source: %v", matchedIDs)
+	}
+	keyword := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "#release", States: []string{"open"}})
+	if keyword.QueryTotal != 1 || keyword.Items[0].Task.ID != "obs-task" {
+		t.Fatalf("literal keyword should preserve original source value: %+v", keyword.Items)
+	}
+	keyword = query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "release", States: []string{"open"}})
+	if keyword.QueryTotal != 2 {
+		t.Fatalf("literal keyword and label filter failed to combine: %d", keyword.QueryTotal)
+	}
+	keyword = query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "超时", States: []string{"open"}})
+	if keyword.QueryTotal != 1 || keyword.Items[0].Task.ID != "obs-task" {
+		t.Fatalf("title search did not narrow the combined source query: %+v", keyword.Items)
+	}
+	if restored := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, States: []string{"open"}}); restored.QueryTotal != 2 {
+		t.Fatalf("clearing keyword did not restore the shared-label result: %d", restored.QueryTotal)
+	}
+	if empty := query(common.WorkbenchTaskQuery{Expression: `"release" in task.labels`, Keyword: "never matches", States: []string{"open"}}); empty.QueryTotal != 0 {
+		t.Fatalf("non-matching keyword returned %d tasks", empty.QueryTotal)
+	}
+	exact := query(common.WorkbenchTaskQuery{IssueRepository: "owner/a", IssueNumber: "17"})
+	if exact.QueryTotal != 1 || exact.Items[0].Task.NativeID != "17" || exact.Items[0].Task.ConnectionID != "repo-a" {
+		t.Fatalf("repo-scoped exact number returned %+v", exact.Items)
+	}
+	stable := query(common.WorkbenchTaskQuery{StableSourceID: "stable-170"})
+	if stable.QueryTotal != 1 || stable.Items[0].Task.NativeID != "170" {
+		t.Fatalf("stable ID match returned %+v", stable.Items)
+	}
+	text := query(common.WorkbenchTaskQuery{Keyword: "17"})
+	if text.QueryTotal != 4 {
+		t.Fatalf("literal text search should match issue number substrings and title; got %d", text.QueryTotal)
+	}
+	combined := query(common.WorkbenchTaskQuery{IssueRepository: "owner/a", IssueNumber: "17", Keyword: "title"})
+	if combined.QueryTotal != 0 {
+		t.Fatalf("exact number and keyword constraints did not combine: %d", combined.QueryTotal)
+	}
+}
+
 type queryBoundaryStore struct {
 	*dal.Store
 	beforeBoundary           func() error

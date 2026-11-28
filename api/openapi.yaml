@@ -2164,6 +2164,12 @@ components:
           type:
             - array
             - "null"
+        issue_number:
+          description: Exact GitHub issue number, scoped by issue_repository.
+          type: string
+        issue_repository:
+          description: Repository name for an exact GitHub issue number lookup.
+          type: string
         keyword:
           description: Case-insensitive literal substring matched against visible task search fields.
           type: string
@@ -2194,6 +2200,9 @@ components:
           type:
             - array
             - "null"
+        stable_source_id:
+          description: Exact connector source ID (for example, a GitHub issue ID).
+          type: string
         states:
           items:
             type: string
