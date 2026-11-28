@@ -1,6 +1,9 @@
 package workbench
 
 import (
+	"runtime"
+	"time"
+
 	"github.com/alswl/apilot/core/pkg/config"
 	"github.com/alswl/apilot/core/pkg/services"
 	"github.com/egoist/mygo"
@@ -11,6 +14,8 @@ import (
 type HostedWorkspace struct{ model *mockup }
 
 const builtinPreferenceTabs = 4
+
+const workbenchMinWidth, workbenchMinFrameHeight = 680, 580
 
 const CLISettingsTab = builtinPreferenceTabs + 1
 
@@ -43,14 +48,30 @@ func NewHostedWorkspace(service *services.Remote, keybindingsPath, language stri
 	return &HostedWorkspace{m}, nil
 }
 
+func workbenchMinimumHeight() int {
+	if runtime.GOOS == "darwin" {
+		// The hidden-inset toolbar occupies 34 pt at the AppKit resize boundary.
+		return workbenchMinFrameHeight - 34
+	}
+	return workbenchMinFrameHeight
+}
+
 func (w *HostedWorkspace) Open() *mygo.Window {
 	m := w.model
 	if m.win == nil || m.win.IsDestroyed() {
 		m.win = mygo.NewWindow(mygo.WindowOptions{
-			Title: m.windowTitle(), Width: 1190, Height: 730, MinWidth: 680, MinHeight: 580, StateKey: "workbench",
+			Title: m.windowTitle(), Width: 1190, Height: 730, MinWidth: workbenchMinWidth, MinHeight: workbenchMinimumHeight(), StateKey: "workbench",
 			TitleBarStyle: mygo.TitleBarHiddenInset, Content: ui.View(m.view),
 		})
 		m.win.OnBlur(func() { m.keyboard.prefix = keystroke{} })
+		m.win.OnFocus(func() {
+			if result := m.customQuery.result; result != nil {
+				if zone, err := time.LoadLocation(m.customQuery.config.Timezone); err == nil && result.AsOfDate != time.Now().In(zone).Format(time.DateOnly) {
+					m.invalidateTaskQuery()
+					m.win.Invalidate()
+				}
+			}
+		})
 		m.startLiveEvents()
 	}
 	m.win.Show()

@@ -23,9 +23,10 @@ type taskViewState struct {
 }
 
 type savedTaskView struct {
-	ID    string        `json:"id"`
-	Name  string        `json:"name"`
-	State taskViewState `json:"state"`
+	ID    string         `json:"id"`
+	Name  string         `json:"name"`
+	State taskViewState  `json:"state"`
+	Query *taskQueryView `json:"query,omitempty"`
 }
 
 func (m *mockup) viewState() taskViewState {
@@ -156,8 +157,10 @@ func (m *mockup) selectTaskView(id string) {
 	if m.taskView == id {
 		return
 	}
+	m.rememberQueryBrowsing()
 	m.taskViewDrafts[m.taskView] = m.viewState()
 	m.taskView = id
+	m.customQuery.revealTab = true
 	state := defaultTaskViewState(id)
 	if draft, ok := m.taskViewDrafts[id]; ok {
 		state = draft
@@ -171,78 +174,122 @@ func (m *mockup) selectTaskView(id string) {
 	}
 	m.restoreView(state)
 	m.closeInspector()
+	m.restoreQueryBrowsing()
 	m.rememberLocation()
 }
 
 func (m *mockup) taskViewBar(c *ui.Context) {
 	compact := m.compactTaskList()
-	ui.Row(c).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
-		ui.Column(c.Key("view-list")).Grow(1).MinWidth(0).Children(func() {
-			items := []components.ViewItem{{ID: "all", Title: tr("全部任务")}, {ID: "in-progress", Title: tr("处理中")}, {ID: "pending", Title: tr("待处理")}, {ID: "watching", Title: tr("关注中")}}
-			for _, saved := range m.savedTaskViews {
-				items = append(items, components.ViewItem{ID: saved.ID, Title: saved.Name})
-			}
-			current := m.taskView
-			if current == "" {
-				current = "all"
-			}
-			if chosen := components.ViewStrip(c.Key("views"), items, current); chosen != "" {
-				if chosen == "all" {
-					chosen = ""
-				}
-				m.selectTaskView(chosen)
-			}
+	narrow := m.customQuery.path != "" && m.layout.listWidth > 0 && m.layout.listWidth < 620
+	if narrow {
+		ui.Column(c.Key("stack")).FillWidth().MinWidth(0).Gap(4).Children(func() {
+			m.taskViewStrip(c.Key("views"))
+			ui.Row(c.Key("actions")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+				ui.Spacer(c).Grow(1)
+				m.taskViewActions(c, compact)
+			})
 		})
-		if m.unifiedTasks() {
-			m.taskLayoutControl(c.Key("layout"))
-		}
-		if !m.taskBoard {
-			display := components.IconToggle(c.Key("display"), "slider.horizontal.3", tr("显示选项"), m.taskDisplayOpen)
-			if display.Clicked() {
-				m.taskDisplayOpen = !m.taskDisplayOpen
-			}
-			if compact {
-				m.taskControlsPopover(c.Key("display-panel"), display, &m.taskDisplayOpen, func() {
-					m.taskDisplayOptions(c.Key("display-options"))
-				})
-			}
-		}
-		label := "保存视图"
-		current := m.currentSavedView()
-		if current != nil {
-			label = "更新视图"
-		}
-		save := ui.SplitButton(c.Key("save"), "")
-		changed := m.taskViewChanged()
-		save.Group.Disabled(!changed)
-		save.Button.Label(tr(label)).Tooltip(tr(label)).Children(func() {
-			color := c.Theme().TextMuted
-			if changed {
-				color = c.Theme().Text
-			}
-			components.Symbol(c, "bookmark", color)
+	} else {
+		ui.Row(c.Key("bar")).FillWidth().AlignItems(ui.Center).Gap(8).Children(func() {
+			ui.Column(c.Key("view-list")).Grow(1).MinWidth(0).Children(func() {
+				m.taskViewStrip(c.Key("views"))
+			})
+			m.taskViewActions(c, compact)
 		})
-		save.Arrow.Label(tr("视图保存选项")).Menu(func(menu *ui.Menu) {
-			if menu.Item(tr("更新视图")).Disabled(current == nil || !changed).Chosen() {
-				m.saveCurrentTaskView()
-			}
-			if menu.Item(tr("另存为新视图…")).Disabled(!changed).Chosen() {
-				m.openSaveTaskView()
-			}
-		})
-		if shortcut := m.keyboard.display("view.save"); shortcut != "" {
-			save.Button.Tooltip(tr(label) + " · " + shortcut)
-		}
-		if save.Button.Clicked() {
-			m.saveCurrentTaskView()
-		}
-	})
+	}
+	if m.activeTaskQuery() == nil && m.customQuery.problem != "" {
+		components.Muted(c.Key("config-problem"), m.customQuery.problem)
+	}
 	if m.taskViewSaveError && !m.saveTaskViewOpen {
 		components.Muted(c.Key("save-error"), tr("无法保存视图"))
 	}
 	ui.Divider(c)
-	if !m.taskBoard && m.taskDisplayOpen && !compact {
+	if m.activeTaskQuery() == nil && !m.taskBoard && m.taskDisplayOpen && !compact {
 		m.taskDisplayOptions(c.Key("display-options"))
+	}
+}
+
+func (m *mockup) taskViewStrip(c *ui.Context) {
+	items := []components.ViewItem{{ID: "all", Title: tr("全部任务")}, {ID: "in-progress", Title: tr("处理中")}, {ID: "pending", Title: tr("待处理")}, {ID: "watching", Title: tr("关注中")}}
+	for _, saved := range m.savedTaskViews {
+		title := saved.Name
+		if saved.ID == m.taskView && m.customQueryChanged() {
+			title += " •"
+		}
+		items = append(items, components.ViewItem{ID: saved.ID, Title: title})
+	}
+	for _, id := range slices.Sorted(maps.Keys(m.customQuery.conversion)) {
+		items = append(items, components.ViewItem{ID: id, Title: m.customQuery.conversion[id].view.Name + " •"})
+	}
+	current := m.taskView
+	if current == "" {
+		current = "all"
+	}
+	var chosen string
+	if m.customQuery.path != "" {
+		chosen = components.ScrollableViewStrip(c.Key("views"), items, current, m.customQuery.revealTab)
+		m.customQuery.revealTab = false
+	} else {
+		chosen = components.ViewStrip(c.Key("views"), items, current)
+	}
+	if chosen != "" {
+		if chosen == "all" {
+			chosen = ""
+		}
+		m.selectTaskView(chosen)
+	}
+}
+
+func (m *mockup) taskViewActions(c *ui.Context, compact bool) {
+	if m.unifiedTasks() {
+		m.taskLayoutControl(c.Key("layout"))
+	}
+	m.queryTabButtons(c.Key("query-actions"))
+	if m.activeTaskQuery() != nil {
+		return
+	}
+	if !m.taskBoard {
+		display := components.IconToggle(c.Key("display"), "slider.horizontal.3", tr("显示选项"), m.taskDisplayOpen)
+		if display.Clicked() {
+			m.taskDisplayOpen = !m.taskDisplayOpen
+		}
+		if compact {
+			m.taskControlsPopover(c.Key("display-panel"), display, &m.taskDisplayOpen, func() {
+				m.taskDisplayOptions(c.Key("display-options"))
+			})
+		}
+	}
+	if m.customQuery.path != "" {
+		return
+	}
+	label := "保存视图"
+	current := m.currentSavedView()
+	if current != nil {
+		label = "更新视图"
+	}
+	save := ui.SplitButton(c.Key("save"), "")
+	changed := m.taskViewChanged()
+	save.Group.Disabled(!changed)
+	save.Button.Label(tr(label)).Tooltip(tr(label)).Children(func() {
+		color := c.Theme().TextMuted
+		if changed {
+			color = c.Theme().Text
+		}
+		components.Symbol(c, "bookmark", color)
+	})
+	save.Arrow.Label(tr("视图保存选项")).Menu(func(menu *ui.Menu) {
+		if menu.Item(tr("更新视图")).Disabled(current == nil || !changed).Chosen() {
+			m.saveCurrentTaskView()
+		}
+		if menu.Item(tr("另存为新视图…")).Disabled(!changed).Chosen() {
+			m.openSaveTaskView()
+		}
+	})
+	if shortcut := m.keyboard.display("view.save"); shortcut != "" {
+		save.Button.Tooltip(tr(label) + " · " + shortcut)
+	}
+	if save.Button.Clicked() {
+		m.saveCurrentTaskView()
 	}
 }
 
@@ -277,6 +324,10 @@ func (m *mockup) currentSavedView() *savedTaskView {
 }
 
 func (m *mockup) saveCurrentTaskView() {
+	if m.activeTaskQuery() != nil {
+		m.saveCustomQuery()
+		return
+	}
 	if !m.taskViewChanged() {
 		return
 	}

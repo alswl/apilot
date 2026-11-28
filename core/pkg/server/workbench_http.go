@@ -206,6 +206,10 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 	registerWorkbenchConnectorHTTP(api, s)
 	registerWorkbenchConnectorTasksHTTP(api, s)
 	registerWorkbenchSyncRunHTTP(api, s)
+	registerWorkbenchContext(api, http.MethodPost, workbenchPath+"/task-query", "queryWorkbenchTasks", "Query and group the visible task snapshot", "Tasks", []int{400, 409, 503},
+		func(ctx context.Context, in *workbenchBody[common.WorkbenchTaskQuery]) (common.WorkbenchTaskQueryResult, error) {
+			return s.QueryWorkbenchTasks(ctx, in.Body)
+		})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/github-repositories", "listGitHubRepositories", "List authorized GitHub Issues repositories", "Connections", []int{401, 403, 409, 429, 503},
 		func(in *struct {
 			AuthorizationID string `query:"authorization_id"`
@@ -460,7 +464,7 @@ func workbenchHTTPError(err error) error {
 	}
 	domain := common.ProtocolError(err)
 	details := []error{&huma.ErrorDetail{Location: "code", Message: domain.Code}}
-	for _, key := range []string{"connection_id", "retry_after", "rate_limit_reset", "github_installation_required"} {
+	for _, key := range []string{"connection_id", "retry_after", "rate_limit_reset", "github_installation_required", "line", "column"} {
 		if value, ok := domain.Details[key]; ok {
 			switch value.(type) {
 			case string, int, int64, float64, bool:

@@ -35,6 +35,9 @@ func (m *mockup) syncTaskPage(total int) {
 }
 
 func (m *mockup) pagedTaskRows(rows []int) []int {
+	if m.activeTaskQuery() != nil {
+		return rows
+	}
 	m.syncTaskPage(len(rows))
 	first := m.taskPageIndex * m.taskPageSize
 	return rows[first:min(first+m.taskPageSize, len(rows))]
@@ -94,6 +97,10 @@ func (m *mockup) setTaskPage(page int) {
 }
 
 func (m *mockup) browseTaskPage(delta int) {
+	if m.activeTaskQuery() != nil {
+		m.browseCustomQueryPage(delta)
+		return
+	}
 	total := len(m.taskRows())
 	m.syncTaskPage(total)
 	page := max(0, min(m.taskPageIndex+delta, m.taskPages(total)-1))
@@ -103,6 +110,9 @@ func (m *mockup) browseTaskPage(delta int) {
 }
 
 func (m *mockup) locateTaskPage(rows []int, index int) bool {
+	if m.activeTaskQuery() != nil {
+		return slices.Contains(rows, index)
+	}
 	m.syncTaskPage(len(rows))
 	position := slices.Index(rows, index)
 	if position < 0 {

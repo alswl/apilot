@@ -3,6 +3,8 @@ package workbench
 import (
 	"testing"
 
+	"github.com/alswl/apilot/core/pkg/common"
+
 	"github.com/egoist/mygo/ui"
 )
 
@@ -203,6 +205,107 @@ func TestTaskBreadcrumbAndEscapeRestoreList(t *testing.T) {
 	click(t, p, "全宽打开任务详情", "返回 任务")
 	if m.layout.detailExpanded || !m.layout.detailHidden || m.taskSelection != "refund" {
 		t.Fatal("the Tasks breadcrumb should return to the list and keep the selected row")
+	}
+}
+
+func TestCustomTaskBreadcrumbReturnsToQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		board bool
+	}{{name: "split list"}, {name: "expanded board", board: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newMockup()
+			m.useAdaptiveLayout()
+			m.taskView, m.taskBoard = "cel-view", tc.board
+			view := taskQueryView{Engine: "cel", Expression: `task.title == "QA Shared 03" && task.status == "done"`}
+			m.changeTaskQuery(view)
+			slice := "local"
+			m.customQuery.page, m.customQuery.slice = 2, &slice
+			m.pageScroll[tasksPage].X, m.taskBoardScroll.X = 40, 80
+			m.taskSelection = m.objects[0].ID
+			m.openFullTask(0)
+			p := ui.NewTester(m.view, 880, 680)
+
+			click(t, p, "返回 任务")
+
+			if p.HasText("返回 任务") || m.inspector || !m.layout.detailHidden || m.layout.detailExpanded || m.layout.revealSelection {
+				t.Fatal("the breadcrumb should dismiss the detail without scrolling the selected row into view")
+			}
+			if m.taskView != "cel-view" || m.taskBoard != tc.board || m.taskSelection != m.objects[0].ID ||
+				m.activeTaskQuery().Expression != view.Expression || m.customQuery.page != 2 || m.customQuery.slice != &slice ||
+				m.pageScroll[tasksPage].X != 40 || m.taskBoardScroll.X != 80 {
+				t.Fatal("the breadcrumb should retain the originating query and browsing state")
+			}
+		})
+	}
+}
+
+func TestCustomTaskBreadcrumbRestoresFocusWithoutScrolling(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.layout.detailHidden = true
+	m.taskView = "cel-view"
+	m.changeTaskQuery(taskQueryView{
+		Engine: "cel",
+		List:   common.WorkbenchQueryDisplay{Fields: []string{"task.status", "task.source"}},
+		Widths: map[string]float32{"task.title": 350, "task.status": 180, "task.source": 180},
+	})
+	task := common.WorkbenchTask{ID: m.objects[0].ID, Title: "Filtered task"}
+	m.customQuery.objectIndex = map[string]int{task.ID: 0}
+	m.customQuery.result = &common.WorkbenchTaskQueryResult{
+		QueryTotal: 1, SliceTotal: 1, Items: []common.WorkbenchQueryItem{{Task: task}},
+	}
+	p := ui.NewTester(m.view, 680, 580)
+	row, ok := p.Find(task.Title)
+	if !ok {
+		t.Fatal("the filtered row must be present before scrolling")
+	}
+	p.Scroll(row.X+100, row.Y+10, 30, 0)
+	scrolled := m.pageScroll[tasksPage].X
+	if scrolled <= 0 {
+		t.Fatal("the fixture must be horizontally scrolled before opening details")
+	}
+	click(t, p, task.Title, "返回 任务")
+	if !p.Focused(task.Title) || m.pageScroll[tasksPage].X != scrolled {
+		t.Fatalf("focused=%t, horizontal offset=%v, want %v", p.Focused(task.Title), m.pageScroll[tasksPage].X, scrolled)
+	}
+}
+
+func TestMinimumWindowQueryRowIsReadableAndOpensFromDefaultSplit(t *testing.T) {
+	m := newMockup()
+	m.useAdaptiveLayout()
+	m.taskView = "cel-view"
+	m.savedTaskViews = []savedTaskView{{ID: m.taskView, Name: "QA custom view"}}
+	m.customQuery.path = t.TempDir() + "/views.json"
+	chips := make([]taskQueryChip, 9)
+	for i := range chips {
+		chips[i] = taskQueryChip{Label: "A long condition label that takes up much of a toolbar row"}
+	}
+	m.changeTaskQuery(taskQueryView{
+		Engine:     "cel",
+		Expression: `task.status == "done"`,
+		ChipBase:   `task.status == "done"`,
+		Chips:      chips,
+		List:       common.WorkbenchQueryDisplay{Fields: []string{"task.status", "task.source", "task.due"}},
+	})
+	task := common.WorkbenchTask{ID: m.objects[0].ID, Title: "Filtered task"}
+	m.customQuery.objectIndex = map[string]int{task.ID: 0}
+	m.customQuery.result = &common.WorkbenchTaskQueryResult{
+		QueryTotal: 1, SliceTotal: 1, Items: []common.WorkbenchQueryItem{{Task: task}},
+	}
+	p := ui.NewTester(m.view, 680, 580)
+	row, ok := p.Find(task.Title)
+	pager, hasPager := p.Find("上一页")
+	if !ok || !hasPager || row.Y+row.H > pager.Y {
+		t.Fatalf("the whole result row must fit above the pager: row=%+v pager=%+v", row, pager)
+	}
+	click(t, p, task.Title)
+	if !m.inspector || m.layout.detailHidden || !p.HasText("返回 任务") {
+		t.Fatal("the default split should allow opening the filtered row")
+	}
+	p.Key(0, ui.KeyEscape)
+	if p.HasText("返回 任务") || !m.layout.detailHidden || !p.Focused(task.Title) {
+		t.Fatal("Escape should dismiss the selected detail and restore focus to the result")
 	}
 }
 

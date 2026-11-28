@@ -51,6 +51,16 @@ func (r *Remote) WorkbenchTasks(q common.WorkbenchQuery) (common.WorkbenchPage, 
 	return remoteResult[common.WorkbenchPage](r, "workbench.task.list", q)
 }
 
+func (r *Remote) QueryWorkbenchTasks(ctx context.Context, input common.WorkbenchTaskQuery) (common.WorkbenchTaskQueryResult, error) {
+	var result common.WorkbenchTaskQueryResult
+	raw, err := r.CallWorkbench(ctx, "workbench.task.query", input)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(raw, &result)
+	return result, err
+}
+
 func (r *Remote) WorkbenchTask(id string) (common.WorkbenchTask, error) {
 	return remoteResult[common.WorkbenchTask](r, "workbench.task.show", map[string]string{"id": id})
 }
