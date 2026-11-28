@@ -107,8 +107,13 @@ func TestWorkbenchCLIOperationRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count := bytes.Count(schema, []byte("operationId: ")); count != len(cases) {
-		t.Fatalf("OpenAPI lists %d operations; CLI suite covers %d", count, len(cases))
+	// Now uses a desktop-only route covered by the Workbench HTTP lifecycle test.
+	const desktopOperation = "operationId: listGitHubReviewRequests\n"
+	if !bytes.Contains(schema, []byte(desktopOperation)) {
+		t.Fatal("Now review requests route is missing from OpenAPI")
+	}
+	if count := bytes.Count(schema, []byte("operationId: ")); count != len(cases)+1 {
+		t.Fatalf("OpenAPI lists %d operations; CLI suite covers %d plus the desktop route", count, len(cases))
 	}
 	for _, tc := range cases {
 		if !bytes.Contains(schema, []byte("operationId: "+tc.operation+"\n")) {

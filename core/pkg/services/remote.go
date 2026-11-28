@@ -129,6 +129,16 @@ func (r *Remote) StartGitHubAuthorization() (GitHubAuthorizationStatus, error) {
 	return remoteResult[GitHubAuthorizationStatus](r, "workbench.github.authorization.start", nil)
 }
 
+func (r *Remote) WorkbenchGitHubReviewRequests(ctx context.Context) (common.WorkbenchGitHubReviewRequests, error) {
+	var result common.WorkbenchGitHubReviewRequests
+	raw, err := r.CallWorkbench(ctx, "workbench.github.review.list", nil)
+	if err != nil {
+		return result, err
+	}
+	err = json.Unmarshal(raw, &result)
+	return result, err
+}
+
 func (r *Remote) ListGitHubRepositories(authorizationID string) ([]string, error) {
 	result, err := remoteResult[struct {
 		Items []string `json:"items"`

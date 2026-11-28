@@ -25,6 +25,11 @@ type workbenchBody[T any] struct{ Body T }
 type workbenchItems[T any] struct {
 	Items []T `json:"items"`
 }
+type workbenchGitHubReviewsResponse struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         common.WorkbenchGitHubReviewRequests
+}
+
 type workbenchID struct {
 	ID string `path:"id" minLength:"1"`
 }
@@ -210,6 +215,17 @@ func registerWorkbenchHTTP(api huma.API, s *services.Service) {
 		func(ctx context.Context, in *workbenchBody[common.WorkbenchTaskQuery]) (common.WorkbenchTaskQueryResult, error) {
 			return s.QueryWorkbenchTasks(ctx, in.Body)
 		})
+	huma.Register(api, huma.Operation{
+		Method: http.MethodGet, Path: workbenchPath + "/github-review-requests", OperationID: "listGitHubReviewRequests",
+		Summary: "List outstanding direct pull request reviews for the connected GitHub account", Tags: []string{"Now"},
+		Errors: []int{401, 403, 404, 409, 429, 500, 503},
+	}, func(ctx context.Context, _ *struct{}) (*workbenchGitHubReviewsResponse, error) {
+		result, err := s.WorkbenchGitHubReviewRequests(ctx)
+		if err != nil {
+			return nil, workbenchHTTPError(err)
+		}
+		return &workbenchGitHubReviewsResponse{CacheControl: "no-store", Body: result}, nil
+	})
 	registerWorkbench(api, http.MethodGet, workbenchPath+"/github-repositories", "listGitHubRepositories", "List authorized GitHub Issues repositories", "Connections", []int{401, 403, 409, 429, 503},
 		func(in *struct {
 			AuthorizationID string `query:"authorization_id"`

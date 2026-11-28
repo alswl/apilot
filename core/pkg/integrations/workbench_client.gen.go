@@ -811,6 +811,23 @@ type WorkbenchFieldConflict struct {
 	Proposed      *map[string]FieldValue `json:"proposed,omitempty"`
 }
 
+// WorkbenchGitHubReviewRequest defines model for WorkbenchGitHubReviewRequest.
+type WorkbenchGitHubReviewRequest struct {
+	Number     int64  `json:"number"`
+	Repository string `json:"repository"`
+	Title      string `json:"title"`
+}
+
+// WorkbenchGitHubReviewRequests defines model for WorkbenchGitHubReviewRequests.
+type WorkbenchGitHubReviewRequests struct {
+	// Schema A URL to the JSON Schema for this object.
+	//
+	// Examples: http://apilot/schemas/WorkbenchGitHubReviewRequests.json
+	Schema     *string                         `json:"$schema,omitempty"`
+	Incomplete bool                            `json:"incomplete"`
+	Items      *[]WorkbenchGitHubReviewRequest `json:"items"`
+}
+
 // WorkbenchHeading defines model for WorkbenchHeading.
 type WorkbenchHeading struct {
 	HeadingPath   *[]string `json:"heading_path"`
@@ -1921,6 +1938,11 @@ type ClientInterface interface {
 	// Corresponds with GET /v1/workbench/github-repositories (the `ListGitHubRepositories` operationId).
 	ListGitHubRepositories(ctx context.Context, params *ListGitHubRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListGitHubReviewRequests List outstanding direct pull request reviews for the connected GitHub account
+	//
+	// Corresponds with GET /v1/workbench/github-review-requests (the `ListGitHubReviewRequests` operationId).
+	ListGitHubReviewRequests(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListWorkbenchLabels List local task labels
 	//
 	// Corresponds with GET /v1/workbench/labels (the `ListWorkbenchLabels` operationId).
@@ -2795,6 +2817,21 @@ func (c *Client) GetGitHubAuthorization(ctx context.Context, id string, reqEdito
 // Corresponds with GET /v1/workbench/github-repositories (the `ListGitHubRepositories` operationId).
 func (c *Client) ListGitHubRepositories(ctx context.Context, params *ListGitHubRepositoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListGitHubRepositoriesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListGitHubReviewRequests List outstanding direct pull request reviews for the connected GitHub account
+//
+// Corresponds with GET /v1/workbench/github-review-requests (the `ListGitHubReviewRequests` operationId).
+func (c *Client) ListGitHubReviewRequests(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListGitHubReviewRequestsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -4835,6 +4872,33 @@ func NewListGitHubRepositoriesRequest(server string, params *ListGitHubRepositor
 	return req, nil
 }
 
+// NewListGitHubReviewRequestsRequest constructs an http.Request for the ListGitHubReviewRequests method
+func NewListGitHubReviewRequestsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/workbench/github-review-requests")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListWorkbenchLabelsRequest constructs an http.Request for the ListWorkbenchLabels method
 func NewListWorkbenchLabelsRequest(server string) (*http.Request, error) {
 	var err error
@@ -6475,6 +6539,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/workbench/github-repositories (the `ListGitHubRepositories` operationId).
 	ListGitHubRepositoriesWithResponse(ctx context.Context, params *ListGitHubRepositoriesParams, reqEditors ...RequestEditorFn) (*ListGitHubRepositoriesResponse, error)
+
+	// ListGitHubReviewRequestsWithResponse List outstanding direct pull request reviews for the connected GitHub account
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/workbench/github-review-requests (the `ListGitHubReviewRequests` operationId).
+	ListGitHubReviewRequestsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListGitHubReviewRequestsResponse, error)
 
 	// ListWorkbenchLabelsWithResponse List local task labels
 	//
@@ -9409,6 +9480,103 @@ func (r ListGitHubRepositoriesResponse) ContentType() string {
 	return ""
 }
 
+// ListGitHubReviewRequestsResponse200Headers the declared response headers of an HTTP 200 response for ListGitHubReviewRequests
+type ListGitHubReviewRequestsResponse200Headers struct {
+	CacheControl *string
+}
+
+type ListGitHubReviewRequestsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WorkbenchGitHubReviewRequests
+	// ApplicationproblemJSON401 the response for an HTTP 401 `application/problem+json` response
+	ApplicationproblemJSON401 *ErrorModel
+	// ApplicationproblemJSON403 the response for an HTTP 403 `application/problem+json` response
+	ApplicationproblemJSON403 *ErrorModel
+	// ApplicationproblemJSON404 the response for an HTTP 404 `application/problem+json` response
+	ApplicationproblemJSON404 *ErrorModel
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *ErrorModel
+	// ApplicationproblemJSON429 the response for an HTTP 429 `application/problem+json` response
+	ApplicationproblemJSON429 *ErrorModel
+	// ApplicationproblemJSON500 the response for an HTTP 500 `application/problem+json` response
+	ApplicationproblemJSON500 *ErrorModel
+	// ApplicationproblemJSON503 the response for an HTTP 503 `application/problem+json` response
+	ApplicationproblemJSON503 *ErrorModel
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *ListGitHubReviewRequestsResponse200Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListGitHubReviewRequestsResponse) GetJSON200() *WorkbenchGitHubReviewRequests {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON401 returns the response for an HTTP 401 `application/problem+json` response
+func (r ListGitHubReviewRequestsResponse) GetApplicationproblemJSON401() *ErrorModel {
+	return r.ApplicationproblemJSON401
+}
+
+// GetApplicationproblemJSON403 returns the response for an HTTP 403 `application/problem+json` response
+func (r ListGitHubReviewRequestsResponse) GetApplicationproblemJSON403() *ErrorModel {
+	return r.ApplicationproblemJSON403
+}
+
+// GetApplicationproblemJSON404 returns the response for an HTTP 404 `application/problem+json` response
+func (r ListGitHubReviewRequestsResponse) GetApplicationproblemJSON404() *ErrorModel {
+	return r.ApplicationproblemJSON404
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r ListGitHubReviewRequestsResponse) GetApplicationproblemJSON409() *ErrorModel {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSON429 returns the response for an HTTP 429 `application/problem+json` response
+func (r ListGitHubReviewRequestsResponse) GetApplicationproblemJSON429() *ErrorModel {
+	return r.ApplicationproblemJSON429
+}
+
+// GetApplicationproblemJSON500 returns the response for an HTTP 500 `application/problem+json` response
+func (r ListGitHubReviewRequestsResponse) GetApplicationproblemJSON500() *ErrorModel {
+	return r.ApplicationproblemJSON500
+}
+
+// GetApplicationproblemJSON503 returns the response for an HTTP 503 `application/problem+json` response
+func (r ListGitHubReviewRequestsResponse) GetApplicationproblemJSON503() *ErrorModel {
+	return r.ApplicationproblemJSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r ListGitHubReviewRequestsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListGitHubReviewRequestsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListGitHubReviewRequestsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListGitHubReviewRequestsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListWorkbenchLabelsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -11483,6 +11651,19 @@ func (c *ClientWithResponses) ListGitHubRepositoriesWithResponse(ctx context.Con
 		return nil, err
 	}
 	return ParseListGitHubRepositoriesResponse(rsp)
+}
+
+// ListGitHubReviewRequestsWithResponse List outstanding direct pull request reviews for the connected GitHub account
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/workbench/github-review-requests (the `ListGitHubReviewRequests` operationId).
+func (c *ClientWithResponses) ListGitHubReviewRequestsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListGitHubReviewRequestsResponse, error) {
+	rsp, err := c.ListGitHubReviewRequests(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListGitHubReviewRequestsResponse(rsp)
 }
 
 // ListWorkbenchLabelsWithResponse List local task labels
@@ -14055,6 +14236,94 @@ func ParseListGitHubRepositoriesResponse(rsp *http.Response) (*ListGitHubReposit
 		}
 		response.ApplicationproblemJSON503 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseListGitHubReviewRequestsResponse parses an HTTP response from a ListGitHubReviewRequestsWithResponse call
+func ParseListGitHubReviewRequestsResponse(rsp *http.Response) (*ListGitHubReviewRequestsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListGitHubReviewRequestsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WorkbenchGitHubReviewRequests
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest ErrorModel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers ListGitHubReviewRequestsResponse200Headers
+		if values := rsp.Header.Values("Cache-Control"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Cache-Control", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.CacheControl = &value
+		}
+		response.Headers200 = &headers
 	}
 
 	return response, nil

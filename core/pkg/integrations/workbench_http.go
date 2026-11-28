@@ -35,7 +35,7 @@ func CallWorkbenchHTTPContext(ctx context.Context, socket, method string, params
 		timeout = 40 * time.Second
 	case "workbench.github.authorization.start":
 		timeout = 20 * time.Second
-	case "workbench.github.repository.list":
+	case "workbench.github.repository.list", "workbench.github.review.list":
 		timeout = 35 * time.Second
 	case "workbench.operation.reconcile", "workbench.operation.submit", "workbench.task.detail", "workbench.task.edit-metadata", "workbench.scope.edit-metadata", "workbench.scope.fields", "workbench.scope.mapping", "workbench.scope.mapping.preview", "workbench.scope.mapping.save":
 		timeout = 35 * time.Second
@@ -98,6 +98,8 @@ func requestWorkbenchHTTP(ctx context.Context, client *Client, method string, pa
 		return client.ListWorkbenchLabels(ctx)
 	case "workbench.github.authorization.start":
 		return client.StartGitHubAuthorization(ctx)
+	case "workbench.github.review.list":
+		return client.ListGitHubReviewRequests(ctx)
 	}
 	input, err := json.Marshal(params)
 	if err != nil {

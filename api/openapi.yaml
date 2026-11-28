@@ -965,6 +965,43 @@ components:
             $ref: "#/components/schemas/FieldValue"
           type: object
       type: object
+    WorkbenchGitHubReviewRequest:
+      additionalProperties: false
+      properties:
+        number:
+          format: int64
+          type: integer
+        repository:
+          type: string
+        title:
+          type: string
+      required:
+        - repository
+        - number
+        - title
+      type: object
+    WorkbenchGitHubReviewRequests:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - http://apilot/schemas/WorkbenchGitHubReviewRequests.json
+          format: uri
+          readOnly: true
+          type: string
+        incomplete:
+          type: boolean
+        items:
+          items:
+            $ref: "#/components/schemas/WorkbenchGitHubReviewRequest"
+          type:
+            - array
+            - "null"
+      required:
+        - items
+        - incomplete
+      type: object
     WorkbenchHeading:
       additionalProperties: false
       properties:
@@ -4259,6 +4296,65 @@ paths:
       summary: List authorized GitHub Issues repositories
       tags:
         - Connections
+  /v1/workbench/github-review-requests:
+    get:
+      operationId: listGitHubReviewRequests
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkbenchGitHubReviewRequests"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: List outstanding direct pull request reviews for the connected GitHub account
+      tags:
+        - Now
   /v1/workbench/labels:
     get:
       operationId: listWorkbenchLabels
