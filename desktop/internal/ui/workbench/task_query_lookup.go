@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/alswl/apilot/core/pkg/integrations"
 )
 
 const (
@@ -21,8 +23,7 @@ func (view *taskQueryView) setGitHubLookup(mode, stableID, repository, number st
 		view.StableSourceID, view.IssueRepository, view.IssueNumber = stableID, "", ""
 	case taskLookupIssue:
 		repository, number = strings.TrimSpace(repository), strings.TrimSpace(number)
-		parts := strings.Split(repository, "/")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" || strings.ContainsAny(repository, "?#%\\ ") {
+		if _, ok := integrations.GitHubRepositoryParts(repository); !ok {
 			return fmt.Errorf("%s", tr("仓库格式应为 owner/repository"))
 		}
 		parsed, err := strconv.ParseUint(number, 10, 64)

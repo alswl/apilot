@@ -31,7 +31,7 @@ func (m *mockup) navigate(page int) {
 		m.layout.detailExpanded, m.layout.detailReturnHidden = false, false
 		m.taskBackStack = nil
 		q := &m.customQuery
-		q.viewOpen, q.expressionOpen, q.conditionOpen, q.fieldsOpen = false, false, false, false
+		q.viewOpen, q.expressionOpen, q.conditionOpen, q.fieldsOpen, q.lookupOpen = false, false, false, false, false
 		m.page, m.inspector, m.editingDue, m.fullTask = page, false, false, false
 		m.rememberLocation()
 	}
@@ -239,7 +239,7 @@ func (m *mockup) activeCommands() []command {
 
 func (m *mockup) dispatchKeyboard(c *ui.Context, commands []command) {
 	k := &m.keyboard
-	if q := &m.customQuery; q.dialog != "" || q.expressionOpen || q.conditionOpen || q.fieldsOpen || q.viewOpen {
+	if q := &m.customQuery; q.lookupOpen || q.dialog != "" || q.expressionOpen || q.conditionOpen || q.fieldsOpen || q.viewOpen {
 		k.prefix = keystroke{}
 		return
 	}

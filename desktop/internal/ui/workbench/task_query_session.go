@@ -99,7 +99,7 @@ func (m *mockup) restoreQueryBrowsing() {
 	state := q.browsing[m.taskView]
 	q.slice, q.page = state.slice, state.page
 	m.taskSelection, m.pageScroll[tasksPage], m.taskBoardScroll = state.selected, state.scroll, state.board
-	q.viewOpen, q.expressionOpen, q.conditionOpen, q.fieldsOpen = false, false, false, false
+	q.viewOpen, q.expressionOpen, q.conditionOpen, q.fieldsOpen, q.lookupOpen = false, false, false, false, false
 	m.invalidateTaskQuery()
 }
 

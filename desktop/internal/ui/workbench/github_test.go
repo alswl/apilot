@@ -16,7 +16,7 @@ func TestGitHubIssueURL(t *testing.T) {
 	if got := githubIssueURL("owner/repo", "42"); got != "https://github.com/owner/repo/issues/42" {
 		t.Fatal(got)
 	}
-	for _, pair := range [][2]string{{"other/repo/extra", "1"}, {"../repo", "1"}, {"owner/repo?x", "1"}, {"owner/repo", "../1"}, {"owner/repo", "0"}} {
+	for _, pair := range [][2]string{{"other/repo/extra", "1"}, {"../repo", "1"}, {"owner/.", "1"}, {"owner/..", "1"}, {"owner/re\tpo", "1"}, {"owner/re\u00a0po", "1"}, {"owner/repo?x", "1"}, {"owner/repo%2Fother", "1"}, {"owner/repo\\other", "1"}, {"owner/repo", "../1"}, {"owner/repo", "0"}} {
 		if got := githubIssueURL(pair[0], pair[1]); got != "" {
 			t.Fatalf("accepted invalid target: %q", got)
 		}

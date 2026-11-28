@@ -248,7 +248,7 @@ func (m *mockup) customQueryControls(c *ui.Context, view taskQueryView) {
 			condition.Focus()
 			q.returnFocus = ""
 		}
-		if condition.Clicked() || (!input.Focused() && !m.fullTask && !q.expressionOpen && !q.fieldsOpen && !q.viewOpen && c.Shortcut(0, ui.KeyF)) {
+		if condition.Clicked() || (!input.Focused() && !m.fullTask && !q.expressionOpen && !q.fieldsOpen && !q.viewOpen && !q.lookupOpen && c.Shortcut(0, ui.KeyF)) {
 			q.conditionOpen = true
 		}
 		expression := components.IconToggle(c.Key("expression"), "chevron.left.forwardslash.chevron.right", tr("表达式"), q.expressionOpen)

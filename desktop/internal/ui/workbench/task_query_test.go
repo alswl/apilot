@@ -148,6 +148,95 @@ func TestTaskQueryExactGitHubLookupControlAndSavedView(t *testing.T) {
 	}
 }
 
+func TestTaskQueryLookupModalOwnsKeyboardAndDismissal(t *testing.T) {
+	previousLanguage := englishUI.Swap(true)
+	t.Cleanup(func() { englishUI.Store(previousLanguage) })
+	view := taskQueryView{Engine: "cel", Environment: 1}
+	m := newFramework()
+	m.page, m.taskView = tasksPage, "saved"
+	m.customQuery.config.Timezone = "UTC"
+	m.customQuery.drafts = map[string]taskQueryView{"saved": view}
+	preview := ui.NewTester(func(c *ui.Context) {
+		m.customQueryControls(c, *m.activeTaskQuery())
+		m.dispatchKeyboard(c, m.activeCommands())
+	}, 860, 580)
+	click(t, preview, "Find Issue")
+	if !m.customQuery.lookupOpen {
+		t.Fatal("Find Issue modal did not open")
+	}
+	for i := 0; i < 8 && !preview.Focused("Cancel"); i++ {
+		preview.Key(0, ui.KeyTab)
+	}
+	if !preview.Focused("Cancel") {
+		t.Fatal("modal keyboard focus did not reach its Cancel button")
+	}
+	preview.Key(0, ui.KeyF)
+	if m.customQuery.conditionOpen {
+		t.Fatal("F opened the task condition popover from inside the lookup modal")
+	}
+	if err := preview.Click("Repository + issue number"); err != nil {
+		t.Fatal(err)
+	}
+	preview.Key(ui.Cmd, ui.Key1)
+	if m.page != tasksPage || !m.customQuery.lookupOpen {
+		t.Fatalf("global navigation escaped the open lookup modal: page=%d open=%t", m.page, m.customQuery.lookupOpen)
+	}
+	preview.Key(0, ui.KeyF)
+	if m.customQuery.conditionOpen {
+		t.Fatal("F opened the task condition popover behind the lookup modal")
+	}
+	preview.Key(0, ui.KeyEscape)
+	if !m.customQuery.lookupOpen || !preview.Focused("Repository + issue number") {
+		t.Fatalf("Escape did not close the inner selector and restore its focus: open=%t focused=%t", m.customQuery.lookupOpen, preview.Focused("Repository + issue number"))
+	}
+	preview.Key(0, ui.KeyEscape)
+	if m.customQuery.lookupOpen || !preview.Focused("Find Issue") {
+		t.Fatalf("Escape did not close lookup and restore its trigger focus: open=%t focused=%t", m.customQuery.lookupOpen, preview.Focused("Find Issue"))
+	}
+}
+
+func TestTaskQueryLookupBlocksGlobalKeyboardRoutes(t *testing.T) {
+	m := newFramework()
+	m.page = tasksPage
+	m.customQuery.lookupOpen = true
+	preview := ui.NewTester(func(c *ui.Context) { m.dispatchKeyboard(c, m.activeCommands()) }, 860, 580)
+	preview.Key(ui.Cmd, ui.Key1)
+	if m.page != tasksPage {
+		t.Fatalf("global navigation ran behind the lookup modal: page=%d", m.page)
+	}
+}
+
+func TestTaskQueryLookupClosesWhenContextChanges(t *testing.T) {
+	m := newFramework()
+	m.page = tasksPage
+	m.customQuery.lookupOpen = true
+	m.navigate(nowPage)
+	if m.customQuery.lookupOpen {
+		t.Fatal("page navigation left lookup modal open")
+	}
+	m.page = tasksPage
+	m.taskView = "before"
+	m.taskViewDrafts = make(map[string]taskViewState)
+	m.customQuery.lookupOpen = true
+	m.selectTaskView("after")
+	if m.customQuery.lookupOpen {
+		t.Fatal("saved-view selection left lookup modal open")
+	}
+}
+
+func TestTaskQueryLookupUsesCoreRepositoryValidation(t *testing.T) {
+	for _, repository := range []string{".", "..", "owner/.", "owner/..", "owner/re\tpo", "owner/re\u00a0po", "owner/repo?x", "owner/repo%2Fother", "owner/repo\\other"} {
+		view := taskQueryView{}
+		if err := view.setGitHubLookup(taskLookupIssue, "", repository, "17"); err == nil {
+			t.Errorf("accepted Core-invalid repository %q", repository)
+		}
+	}
+	view := taskQueryView{}
+	if err := view.setGitHubLookup(taskLookupIssue, "", "owner/repo", "17"); err != nil || view.IssueRepository != "owner/repo" || view.IssueNumber != "17" {
+		t.Fatalf("valid owner/repository lookup changed: %+v %v", view, err)
+	}
+}
+
 func TestTaskQueryConditionsUseStandardCEL(t *testing.T) {
 	env, err := cel.NewEnv(cel.Variable("task", cel.MapType(cel.StringType, cel.DynType)), cel.Variable("custom", cel.MapType(cel.StringType, cel.DynType)),
 		cel.Variable("week_start", cel.StringType), cel.Variable("next_week_start", cel.StringType))
